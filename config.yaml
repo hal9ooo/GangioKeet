@@ -1,0 +1,53 @@
+server:
+  host: "0.0.0.0"
+  port: 8000
+  stt_model: "mlx-community/parakeet-tdt-0.6b-v3"
+  llm_model: "mlx-community/Qwen3-1.7B-4bit"
+
+routing:
+  fast_path_max_words: 5
+  self_correction_triggers:
+    - "anzi"
+    - "scusa"
+    - "aspetta"
+    - "cioè"
+    - "o meglio"
+    - "volevo dire"
+
+glossary:
+  canonical_terms:
+    - "Proxmox VE"
+    - "FastAPI"
+    - "CodeIgniter 4"
+    - "PostgreSQL"
+    - "MariaDB"
+    - "Home Assistant"
+    - "ESPHome"
+    - "Tasmota"
+    - "Tailscale"
+    - "MikroTik"
+    - "RouterOS"
+    - "Authelia"
+    - "Nginx Proxy Manager"
+    - "MLX"
+    - "Parakeet"
+    - "llama.cpp"
+    - "OpenCode"
+    - "Cursor"
+    - "WebSocket"
+    - "GitHub"
+
+  phonetic_overrides:
+    "elle ics ci": "LXC"
+    "emme elle ics": "MLX"
+    "emme q ti ti": "MQTT"
+    "z f s": "ZFS"
+    "zeta effe esse": "ZFS"
+    "q device": "QDevice"
+    "acca a": "HA"
+    "acca ti ti pi": "HTTP"
+    "v elle a en": "VLAN"
+    "fast a pi": "FastAPI"
+    "prossimo ve": "Proxmox VE"
+    "lama punto ci pi pi": "llama.cpp"
+    "superpowers": "superpowers"
