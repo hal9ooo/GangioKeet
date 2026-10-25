@@ -19,6 +19,14 @@ class FakeEncoder:
         )()
 
 
+class FakeEncoderIgnoringAttention(FakeEncoder):
+    def set_attention_model(self, name, context_size):
+        self.attention = (name, context_size)
+        self.pos_enc = type(
+            "FakePosEnc", (), {"left_context": 128, "right_context": 128}
+        )()
+
+
 class FakeModel:
     def __init__(self, weight_dtype=mx.bfloat16):
         self.encoder = FakeEncoder()
@@ -78,6 +86,19 @@ def test_load_rejects_non_bfloat16_float_weights(monkeypatch):
 
     stt = ParakeetSTT("fake-model")
     with pytest.raises(RuntimeError, match="bfloat16"):
+        stt.load()
+
+
+def test_load_rejects_non_local_attention(monkeypatch):
+    import parakeet_mlx
+
+    model = FakeModel()
+    model.encoder = FakeEncoderIgnoringAttention()
+    monkeypatch.setattr(parakeet_mlx, "from_pretrained",
+                        lambda model_id, *, dtype: model)
+
+    stt = ParakeetSTT("fake-model")
+    with pytest.raises(RuntimeError, match="256x256 local attention"):
         stt.load()
 
 

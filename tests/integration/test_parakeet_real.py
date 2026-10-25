@@ -1,5 +1,6 @@
 import os
 import resource
+import subprocess
 import sys
 
 import mlx.core as mx
@@ -27,13 +28,23 @@ def _peak_rss_mb() -> float:
     return peak / (1024 * 1024)
 
 
+def _current_rss_mb() -> float:
+    output = subprocess.check_output(
+        ["ps", "-o", "rss=", "-p", str(os.getpid())], text=True
+    )
+    return int(output.strip()) / 1024
+
+
 @pytest.fixture(scope="module")
 def stt() -> ParakeetSTT:
     instance = ParakeetSTT(MODEL_ID)
-    before = _peak_rss_mb()
+    before_peak = _peak_rss_mb()
+    before_current = _current_rss_mb()
     instance.load()
-    print(f"\npeak RSS before load: {before:.1f} MB")
-    print(f"peak RSS after load: {_peak_rss_mb():.1f} MB")
+    print(f"\nRSS before load: current {before_current:.1f} MB, "
+          f"peak {before_peak:.1f} MB")
+    print(f"RSS after load: current {_current_rss_mb():.1f} MB, "
+          f"peak {_peak_rss_mb():.1f} MB")
     return instance
 
 
