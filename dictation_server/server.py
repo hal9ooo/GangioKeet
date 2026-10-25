@@ -394,7 +394,8 @@ def create_app(cfg: AppConfig, pipeline: Pipeline) -> FastAPI:
 
         data = await file.read()
         try:
-            pcm = _decode_upload(
+            pcm = await asyncio.to_thread(
+                _decode_upload,
                 data,
                 file.filename,
                 file.content_type,

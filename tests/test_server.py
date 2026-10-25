@@ -1,8 +1,10 @@
 import io
 import struct
+import threading
 import time
 import wave
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
@@ -331,6 +333,31 @@ def test_rest_non_pcm_without_ffmpeg_503(client, monkeypatch):
         files={"file": ("d.mp3", b"compressed", "audio/mpeg")},
     )
     assert r.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_rest_ffmpeg_decode_runs_off_event_loop(cfg, monkeypatch):
+    app = create_app(cfg, Pipeline(FakeSTT(), FakeLLM(), cfg))
+    monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/ffmpeg")
+    seen = {}
+
+    def fake_ffmpeg(data: bytes) -> bytes:
+        seen["thread"] = threading.get_ident()
+        return make_silence(0.2)
+
+    monkeypatch.setattr("dictation_server.server.ffmpeg_to_pcm", fake_ffmpeg)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as async_client:
+        r = await async_client.post(
+            "/v1/audio/transcriptions",
+            files={"file": ("d.mp3", b"compressed", "audio/mpeg")},
+        )
+
+    assert r.status_code == 200
+    assert "thread" in seen
+    assert seen["thread"] != threading.get_ident()
 
 
 def test_rest_float_wav_falls_back_to_ffmpeg(client, monkeypatch):
