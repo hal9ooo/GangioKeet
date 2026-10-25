@@ -16,6 +16,12 @@ def test_output_is_float32():
     assert np.array(out).dtype == np.float32
 
 
+def test_little_endian_byte_order_is_explicit():
+    # Would catch a host-endian regression on a big-endian machine.
+    out = np.array(pcm_bytes_to_mlx_array(b"\x01\x00\x02\x00"))
+    np.testing.assert_allclose(out, [1 / 32768.0, 2 / 32768.0], atol=1e-7)
+
+
 def test_empty_bytes_returns_empty_array():
     out = np.array(pcm_bytes_to_mlx_array(b""))
     assert out.shape == (0,)
