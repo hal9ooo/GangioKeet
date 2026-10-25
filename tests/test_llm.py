@@ -75,6 +75,7 @@ class FakeTokenizer:
     def __init__(self, full_tokens=(1, 2, 101, 102)):
         self.full_tokens = list(full_tokens)
         self.template_calls = []
+        self.decoded = []
 
     def apply_chat_template(self, messages, tokenize=True,
                             add_generation_prompt=True, enable_thinking=False):
@@ -83,6 +84,7 @@ class FakeTokenizer:
         return list(self.full_tokens)
 
     def decode(self, tokens):
+        self.decoded.append(list(tokens))
         return " " + " ".join(str(token) for token in tokens) + " "
 
 
@@ -139,6 +141,35 @@ def test_generate_error_does_not_contaminate_frozen_cache(monkeypatch):
         llm._generate("<profile>chat</profile>", 5)
     assert llm._frozen_cache == [{"tokens": [1, 2], "offset": 2}]
     assert llm._generate("<profile>chat</profile>", 5) == " 42 "
+
+
+def test_generate_stops_at_eos_and_excludes_it(monkeypatch):
+    llm = _prepared_llm()
+
+    def fake_generate_step(prompt, model, *, max_tokens, sampler, prompt_cache):
+        for token in (42, 99, 5, 5):
+            yield token, None
+
+    generate_module = importlib.import_module("mlx_lm.generate")
+    monkeypatch.setattr(generate_module, "generate_step", fake_generate_step)
+
+    llm._generate("<profile>chat</profile>", 5)
+    assert llm.tokenizer.decoded[-1] == [42]
+
+
+def test_generate_never_exceeds_max_tokens_even_if_library_overruns(
+        monkeypatch):
+    llm = _prepared_llm()
+
+    def fake_generate_step(prompt, model, *, max_tokens, sampler, prompt_cache):
+        for _ in range(max_tokens + 10):
+            yield 7, None
+
+    generate_module = importlib.import_module("mlx_lm.generate")
+    monkeypatch.setattr(generate_module, "generate_step", fake_generate_step)
+
+    llm._generate("<profile>chat</profile>", 5)
+    assert llm.tokenizer.decoded[-1] == [7] * 5
 
 
 def test_generate_rejects_separated_prefix_mismatch(monkeypatch):

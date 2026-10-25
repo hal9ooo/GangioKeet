@@ -109,6 +109,8 @@ class LLMCleaner:
         ):
             if token in self.tokenizer.eos_token_ids:
                 break
+            if len(generated) >= max_tokens:
+                break
             generated.append(token)
         return self.tokenizer.decode(generated)
 
