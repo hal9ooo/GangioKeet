@@ -1,5 +1,6 @@
 import plistlib
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,28 @@ def test_build_app_order_load_freeze_and_pipeline():
     assert app.state.pipeline is not None
     assert app.state.pipeline.stt is stt
     assert app.state.pipeline.llm is llm
+
+
+def test_build_app_global_engine_order():
+    cfg = load_config("config.yaml")
+    events = []
+
+    class RecordingSTT(EagerFakeSTT):
+        def load(self):
+            events.append("stt.load")
+            super().load()
+
+    class RecordingLLM(EagerFakeLLM):
+        def load(self):
+            events.append("llm.load")
+            super().load()
+
+        def freeze(self, system_prompt):
+            events.append("llm.freeze")
+            super().freeze(system_prompt)
+
+    build_app(cfg, stt=RecordingSTT(), llm=RecordingLLM())
+    assert events == ["stt.load", "llm.load", "llm.freeze"]
 
 
 @pytest.mark.asyncio
@@ -79,7 +102,11 @@ async def test_serve_configures_ws_max_size(monkeypatch):
     assert seen["served"] is True
 
 
-def test_main_loads_config_and_serves(monkeypatch):
+@pytest.mark.parametrize(
+    "argv, expected_path",
+    [([], "./config.yaml"), (["--config", "custom.yaml"], "custom.yaml")],
+)
+def test_main_loads_config_and_serves(monkeypatch, argv, expected_path):
     cfg = load_config("config.yaml")
     seen = {}
 
@@ -105,9 +132,9 @@ def test_main_loads_config_and_serves(monkeypatch):
     monkeypatch.setattr("dictation_server.main.build_app", fake_build_app)
     monkeypatch.setattr("dictation_server.main.serve", fake_serve)
 
-    main(["--config", "custom.yaml"])
+    main(argv)
 
-    assert seen["config_path"] == "custom.yaml"
+    assert seen["config_path"] == expected_path
     assert seen["build_cfg"] is cfg
     assert seen["serve"] == (cfg, app, "pipeline")
 
@@ -127,6 +154,14 @@ def test_launchd_plist_template():
         "dictation_server.main",
     ]
     assert plist["WorkingDirectory"] == "/Users/gangio75/GangioKeet"
+    assert plist["EnvironmentVariables"]["PATH"].split(":") == [
+        "/opt/homebrew/bin",
+        "/usr/local/bin",
+        "/usr/bin",
+        "/bin",
+        "/usr/sbin",
+        "/sbin",
+    ]
     assert plist["StandardOutPath"].startswith(
         "/Users/gangio75/Library/Logs/mlx-dictation/"
     )
@@ -142,8 +177,18 @@ def test_install_launchd_script_is_valid_and_idempotent():
 
     text = script.read_text()
     assert "command -v uv" in text
-    assert "__UV_PATH__" in text
+    assert 'sed "s|__UV_PATH__|$ESCAPED_UV_PATH|g"' in text
     assert "bootout" in text
     assert "unload" in text
     assert "bootstrap" in text
     assert "launchctl load" in text
+
+
+def test_module_entrypoint_runs_main():
+    result = subprocess.run(
+        [sys.executable, "-m", "dictation_server.main", "--help"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    assert "usage:" in result.stdout

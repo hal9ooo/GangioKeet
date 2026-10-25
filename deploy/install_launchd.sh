@@ -14,14 +14,17 @@ if [ -z "$UV_PATH" ]; then
     exit 1
 fi
 
+ESCAPED_UV_PATH="$(printf '%s' "$UV_PATH" | sed 's/[&|\\]/\\&/g')"
+
 mkdir -p "$LAUNCH_AGENTS_DIR" "$LOG_DIR"
-sed "s|__UV_PATH__|$UV_PATH|g" "$SOURCE_PLIST" > "$TARGET_PLIST"
+sed "s|__UV_PATH__|$ESCAPED_UV_PATH|g" "$SOURCE_PLIST" > "$TARGET_PLIST"
 
 # Idempotent reload: remove any previous registration before bootstrapping.
 launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
 launchctl unload "$TARGET_PLIST" 2>/dev/null || true
 
-if ! launchctl bootstrap "gui/$(id -u)" "$TARGET_PLIST" 2>/dev/null; then
+if ! bootstrap_error="$(launchctl bootstrap "gui/$(id -u)" "$TARGET_PLIST" 2>&1)"; then
+    echo "warning: launchctl bootstrap failed: $bootstrap_error" >&2
     launchctl load "$TARGET_PLIST"
 fi
 

@@ -37,15 +37,16 @@ async def serve(
     uvicorn_server: uvicorn.Server | None = None,
 ) -> None:
     await pipeline.warm_up()
-    server = uvicorn_server or uvicorn.Server(
-        uvicorn.Config(
-            app,
-            host=cfg.server.host,
-            port=cfg.server.port,
-            ws_max_size=MAX_AUDIO_BYTES,
+    if uvicorn_server is None:
+        uvicorn_server = uvicorn.Server(
+            uvicorn.Config(
+                app,
+                host=cfg.server.host,
+                port=cfg.server.port,
+                ws_max_size=MAX_AUDIO_BYTES,
+            )
         )
-    )
-    await server.serve()
+    await uvicorn_server.serve()
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -58,3 +59,7 @@ def main(argv: list[str] | None = None) -> None:
     cfg = load_config(args.config)
     app = build_app(cfg)
     asyncio.run(serve(cfg, app, app.state.pipeline))
+
+
+if __name__ == "__main__":
+    main()
