@@ -19,6 +19,29 @@ class FakeLLM:
         return f"[{profile}] {raw_text}"
 
 
+class EagerFakeSTT(FakeSTT):
+    def __init__(self):
+        super().__init__()
+        self.loads = []
+
+    def load(self):
+        self.loads.append("load")
+
+
+class EagerFakeLLM(FakeLLM):
+    def __init__(self):
+        super().__init__()
+        self.loads = []
+        self.frozen_with = None
+
+    def load(self):
+        self.loads.append("load")
+
+    def freeze(self, system_prompt):
+        self.loads.append("freeze")
+        self.frozen_with = system_prompt
+
+
 class SlowFakeLLM(FakeLLM):
     def __init__(self, delay: float = 0.3):
         super().__init__()
