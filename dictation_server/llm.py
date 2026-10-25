@@ -1,4 +1,5 @@
 import copy
+import time
 
 import mlx.core as mx
 
@@ -16,6 +17,7 @@ class LLMCleaner:
         self.frozen = False
         self.cache_prefix_len = 0
         self.prefill_calls = 0
+        self.last_ttft_ms = 0.0
         self._frozen_cache = None
         self._system_prompt = ""
         self._sys_tokens: list[int] = []
@@ -100,6 +102,8 @@ class LLMCleaner:
         sampler = make_sampler(temp=TEMPERATURE)
 
         generated: list[int] = []
+        self.last_ttft_ms = 0.0
+        started = time.perf_counter()
         for token, _logprobs in generate_step(
             mx.array(suffix),
             self.model,
@@ -107,6 +111,10 @@ class LLMCleaner:
             sampler=sampler,
             prompt_cache=cache,
         ):
+            if self.last_ttft_ms == 0.0:
+                self.last_ttft_ms = (
+                    time.perf_counter() - started
+                ) * 1000.0
             if token in self.tokenizer.eos_token_ids:
                 break
             if len(generated) >= max_tokens:

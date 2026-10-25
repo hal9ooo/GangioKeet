@@ -100,6 +100,23 @@ def _prepared_llm():
     return llm
 
 
+def test_generate_records_time_to_first_token(monkeypatch):
+    llm = _prepared_llm()
+    times = iter([100.0, 100.025])
+    monkeypatch.setattr(
+        "dictation_server.llm.time.perf_counter", lambda: next(times)
+    )
+
+    def fake_generate_step(prompt, model, *, max_tokens, sampler, prompt_cache):
+        yield 42, None
+
+    generate_module = importlib.import_module("mlx_lm.generate")
+    monkeypatch.setattr(generate_module, "generate_step", fake_generate_step)
+
+    llm._generate("<profile>chat</profile>", 5)
+    assert llm.last_ttft_ms == pytest.approx(25.0)
+
+
 def test_generate_copies_frozen_cache_per_request(monkeypatch):
     llm = _prepared_llm()
     seen = []
