@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import time
 from typing import Callable
 
@@ -9,6 +10,8 @@ from .config import AppConfig
 from .llm import LLMCleaner
 from .routing import should_run_llm
 from .stt import ParakeetSTT
+
+logger = logging.getLogger(__name__)
 
 _WARM_UP_PCM = b"\x00\x00" * SAMPLE_RATE
 
@@ -57,9 +60,14 @@ class Pipeline:
                 break
         if worker.done() and not worker.cancelled():
             try:
-                worker.exception()
+                error = worker.exception()
             except BaseException:
-                pass
+                error = None
+            if error is not None:
+                logger.warning(
+                    "engine worker failed during cancellation drain: %s",
+                    error,
+                )
 
     async def _run_blocking(self, fn, *args):
         worker = asyncio.create_task(asyncio.to_thread(fn, *args))

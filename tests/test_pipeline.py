@@ -1,4 +1,6 @@
 import asyncio
+import logging
+import time
 from pathlib import Path
 
 import pytest
@@ -138,6 +140,29 @@ async def test_process_cancellation_releases_lock_and_clears_metal_cache():
     assert p.llm.finished is True                # il thread non prosegue dopo unlock
     r = await p.process(make_silence(0.5), bypass_llm=True)
     assert r.fast_path is True                  # nessun worker orfano sul lock
+
+
+@pytest.mark.asyncio
+async def test_cancellation_logs_worker_failure(caplog):
+    class SlowFailingLLM(FakeLLM):
+        def clean(self, raw_text, profile):
+            self.calls.append((raw_text, profile))
+            time.sleep(0.1)
+            raise RuntimeError("llm exploded")
+
+    counter = ClearCounter()
+    p = Pipeline(
+        FakeSTT(), SlowFailingLLM(), load_config(CONFIG_PATH), counter
+    )
+    with caplog.at_level(logging.WARNING, logger="dictation_server.pipeline"):
+        t = asyncio.create_task(p.process(make_silence(0.5)))
+        await asyncio.sleep(0.02)
+        t.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await t
+
+    assert "llm exploded" in caplog.text
+    assert counter.n == 1
 
 
 @pytest.mark.asyncio
