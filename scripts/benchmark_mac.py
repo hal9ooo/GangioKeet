@@ -15,6 +15,7 @@ import mlx.core as mx
 import uvicorn
 import websockets
 
+from dictation_server.audio import SAMPLE_RATE
 from dictation_server.config import load_config
 from dictation_server.main import build_app
 from dictation_server.protocol import MAX_AUDIO_BYTES
@@ -22,6 +23,7 @@ from dictation_server.protocol import MAX_AUDIO_BYTES
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PCM = ROOT / "tests" / "fixtures" / "it_short.pcm"
 CHUNK_BYTES = 3200  # 100 ms of PCM16 mono 16 kHz
+RESULT_TIMEOUT_S = 30.0
 RSS_GATE_MB = 2.8 * 1024
 P95_GATE_MS = 400.0
 TTFT_GATE_MS = 25.0
@@ -90,6 +92,7 @@ def _summary(values: list[float]) -> dict:
 
 
 async def _start_in_process(cfg):
+    print("Loading models and freezing system prompt...", flush=True)
     load_started = time.perf_counter()
     app = build_app(cfg)
     load_s = time.perf_counter() - load_started
@@ -159,8 +162,15 @@ async def _request(
     for offset in range(0, len(pcm), CHUNK_BYTES):
         await ws.send(pcm[offset:offset + CHUNK_BYTES])
     started = time.perf_counter()
-    await ws.send(json.dumps({"type": "stop"}))
-    message = json.loads(await ws.recv())
+    try:
+        async with asyncio.timeout(RESULT_TIMEOUT_S):
+            await ws.send(json.dumps({"type": "stop"}))
+            message = json.loads(await ws.recv())
+    except TimeoutError as exc:
+        raise RuntimeError(
+            "server did not return a result within "
+            f"{RESULT_TIMEOUT_S:.1f} s"
+        ) from exc
     elapsed_ms = (time.perf_counter() - started) * 1000.0
     if message.get("type") != "result":
         raise RuntimeError(f"unexpected server message: {message!r}")
@@ -236,7 +246,7 @@ def _print_report(
     llm: dict,
     fast: dict,
 ) -> list[str]:
-    duration_s = len(pcm) / 2 / 16000
+    duration_s = len(pcm) / 2 / SAMPLE_RATE
     print("== MLX dictation benchmark ==")
     print(
         f"Machine: {machine['chip']}, {machine['ram_gb']} GB, "
@@ -399,8 +409,9 @@ async def _run(args) -> int:
         metal_peak_mb = mx.get_peak_memory() / (1024 ** 2)
         metal_active_mb = mx.get_active_memory() / (1024 ** 2)
 
+    machine = _machine_info()
     failures = _print_report(
-        _machine_info(),
+        machine,
         models,
         pcm,
         load_s,
@@ -413,9 +424,9 @@ async def _run(args) -> int:
         fast,
     )
     summary = {
-        "machine": _machine_info(),
+        "machine": machine,
         "models": models,
-        "audio_seconds": round(len(pcm) / 2 / 16000, 2),
+        "audio_seconds": round(len(pcm) / 2 / SAMPLE_RATE, 2),
         "samples": args.samples,
         "load_seconds": round(load_s, 2) if load_s is not None else None,
         "warmup_seconds": (
@@ -427,6 +438,11 @@ async def _run(args) -> int:
             key: (round(value, 1) if value is not None else None)
             for key, value in rss.items()
         },
+        "metal_peak_warmup_mb": (
+            round(metal_warmup_mb, 1)
+            if metal_warmup_mb is not None
+            else None
+        ),
         "metal_peak_mb": (
             round(metal_peak_mb, 1)
             if metal_peak_mb is not None

@@ -103,6 +103,8 @@ class LLMCleaner:
 
         generated: list[int] = []
         self.last_ttft_ms = 0.0
+        # Diagnostic TTFT: excludes the per-request cache clone and chat
+        # template rendering above, which remain counted in llm_ms.
         started = time.perf_counter()
         for token, _logprobs in generate_step(
             mx.array(suffix),

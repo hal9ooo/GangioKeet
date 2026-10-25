@@ -9,7 +9,8 @@ WebSocket con fallback REST compatibile con l'API OpenAI Audio.
 - KV cache del system prompt congelata a boot e riusata a ogni richiesta.
 - Warm-up di entrambi gli engine prima del bind HTTP.
 - Nessun file temporaneo nel percorso principale: il PCM viaggia in RAM.
-- `mx.clear_cache()` dopo ogni richiesta completata, annullata o fallita.
+- `mx.clear_cache()` dopo ogni richiesta gestita dalla pipeline, completata,
+  annullata o fallita.
 
 ## Requisiti
 
@@ -112,9 +113,10 @@ invia `{"type":"error","code":"payload_too_large"}` e chiude con codice 1009.
  "metrics": {"stt_ms": 123.4, "llm_ms": 456.7, "total_ms": 580.1}}
 ```
 
-`fast_path` è `true` quando l'LLM è stato saltato (testo corto, nessun trigger,
-oppure `bypass_llm: true`). Gli errori di protocollo non chiudono la
-connessione:
+`fast_path` è `true` quando l'LLM è stato saltato: testo sotto la soglia,
+nessun trigger di autocorrezione, nessun override fonetico, oppure
+`bypass_llm: true`. In quel caso `metrics.llm_ms` è `0.0`. Gli errori di
+protocollo non chiudono la connessione:
 
 ```json
 {"type": "error", "code": "protocol", "message": "..."}
@@ -184,7 +186,8 @@ Risposta `json`:
 
 ## Configurazione
 
-`config.yaml`:
+`config.yaml` (estratto: il file completo contiene 20 termini canonici e 13
+override fonetici):
 
 ```yaml
 server:
@@ -227,8 +230,9 @@ RUN_REAL_MODELS=1 uv run pytest tests/integration -v
 ```
 
 La fixture `tests/fixtures/it_short.pcm` è una breve frase italiana sintetica
-di circa 3,9 s (PCM16 mono 16 kHz). È stata generata con la voce macOS
-italiana e `ffmpeg`; per rigenerarla:
+di circa 3,9 s (PCM16 mono 16 kHz). È stata generata su macOS 27.0.1 con la
+voce italiana `Alice` e `ffmpeg`; versioni diverse della voce possono produrre
+byte diversi. Per rigenerarla:
 
 ```bash
 say -v Alice -r 230 -o /tmp/it_short.aiff \
@@ -247,14 +251,17 @@ invia il PCM a chunk via WebSocket e misura:
 
 - `stop → result` con LLM e con `bypass_llm=true`;
 - metriche interne `stt_ms`, `llm_ms`, `total_ms`;
-- TTFT LLM (tempo al primo token, prefill del suffisso incluso);
+- TTFT LLM: dal lancio di `generate_step` al primo token; include il prefill
+  del suffisso utente ed esclude il clone della cache e il rendering del
+  template, che restano dentro `llm_ms`;
 - RSS dopo warm-up, dopo richieste brevi e dopo una richiesta lunga;
 - picco di memoria Metal.
 
 Esce con codice 1 se `p95 >= 400 ms`, TTFT `p95 >= 25 ms` oppure RSS
 `>= 2,8 GB`. Con `--url ws://...` contatta un server già caldo: in quel caso
-TTFT e RSS del processo remoto non sono disponibili (usare `--rss-pid` per il
-solo RSS). Il default in-process è il modo corretto per i gate.
+TTFT e dati di memoria del processo remoto (RSS e Metal) non sono
+disponibili; `--rss-pid` abilita il solo campionamento RSS. Il default
+in-process è il modo corretto per i gate.
 
 ### Risultati misurati
 
@@ -267,23 +274,23 @@ modalità e 2 warm-up per modalità:
   `mlx-community/Qwen3-1.7B-4bit`
 - audio `tests/fixtures/it_short.pcm`: 3,90 s (124.848 byte), chunk da
   3200 byte
-- warm-up: 1,71 s
+- caricamento modelli + freeze: 7,34 s; warm-up: 1,60 s
 
 | Metrica (ms) | p50 | p95 | max |
 |---|---:|---:|---:|
-| WebSocket `stop` → `result` (LLM) | 1196,0 | 1268,4 | 1271,1 |
-| WebSocket `stop` → `result` (fast path) | 647,9 | 674,0 | 686,3 |
-| Pipeline `total_ms` (LLM) | 1188,6 | 1260,7 | 1263,6 |
-| STT `stt_ms` (modalità LLM) | 641,6 | 692,2 | 697,0 |
-| LLM `llm_ms` (modalità LLM) | 547,5 | 572,0 | 572,9 |
-| LLM TTFT, prefill del suffisso incluso | 257,0 | 265,9 | 274,2 |
-| Pipeline `total_ms` (fast path) | 644,9 | 671,0 | 681,8 |
-| STT `stt_ms` (fast path) | 631,6 | 658,9 | 666,6 |
+| WebSocket `stop` → `result` (LLM) | 1122,4 | 1166,2 | 1247,0 |
+| WebSocket `stop` → `result` (fast path) | 625,0 | 637,0 | 644,6 |
+| Pipeline `total_ms` (LLM) | 1120,6 | 1156,7 | 1237,9 |
+| STT `stt_ms` (modalità LLM) | 595,5 | 614,8 | 670,6 |
+| LLM `llm_ms` (modalità LLM) | 518,9 | 541,5 | 566,7 |
+| LLM TTFT (`generate_step` → primo token) | 247,8 | 262,4 | 265,7 |
+| Pipeline `total_ms` (fast path) | 621,7 | 634,0 | 640,9 |
+| STT `stt_ms` (fast path) | 602,3 | 615,5 | 636,1 |
 
 Memoria:
 
-- RSS misurata con `ps`: 286 MB dopo il warm-up, 61 MB dopo le richieste
-  brevi, 46 MB dopo la richiesta lunga, picco 935 MB.
+- RSS misurata con `ps`: 204 MB dopo il warm-up, 50 MB dopo le richieste
+  brevi, 52 MB dopo la richiesta lunga, picco 699 MB.
 - Metal: picco 2986 MB dopo il warm-up, 3113 MB durante il benchmark,
   2234 MB attivi al termine. Su memoria unificata la RSS di `ps` non
   rappresenta la memoria realmente impegnata da MLX; il dato Metal è quello
@@ -293,18 +300,19 @@ Gate della run:
 
 | Gate | Esito | Valore |
 |---|---|---|
-| WebSocket p95 LLM < 400 ms | **FAIL** | 1268,4 ms |
-| WebSocket p95 fast path < 400 ms | **FAIL** | 674,0 ms |
-| RSS < 2,8 GB | **PASS** | 935 MB |
-| LLM TTFT p95 < 25 ms | **FAIL** | 265,9 ms |
+| WebSocket p95 LLM < 400 ms | **FAIL** | 1166,2 ms |
+| WebSocket p95 fast path < 400 ms | **FAIL** | 637,0 ms |
+| RSS < 2,8 GB | **PASS** | 699 MB |
+| LLM TTFT p95 < 25 ms | **FAIL** | 262,4 ms |
 
 Il benchmark esce con codice 1. I target di latenza **non sono raggiunti su
 questo hardware**: anche con un audio di 3,9 s lo STT ha un costo fisso di
-circa 630–690 ms, e il TTFT misurato include il prefill del suffisso utente
+circa 600–615 ms, e il TTFT misurato include il prefill del suffisso utente
 (circa 77 token), non solo il riuso della KV cache del system prompt. Il
-fast path elimina l'LLM ma resta dominato dallo STT. I numeri sopra sono
-quelli reali, senza escludere il prefill o cambiare la definizione della
-metrica.
+valore esclude il clone della cache e il rendering del template, conteggiati
+in `llm_ms`. Il fast path elimina l'LLM ma resta dominato dallo STT. I numeri
+sopra sono quelli reali, senza escludere il prefill o cambiare la definizione
+della metrica.
 
 ## Limiti di compatibilità
 
