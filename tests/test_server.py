@@ -1,4 +1,5 @@
 import io
+import struct
 import time
 import wave
 
@@ -136,6 +137,39 @@ def test_ws_binary_audio_before_start_is_protocol_error(client):
         send_start(ws)
         ws.send_json({"type": "stop"})
         assert ws.receive_json()["type"] == "result"
+
+
+def test_ws_start_while_recording_is_protocol_error(client):
+    with client.websocket_connect("/ws/dictate") as ws:
+        send_start(ws)
+        send_start(ws, profile="code")
+        assert ws.receive_json()["code"] == "protocol"
+
+        ws.send_json({"type": "stop"})
+        assert ws.receive_json()["type"] == "result"
+
+
+def test_ws_abort_in_idle_is_protocol_error(client):
+    with client.websocket_connect("/ws/dictate") as ws:
+        ws.send_json({"type": "abort"})
+        assert ws.receive_json()["code"] == "protocol"
+
+        send_start(ws)
+        ws.send_json({"type": "stop"})
+        assert ws.receive_json()["type"] == "result"
+
+
+def test_ws_bypass_llm_true_skips_llm(cfg):
+    client, _, llm = build_client(cfg)
+    with client.websocket_connect("/ws/dictate") as ws:
+        send_start(ws, bypass_llm=True)
+        ws.send_bytes(make_silence(0.5))
+        ws.send_json({"type": "stop"})
+        d = ws.receive_json()
+
+    assert d["type"] == "result"
+    assert d["fast_path"] is True
+    assert llm.calls == []
 
 
 def test_ws_payload_too_large(client):
@@ -297,6 +331,31 @@ def test_rest_non_pcm_without_ffmpeg_503(client, monkeypatch):
         files={"file": ("d.mp3", b"compressed", "audio/mpeg")},
     )
     assert r.status_code == 503
+
+
+def test_rest_float_wav_falls_back_to_ffmpeg(client, monkeypatch):
+    fmt = struct.pack("<HHIIHH", 3, 1, 16000, 64000, 4, 32)
+    payload_data = b"\x00\x00\x00\x00" * 16
+    fmt_chunk = b"fmt " + struct.pack("<I", len(fmt)) + fmt
+    data_chunk = b"data" + struct.pack("<I", len(payload_data)) + payload_data
+    body = b"WAVE" + fmt_chunk + data_chunk
+    wav_bytes = b"RIFF" + struct.pack("<I", len(body)) + body
+
+    seen = {}
+    monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/ffmpeg")
+
+    def fake_ffmpeg(data: bytes) -> bytes:
+        seen["data"] = data
+        return make_silence(0.2)
+
+    monkeypatch.setattr("dictation_server.server.ffmpeg_to_pcm", fake_ffmpeg)
+    r = client.post(
+        "/v1/audio/transcriptions",
+        files={"file": ("d.wav", wav_bytes, "audio/wav")},
+    )
+
+    assert r.status_code == 200
+    assert seen["data"] == wav_bytes
 
 
 def test_rest_non_decodable_audio_422(client, monkeypatch):

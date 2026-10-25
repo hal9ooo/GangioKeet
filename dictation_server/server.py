@@ -3,6 +3,7 @@ import io
 import json
 import logging
 import shutil
+import struct
 import subprocess
 import wave
 from typing import Literal
@@ -88,12 +89,24 @@ def _looks_like_wav(filename: str | None, content_type: str | None) -> bool:
     return media_type in _WAV_CONTENT_TYPES
 
 
+def _has_riff_wave_header(data: bytes) -> bool:
+    return (
+        len(data) >= 12
+        and data[0:4] == b"RIFF"
+        and data[8:12] == b"WAVE"
+    )
+
+
 def _wav_to_pcm(data: bytes) -> bytes | None:
     """Return PCM frames for compliant WAV input, else None.
 
-    Compliant means PCM16, mono, 16 kHz. Other WAV variants are handed to
-    ffmpeg, while structurally invalid WAV data is rejected immediately.
+    Compliant means PCM16, mono, 16 kHz. A valid RIFF/WAVE container with
+    another encoding is handed to ffmpeg; bytes without a RIFF/WAVE header
+    are rejected immediately as malformed.
     """
+    if not _has_riff_wave_header(data):
+        raise AudioDecodeError("invalid WAV payload")
+
     try:
         with wave.open(io.BytesIO(data), "rb") as wav:
             if (
@@ -103,8 +116,10 @@ def _wav_to_pcm(data: bytes) -> bytes | None:
             ) != (1, 2, 16000):
                 return None
             return wav.readframes(wav.getnframes())
-    except (wave.Error, EOFError) as exc:
-        raise AudioDecodeError("invalid WAV payload") from exc
+    except (wave.Error, EOFError, struct.error):
+        # The container is WAV but the stdlib cannot parse this encoding
+        # (float32, 24-bit, WAVE_FORMAT_EXTENSIBLE, ...). ffmpeg may.
+        return None
 
 
 def _decode_upload(
