@@ -1,28 +1,27 @@
 # Security Policy
 
-## Versioni supportate
+## Supported versions
 
-Il progetto è in sviluppo pre-1.0. Le correzioni di sicurezza vengono applicate
-al branch `main`.
+The project is pre-1.0. Security fixes are applied to the `main` branch.
 
-## Segnalare una vulnerabilità
+## Reporting a vulnerability
 
-Non aprire una issue pubblica. Usa la segnalazione privata di GitHub
-(«Report a vulnerability» nella scheda **Security**) quando disponibile, oppure
-contatta il maintainer tramite GitHub.
+Do not open a public issue. Use GitHub's private vulnerability reporting
+("Report a vulnerability" in the **Security** tab) when available, or contact
+the maintainer through GitHub.
 
-Includi:
+Include:
 
-- versione o commit interessato;
-- piattaforma (macOS o Windows);
-- passi di riproduzione;
-- impatto atteso.
+- affected version or commit;
+- platform (macOS or Windows);
+- reproduction steps;
+- expected impact.
 
-Non includere chiavi, token, audio reale o trascrizioni personali. Se serve un
-campione audio, usa una fixture sintetica.
+Do not include keys, tokens, real audio, or personal transcripts. If you need
+an audio sample, use a synthetic fixture.
 
-## Ambito
+## Scope
 
-Sono coperti il server macOS (FastAPI, WebSocket, REST), il client Windows
-(WPF) e gli script di deploy. Modelli MLX/Hugging Face e dipendenze di terze
-parti vanno segnalati ai rispettivi progetti.
+Covered: the macOS server (FastAPI, WebSocket, REST), the Windows client (WPF),
+and the deployment scripts. MLX/Hugging Face models and third-party
+dependencies should be reported to their respective projects.

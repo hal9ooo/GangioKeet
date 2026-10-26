@@ -1,136 +1,137 @@
-# GangioKeet — Client Windows
+# GangioKeet — Windows Client
 
-Client di dettatura vocale per Windows che invia audio al server GangioKeet su Mac
-(Apple Silicon) e incolla il testo nell'app in primo piano. Push-to-talk con Caps Lock
-(come Wispr Flow) o F8,
-fallback REST trasparente, paste protetto dalla clipboard e recupero esplicito
-dell'ultima dettatura fallita.
+Windows push-to-talk dictation client. It sends audio to the GangioKeet server
+on a Mac (Apple Silicon) and pastes the text into the foreground app. Caps Lock
+push-to-talk (Wispr Flow style) or F8, transparent REST fallback,
+clipboard-preserving paste, and explicit recovery of the last failed dictation.
 
-- Target: **Windows 11** (Windows 10 non certificato).
+- Target: **Windows 11** (Windows 10 not certified).
 - Stack: C# / .NET 10, WPF, NAudio 3.3, YamlDotNet 17, Hardcodet.NotifyIcon.Wpf 2.
-- Server: WebSocket primario `ws://<MAC_IP>:8000/ws/dictate`, REST fallback
-  `POST http://<MAC_IP>:8000/v1/audio/transcriptions`. Con
-  `server.scheme: https` il client usa `wss://` e `https://`.
+- Server: primary WebSocket `ws://<MAC_IP>:8000/ws/dictate`, REST fallback
+  `POST http://<MAC_IP>:8000/v1/audio/transcriptions`. With
+  `server.scheme: https` the client uses `wss://` and `https://`.
 
-## Avvio rapido
+## Quick start
 
-1. Installa il .NET 10 SDK.
-2. Copia `client_config.example.yaml` in `%APPDATA%\GangioKeet\client_config.yaml`
-   e imposta `server.host` con l'IP del Mac. Se davanti al server c'è un
-   terminatore TLS, imposta anche `server.scheme: https`.
-3. Se il server richiede un token, imposta la variabile d'ambiente indicata da
-   `server.api_key_env` (consigliata `GANGIOKEET_API_KEY`). Il token **non** va mai
-   scritto nel file YAML.
-4. Compila e avvia:
+1. Install the .NET 10 SDK.
+2. Copy `client_config.example.yaml` to
+   `%APPDATA%\GangioKeet\client_config.yaml` and set `server.host` to the Mac's
+   IP. If the server is behind a TLS terminator, also set
+   `server.scheme: https`.
+3. If the server requires a token, set the environment variable named by
+   `server.api_key_env` (recommended: `GANGIOKEET_API_KEY`). The token must
+   **never** be written to the YAML file.
+4. Build and run:
 
 ```powershell
 dotnet build client-windows/GangioKeet.Client.sln
 dotnet run --project client-windows/src/GangioKeet.Client
 ```
 
-L'app parte in tray (nessuna finestra principale). **Tieni premuto Caps Lock** per
-dettare e rilascia per trascrivere; doppio tap per hands-free.
+The app starts in the tray (no main window). **Hold Caps Lock** to dictate and
+release to transcribe; double-tap for hands-free.
 
-## Configurazione
+## Configuration
 
-Schema strict: chiavi sconosciute sono rifiutate. Il file vive in
-`%APPDATA%\GangioKeet\client_config.yaml`; si può indicare un percorso esplicito
-con `--config`. Tutti i default sono in `client_config.example.yaml`.
+Strict schema: unknown keys are rejected. The file lives in
+`%APPDATA%\GangioKeet\client_config.yaml`; an explicit path can be passed with
+`--config`. All defaults are in `client_config.example.yaml`.
 
-| Sezione | Voci principali |
+| Section | Main entries |
 |---|---|
-| `server` | host, scheme (`http` default / `https`), port, transport (`websocket`/`rest`), timeout connect/response/upload, rest_fallback, health interval, api_key_env |
+| `server` | host, scheme (`http` default / `https`), port, transport (`websocket`/`rest`), connect/response/upload timeouts, rest_fallback, health interval, api_key_env |
 | `hotkey` | mode (`push_to_talk`/`toggle`), key (`capslock` default, f1–f24, mouse_x1), abort_key (escape), double_tap_max_ms 250, double_tap_gap_ms 350 |
-| `audio` | input_device (ID endpoint WASAPI o `null` per il default), sample_rate 16000, channels 1, chunk_duration_ms 100, ready_timeout_seconds 3 |
+| `audio` | input_device (WASAPI endpoint ID or `null` for the default), sample_rate 16000, channels 1, chunk_duration_ms 100, ready_timeout_seconds 3 |
 | `paste` | default_combo `ctrl+v`, terminal_combo `ctrl+shift+v`, terminal_apps, clipboard_restore_delay_ms 200, refocus_before_paste |
 | `ui` | show_floating_pill, pill_position (`center_bottom` default / `cursor`), sound_feedback |
-| `context_profiles` | mappe exe → profilo (`code`, `terminal`, `chat`, `email`, `document`) |
-| `browser_profiles` | browser e regole per titolo, priorità email → chat → code → document |
+| `context_profiles` | exe → profile mappings (`code`, `terminal`, `chat`, `email`, `document`) |
+| `browser_profiles` | browsers and page-title rules, priority email → chat → code → document |
 | `recovery` | retention_seconds 600 |
 
-## Come funziona
+## How it works
 
-1. **Hotkey Caps Lock** (PTT, stile Wispr Flow): tieni premuto e parla, rilascia per
-   trascrivere. Doppio tap rapido entra in hands-free; il tap successivo ferma. Un
-   tap singolo senza secondo tap **non produce nulla** (nessuna dettatura vuota).
-   Caps Lock resta disabilitato mentre l'app è aperta: non attiva il maiuscolo. F8
-   resta selezionabile con `hotkey.key: "f8"`. In modalità `toggle` il primo keydown
-   avvia e il secondo ferma (i keyup non fermano).
-2. **Audio**: WASAPI shared, conversione/resampling a PCM16 LE mono 16 kHz,
-   chunk da 100 ms (3200 byte). L'audio è tenuto in RAM in un buffer bounded
-   (massimo 67108864 byte per dettatura, ~70 minuti a 16 kHz mono).
-3. **Trascrizione**: WebSocket con un solo sender e un solo receiver. Se
-   l'upgrade WS non è disponibile (404/405/426/200 senza upgrade) e nessun byte
-   è stato ancora inviato, la registrazione continua in locale e allo stop viene
-   inviata via REST. Dopo l'invio di `start`/audio non c'è fallback automatico:
-   si usa il recupero esplicito.
-4. **Paste**: il testo viene messo in clipboard, si ricontrolla la finestra target,
-   si invia Ctrl+V (o Ctrl+Shift+V nei terminali configurati) e si ripristina la
-   clipboard solo se nessuno ha copiato altro nel frattempo. Se il paste fallisce,
-   il testo resta recuperabile.
-5. **Recupero**: un solo slot in RAM, scadenza 600 s. Dalla tray: «Riprova ultima
-   dettatura» (sempre REST, nuova richiesta), «Copia ultimo testo», «Scarta recupero».
+1. **Caps Lock hotkey** (PTT, Wispr Flow style): hold and speak, release to
+   transcribe. A quick double-tap enters hands-free; the next tap stops it. A
+   single tap without a second tap **does nothing** (no empty dictation).
+   Caps Lock stays disabled while the app is running: it does not turn on
+   uppercase. F8 remains selectable with `hotkey.key: "f8"`. In `toggle` mode,
+   the first keydown starts and the second stops (keyups do not stop).
+2. **Audio**: WASAPI shared, conversion/resampling to PCM16 LE mono 16 kHz,
+   100 ms chunks (3200 bytes). Audio is held in RAM in a bounded buffer
+   (maximum 67,108,864 bytes per dictation, ~70 minutes at 16 kHz mono).
+3. **Transcription**: WebSocket with one sender and one receiver. If the WS
+   upgrade is unavailable (404/405/426/200 without upgrade) and no bytes have
+   been sent yet, recording continues locally and is sent via REST on stop.
+   After `start`/audio has been sent there is no automatic fallback: use the
+   explicit recovery flow.
+4. **Paste**: the text is put on the clipboard, the target window is checked
+   again, Ctrl+V (or Ctrl+Shift+V in configured terminals) is sent, and the
+   clipboard is restored only if nobody copied something else in the meantime.
+   If paste fails, the text remains recoverable.
+5. **Recovery**: one slot in RAM, 600 s expiry. From the tray: retry the last
+   dictation (always REST, new request), copy the last text, or discard the
+   recovery.
 
-## Limiti e sicurezza
+## Limits and security
 
-- **Nessuno storico su disco**: audio e trascrizioni vivono solo in RAM. I log
-  giornalieri in `%LOCALAPPDATA%\GangioKeet\logs\` contengono solo codici e
-  messaggi diagnostici, mai audio, testo dettato, titoli di finestra o chiavi.
-- **TLS opzionale**: `server.scheme: https` usa `https://` e `wss://`. Il server
-  non termina TLS: serve un reverse proxy o un tunnel. Con `http` (default)
-  token, audio e titoli delle finestre viaggiano in chiaro.
-- **Nessun invio automatico**: il client non preme mai Enter e non invia mai.
-- **UIPI**: se la finestra target è elevata (o lo stato non è verificabile),
-  l'iniezione è bloccata e il testo non viene incollato. Il paste non tenta
-  elevazioni o bypass.
-- **Clipboard**: vengono preservati testo e immagine DIB. Non sono preservati
-  HTML/RTF/file. Se l'app target impiega più del delay configurato a leggere la
-  clipboard, il testo può andare perso (nessun delayed-render).
-- **Nessun Ctrl+C automatico**: la selezione non viene copiata né letta.
-- **REST fallback ≠ modalità offline**: l'host irraggiungibile produce un errore
-  immediato, non una promessa di trascrizione differita.
+- **No on-disk history**: audio and transcripts live only in RAM. Daily logs in
+  `%LOCALAPPDATA%\GangioKeet\logs\` contain only codes and diagnostic messages,
+  never audio, dictated text, window titles, or keys.
+- **Optional TLS**: `server.scheme: https` uses `https://` and `wss://`. The
+  server does not terminate TLS: use a reverse proxy or a tunnel. With `http`
+  (default), tokens, audio, and window titles travel in clear text.
+- **No automatic send**: the client never presses Enter and never sends.
+- **UIPI**: if the target window is elevated (or its state cannot be verified),
+  injection is blocked and the text is not pasted. Paste never attempts
+  elevation or bypasses.
+- **Clipboard**: text and DIB images are preserved. HTML/RTF/files are not
+  preserved. If the target app takes longer than the configured delay to read
+  the clipboard, the text may be lost (no delayed rendering).
+- **No automatic Ctrl+C**: the selection is never copied or read.
+- **REST fallback ≠ offline mode**: an unreachable host produces an immediate
+  error, not a promise of deferred transcription.
 
-## Test
+## Tests
 
-Suite logica (fakes, nessun hardware):
+Logical suite (fakes, no hardware):
 
 ```powershell
 dotnet test client-windows/GangioKeet.Client.sln --filter "Category!=Integration"
 ```
 
-Test gated, da eseguire solo quando le risorse sono disponibili:
+Gated tests, run only when the resources are available:
 
-| Variabile | Copre |
+| Variable | Covers |
 |---|---|
-| `RUN_DESKTOP_TESTS=1` | clipboard reale, finestra in primo piano, audio device, hook, autostart |
-| `RUN_REAL_SERVER=1` | roundtrip /health, WS PCM, REST PCM, abort contro il Mac (`GANGIOKEET_HOST`, default `192.168.1.167:8000`) |
+| `RUN_DESKTOP_TESTS=1` | real clipboard, foreground window, audio device, hooks, autostart |
+| `RUN_REAL_SERVER=1` | /health roundtrip, WS PCM, REST PCM, abort against the Mac (`GANGIOKEET_HOST`, default `<MAC_IP>:8000`) |
 
 ```powershell
 $env:RUN_DESKTOP_TESTS="1"
 dotnet test client-windows/GangioKeet.Client.sln --filter "Category=Integration"
 ```
 
-## Microfono
+## Microphone
 
-- La tray ha un sottomenu **Microfono**: «Predefinito di Windows» oppure uno dei
-  dispositivi di input attivi. La scelta vale dalla dettatura successiva, viene
-  salvata in `client_config.yaml` e sopravvive al riavvio.
-- `audio.input_device: null` usa il microfono predefinito di Windows, risolto a
-  ogni registrazione.
-- Un ID esplicito che non esiste è un errore: nessun cambio mic silenzioso.
-- Se Windows nega l'accesso al microfono, il client segnala
-  `microphone_permission_denied` e la tray offre «Apri impostazioni microfono»
+- The tray has a **Microphone** submenu: "Windows Default" or one of the active
+  input devices. The choice applies from the next dictation, is saved to
+  `client_config.yaml`, and survives a restart.
+- `audio.input_device: null` uses the Windows default microphone, resolved on
+  every recording.
+- An explicit ID that does not exist is an error: no silent microphone switch.
+- If Windows denies microphone access, the client reports
+  `microphone_permission_denied` and the tray offers "Open microphone settings"
   (`ms-settings:privacy-microphone`).
-- Dispositivo scollegato a metà: la registrazione si interrompe, l'audio già
-  catturato resta recuperabile, nessun passaggio automatico ad altro mic.
+- Device disconnected mid-recording: recording stops, already-captured audio
+  remains recoverable, and there is no automatic switch to another mic.
 
 ## Pill
 
-- Compatta (136×28), non attivabile, in basso al centro del monitor sotto il
-  puntatore, 24 px sopra la work area (taskbar inclusa nel calcolo).
-- `ui.pill_position: "cursor"` la fa apparire vicino al puntatore.
-- Su monitor con DPI diversi o origini negative la posizione è clampata alla work
-  area del monitor corrente.
+- Compact (136×28), non-activatable, bottom center of the monitor under the
+  pointer, 24 px above the work area (taskbar included in the calculation).
+- `ui.pill_position: "cursor"` shows it near the pointer.
+- On monitors with different DPI or negative origins, the position is clamped
+  to the current monitor's work area.
 
 ## Publishing
 
@@ -139,34 +140,35 @@ dotnet publish client-windows/src/GangioKeet.Client/GangioKeet.Client.csproj `
   -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
 ```
 
-L'output contiene `GangioKeet.Client.exe` più gli asset nativi WPF/NAudio
+The output contains `GangioKeet.Client.exe` plus native WPF/NAudio assets
 (`D3DCompiler_47_cor3.dll`, `PenImc_cor3.dll`, `PresentationNative_cor3.dll`,
-`vcruntime140_cor3.dll`, `wpfgfx_cor3.dll`): non è un singolo file autosufficiente.
+`vcruntime140_cor3.dll`, `wpfgfx_cor3.dll`): it is not a self-contained single
+file.
 
-## Struttura
+## Structure
 
 ```
 client-windows/
   src/GangioKeet.Client/
-    Audio/            cattura WASAPI, chunker, buffer, livelli
-    Configuration/    schema YAML strict, credenziale da ambiente
-    Context/          profili, finestra in primo piano, UIPI
-    Controller/       orchestrazione dettatura (generation ID, recovery)
-    Hotkey/           gesture PTT/double-tap/toggle, hook globali, soppressione
-    Paste/            snapshot clipboard, SendInput, transazione paste
+    Audio/            WASAPI capture, chunker, buffer, levels
+    Configuration/    strict YAML schema, credential from environment
+    Context/          profiles, foreground window, UIPI
+    Controller/       dictation orchestration (generation ID, recovery)
+    Hotkey/           PTT/double-tap/toggle gestures, global hooks, suppression
+    Paste/            clipboard snapshot, SendInput, paste transaction
     Platform/         single-instance, autostart, logger, reload, privacy
-    Protocol/         DTO wire, trasporto WS, sessione, REST, health
-    Recovery/         slot unico con scadenza
-    Ui/               pill non attivabile, suoni sintetici, tray
+    Protocol/         wire DTOs, WS transport, session, REST, health
+    Recovery/         single slot with expiry
+    Ui/               non-activatable pill, synthetic sounds, tray
   tests/GangioKeet.Client.Tests/
 ```
 
-## Riferimenti
+## References
 
-Il contratto wire e i profili sono descritti in questo README e nel codice
-`Protocol/`; le note di progetto interne non sono incluse nel repository
-pubblico.
+The wire contract and profiles are described in this README and in the
+`Protocol/` code; internal project notes are not included in the public
+repository.
 
-## Licenza
+## License
 
-MIT — vedi [../LICENSE](../LICENSE).
+MIT — see [../LICENSE](../LICENSE).
