@@ -102,6 +102,10 @@ public static class ConfigLoader
     private static void ValidateServer(ServerConfig server, string? sourcePath)
     {
         RequireNonEmptyString(server.Host, "server.host", sourcePath);
+        if (server.Scheme is not ("http" or "https"))
+        {
+            Fail(sourcePath, "server.scheme must be 'http' or 'https'");
+        }
         if (server.Port is < 1 or > 65535)
         {
             Fail(sourcePath, "server.port must be between 1 and 65535");

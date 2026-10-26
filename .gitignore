@@ -15,3 +15,14 @@ tests/fixtures/stt_eval/manifest.local.jsonl
 reports/stt_eval/
 .stt-eval-venv/
 .venv-stt-eval/
+
+# Local secrets and private overrides
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.p12
+*.pfx
+client_config.yaml
+*.log

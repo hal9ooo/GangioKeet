@@ -1,0 +1,19 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fake credentials used by tests and examples"
+regexes = [
+  '''sk-sentinel-secret-do-not-print''',
+  '''test-token-123''',
+  '''secret-token''',
+  '''shared-secret-token''',
+  '''token-that-must-never-be-logged-4f8a''',
+  '''expected-secret-token''',
+  '''reliability-secret-token''',
+  '''expected-test-token''',
+  '''wrong-secret-token''',
+  '''wrong-token''',
+  '''s3cr3t-&\|;token''',
+  '''SECRET-STDERR-''',
+]

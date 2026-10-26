@@ -142,7 +142,7 @@ public partial class App : Application
         _healthHttp = new HttpClient();
         _health = new HealthMonitor(
             _healthHttp,
-            new Uri($"http://{config.Server.Host}:{config.Server.Port}"),
+            ServerEndpoint.HttpBase(config.Server),
             ApiCredential.Resolve(config.Server.ApiKeyEnv, Environment.GetEnvironmentVariable),
             time,
             TimeSpan.FromSeconds(config.Server.HealthCheckIntervalSeconds));

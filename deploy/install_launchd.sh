@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SOURCE_PLIST="$SCRIPT_DIR/com.gangio.mlx-dictation.plist"
 LABEL="com.gangio.mlx-dictation"
 LAUNCH_AGENTS_DIR="$HOME/Library/LaunchAgents"
@@ -18,9 +19,15 @@ if [ -z "$UV_PATH" ]; then
 fi
 
 ESCAPED_UV_PATH="$(printf '%s' "$UV_PATH" | sed 's/[&|\\]/\\&/g')"
+ESCAPED_HOME="$(printf '%s' "$HOME" | sed 's/[&|\\]/\\&/g')"
+ESCAPED_PROJECT_DIR="$(printf '%s' "$PROJECT_DIR" | sed 's/[&|\\]/\\&/g')"
 
 mkdir -p "$LAUNCH_AGENTS_DIR" "$LOG_DIR"
-sed "s|__UV_PATH__|$ESCAPED_UV_PATH|g" "$SOURCE_PLIST" > "$TARGET_PLIST"
+sed \
+    -e "s|__UV_PATH__|$ESCAPED_UV_PATH|g" \
+    -e "s|__HOME__|$ESCAPED_HOME|g" \
+    -e "s|__PROJECT_DIR__|$ESCAPED_PROJECT_DIR|g" \
+    "$SOURCE_PLIST" > "$TARGET_PLIST"
 chmod 0600 "$TARGET_PLIST"
 
 # A shell environment is not inherited by launchd. When the caller exported

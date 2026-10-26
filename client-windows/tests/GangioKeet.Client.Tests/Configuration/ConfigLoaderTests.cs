@@ -33,6 +33,7 @@ public sealed class ConfigLoaderTests
         ClientConfig config = ConfigLoader.Load(FindExampleYaml(), Path.GetTempPath());
 
         Assert.Equal("192.168.1.167", config.Server.Host);
+        Assert.Equal("http", config.Server.Scheme);
         Assert.Equal(8000, config.Server.Port);
         Assert.Equal("websocket", config.Server.Transport);
         Assert.Equal(2.0, config.Server.ConnectTimeoutSeconds);
@@ -180,6 +181,7 @@ public sealed class ConfigLoaderTests
         ClientConfig config = ConfigLoader.Load(null, appDataBase);
 
         Assert.Equal("192.168.1.167", config.Server.Host);
+        Assert.Equal("http", config.Server.Scheme);
         Assert.Equal(8000, config.Server.Port);
         Assert.Equal(2.0, config.Server.ConnectTimeoutSeconds);
         Assert.Equal(15.0, config.Server.ResponseTimeoutSeconds);
@@ -239,5 +241,49 @@ public sealed class ConfigLoaderTests
         {
             Hotkey = new HotkeyConfig { Key = "f8", AbortKey = "capslock" },
         }));
+    }
+
+    [Fact]
+    public void HttpsScheme_IsAccepted()
+    {
+        string path = WriteTempYaml(
+            """
+            server:
+              scheme: "https"
+              host: "dictation.example"
+              port: 8443
+            """);
+        try
+        {
+            ClientConfig config = ConfigLoader.Load(path);
+
+            Assert.Equal("https", config.Server.Scheme);
+            Assert.Equal("dictation.example", config.Server.Host);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void UnknownScheme_IsRejected()
+    {
+        string path = WriteTempYaml(
+            """
+            server:
+              scheme: "ftp"
+            """);
+        try
+        {
+            var ex = Record.Exception(() => ConfigLoader.Load(path));
+
+            Assert.IsType<ConfigException>(ex);
+            Assert.Contains("server.scheme", ex!.Message);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
     }
 }

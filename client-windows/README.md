@@ -9,13 +9,15 @@ dell'ultima dettatura fallita.
 - Target: **Windows 11** (Windows 10 non certificato).
 - Stack: C# / .NET 10, WPF, NAudio 3.3, YamlDotNet 17, Hardcodet.NotifyIcon.Wpf 2.
 - Server: WebSocket primario `ws://<MAC_IP>:8000/ws/dictate`, REST fallback
-  `POST http://<MAC_IP>:8000/v1/audio/transcriptions`.
+  `POST http://<MAC_IP>:8000/v1/audio/transcriptions`. Con
+  `server.scheme: https` il client usa `wss://` e `https://`.
 
 ## Avvio rapido
 
 1. Installa il .NET 10 SDK.
 2. Copia `client_config.example.yaml` in `%APPDATA%\GangioKeet\client_config.yaml`
-   e imposta `server.host` con l'IP del Mac.
+   e imposta `server.host` con l'IP del Mac. Se davanti al server c'è un
+   terminatore TLS, imposta anche `server.scheme: https`.
 3. Se il server richiede un token, imposta la variabile d'ambiente indicata da
    `server.api_key_env` (consigliata `GANGIOKEET_API_KEY`). Il token **non** va mai
    scritto nel file YAML.
@@ -37,7 +39,7 @@ con `--config`. Tutti i default sono in `client_config.example.yaml`.
 
 | Sezione | Voci principali |
 |---|---|
-| `server` | host, port, transport (`websocket`/`rest`), timeout connect/response/upload, rest_fallback, health interval, api_key_env |
+| `server` | host, scheme (`http` default / `https`), port, transport (`websocket`/`rest`), timeout connect/response/upload, rest_fallback, health interval, api_key_env |
 | `hotkey` | mode (`push_to_talk`/`toggle`), key (`capslock` default, f1–f24, mouse_x1), abort_key (escape), double_tap_max_ms 250, double_tap_gap_ms 350 |
 | `audio` | input_device (ID endpoint WASAPI o `null` per il default), sample_rate 16000, channels 1, chunk_duration_ms 100, ready_timeout_seconds 3 |
 | `paste` | default_combo `ctrl+v`, terminal_combo `ctrl+shift+v`, terminal_apps, clipboard_restore_delay_ms 200, refocus_before_paste |
@@ -74,6 +76,9 @@ con `--config`. Tutti i default sono in `client_config.example.yaml`.
 - **Nessuno storico su disco**: audio e trascrizioni vivono solo in RAM. I log
   giornalieri in `%LOCALAPPDATA%\GangioKeet\logs\` contengono solo codici e
   messaggi diagnostici, mai audio, testo dettato, titoli di finestra o chiavi.
+- **TLS opzionale**: `server.scheme: https` usa `https://` e `wss://`. Il server
+  non termina TLS: serve un reverse proxy o un tunnel. Con `http` (default)
+  token, audio e titoli delle finestre viaggiano in chiaro.
 - **Nessun invio automatico**: il client non preme mai Enter e non invia mai.
 - **UIPI**: se la finestra target è elevata (o lo stato non è verificabile),
   l'iniezione è bloccata e il testo non viene incollato. Il paste non tenta
@@ -158,6 +163,10 @@ client-windows/
 
 ## Riferimenti
 
-- Blueprint: `docs/superpowers/specs/windows_client_blueprint.md`
-- Piano: `docs/superpowers/plans/2026-10-26-windows-dictation-client.md`
-- Report di accettazione: `docs/superpowers/reports/2026-10-26-windows-client-acceptance.md`
+Il contratto wire e i profili sono descritti in questo README e nel codice
+`Protocol/`; le note di progetto interne non sono incluse nel repository
+pubblico.
+
+## Licenza
+
+MIT — vedi [../LICENSE](../LICENSE).

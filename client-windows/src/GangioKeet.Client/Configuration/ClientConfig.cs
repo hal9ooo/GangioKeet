@@ -34,6 +34,9 @@ public sealed class ServerConfig
     [YamlMember(Alias = "host")]
     public string Host { get; set; } = "192.168.1.167";
 
+    [YamlMember(Alias = "scheme")]
+    public string Scheme { get; set; } = "http";
+
     [YamlMember(Alias = "port")]
     public int Port { get; set; } = 8000;
 

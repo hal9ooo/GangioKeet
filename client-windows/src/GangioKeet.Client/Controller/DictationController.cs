@@ -206,7 +206,7 @@ public sealed class DictationController : IAsyncDisposable
         {
             using HttpClient http = new();
             RestDictationClient rest = new(http, _time);
-            Uri baseUri = new($"http://{_config.Server.Host}:{_config.Server.Port}");
+            Uri baseUri = ServerEndpoint.HttpBase(_config.Server);
 
             DictationOutcome outcome = await rest.TranscribeAsync(
                 baseUri,
@@ -297,7 +297,7 @@ public sealed class DictationController : IAsyncDisposable
             session = _sessionFactory();
             _session = session;
 
-            Uri uri = new($"ws://{_config.Server.Host}:{_config.Server.Port}/ws/dictate");
+            Uri uri = ServerEndpoint.WebSocket(_config.Server);
             string? token = ApiCredential.Resolve(_config.Server.ApiKeyEnv, Environment.GetEnvironmentVariable);
 
             StartMessage start = new(

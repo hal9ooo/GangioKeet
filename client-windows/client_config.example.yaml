@@ -6,6 +6,7 @@
 
 server:
   host: "192.168.1.167"               # IP del Mac (verificato raggiungibile: /health OK)
+  scheme: "http"                      # http | https; https usa anche wss per il WebSocket
   port: 8000
   transport: "websocket"              # websocket | rest
   connect_timeout_seconds: 2.0        # guardrail 3.6: capire subito se il Mac è raggiungibile

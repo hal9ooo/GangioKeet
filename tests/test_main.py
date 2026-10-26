@@ -395,7 +395,7 @@ def test_launchd_plist_template():
         "-m",
         "dictation_server.main",
     ]
-    assert plist["WorkingDirectory"] == "/Users/gangio75/GangioKeet"
+    assert plist["WorkingDirectory"] == "__PROJECT_DIR__"
     assert plist["EnvironmentVariables"]["PATH"].split(":") == [
         "/opt/homebrew/bin",
         "/usr/local/bin",
@@ -405,11 +405,12 @@ def test_launchd_plist_template():
         "/sbin",
     ]
     assert plist["StandardOutPath"].startswith(
-        "/Users/gangio75/Library/Logs/mlx-dictation/"
+        "__HOME__/Library/Logs/mlx-dictation/"
     )
     assert plist["StandardErrPath"].startswith(
-        "/Users/gangio75/Library/Logs/mlx-dictation/"
+        "__HOME__/Library/Logs/mlx-dictation/"
     )
+    assert "/Users/" not in TEMPLATE.read_text()
     assert "GANGIOKEET_API_KEY" not in TEMPLATE.read_text()
     assert "api_key" not in plist["EnvironmentVariables"]
 
@@ -421,7 +422,11 @@ def test_install_launchd_script_is_valid_and_idempotent():
 
     text = script.read_text()
     assert "command -v uv" in text
-    assert 'sed "s|__UV_PATH__|$ESCAPED_UV_PATH|g"' in text
+    assert "$ESCAPED_UV_PATH" in text
+    assert "$ESCAPED_HOME" in text
+    assert "$ESCAPED_PROJECT_DIR" in text
+    assert "__HOME__" in text
+    assert "__PROJECT_DIR__" in text
     assert "bootout" in text
     assert "unload" in text
     assert "bootstrap" in text
@@ -489,6 +494,9 @@ def test_installer_embeds_api_key_only_in_private_local_plist(tmp_path):
     )
     assert plist["ProgramArguments"][0] == str(bin_dir / "uv")
     assert stat.S_IMODE(target.stat().st_mode) == 0o600
+    rendered = target.read_text()
+    assert "__HOME__" not in rendered
+    assert "__PROJECT_DIR__" not in rendered
 
     log = launchctl_log.read_text()
     assert "bootout" in log

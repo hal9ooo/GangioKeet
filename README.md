@@ -144,9 +144,11 @@ tail -f ~/Library/Logs/mlx-dictation/stdout.log
 tail -f ~/Library/Logs/mlx-dictation/stderr.log
 ```
 
-Il template usa `WorkingDirectory=/Users/gangio75/GangioKeet` e un `PATH` che
-include `/opt/homebrew/bin` e `/usr/local/bin`, così `ffmpeg` è visibile anche
-sotto launchd. Se il progetto viene spostato, aggiornare il plist.
+Il template usa `WorkingDirectory=__PROJECT_DIR__` e log in
+`__HOME__/Library/Logs/mlx-dictation/`; `install_launchd.sh` sostituisce i
+placeholder con la root del checkout e con `$HOME`. Il `PATH` include
+`/opt/homebrew/bin` e `/usr/local/bin`, così `ffmpeg` è visibile anche sotto
+launchd. Se il progetto viene spostato, basta rilanciare l'installer.
 
 ## Contratto WebSocket
 
@@ -496,8 +498,8 @@ della metrica.
 L'accettazione locale dell'affidabilità è **PASS per il contratto e i test di
 breve durata**: suite default `387 passed, 7 skipped`, integrazione con modelli
 reali `7 passed`. Lo **smoke lungo con modelli caldi non è stato eseguito**.
-Il report completo, inclusi blocker e procedura di rollback, è in
-[`docs/superpowers/reports/2026-10-26-mac-server-acceptance.md`](docs/superpowers/reports/2026-10-26-mac-server-acceptance.md).
+Il report completo, inclusi blocker e procedura di rollback, è mantenuto
+internamente e non è incluso nel repository pubblico.
 Deploy e smoke Windows **non sono stati eseguiti**.
 
 ## Benchmark pubblico italiano (STT + cleaner)
@@ -510,8 +512,8 @@ autocorrezioni, silenzi o il dominio reale. Sette clip su 30 contengono
 incidentalmente date o misure; la dettatura numerica/tecnica reale resta da
 testare.
 
-Report completo:
-[`docs/superpowers/reports/2026-10-26-public-italian-stt-benchmark.md`](docs/superpowers/reports/2026-10-26-public-italian-stt-benchmark.md).
+Il report completo è mantenuto internamente e non è incluso nel repository
+pubblico.
 
 ### Setup isolato
 
@@ -596,6 +598,9 @@ solo su questo corpus.
 - Il server è pensato per la rete locale: l'autenticazione Bearer è opzionale
   e, se attiva, il token viaggia in chiaro su HTTP. Non implementa TLS, rate
   limiting o multi-tenancy; usare una rete fidata o un reverse proxy TLS.
+- Il client Windows supporta `server.scheme: https` per usare `https://` e
+  `wss://` dietro un terminatore TLS (reverse proxy o tunnel). Con `http`
+  (default), token, audio e titoli delle finestre viaggiano in chiaro.
 - Un solo processo e un solo lock Metal: le richieste concorrenti vengono
   serializzate da uno scheduler FIFO a worker singolo. La coda e il budget
   audio in byte sono condivisi fra WebSocket e REST; `limits` e `timeouts`
@@ -615,3 +620,8 @@ solo su questo corpus.
   `result` dopo `stop` (o nessun risultato dopo `abort`).
 - I target di latenza sono gate sperimentali e dipendono da chip, RAM,
   modello e durata della dettatura; vedere la sezione misurata.
+
+## Licenza
+
+MIT — vedi [LICENSE](LICENSE). Le trascrizioni FLEURS incluse nel manifest
+restano sotto CC-BY-4.0; vedi [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

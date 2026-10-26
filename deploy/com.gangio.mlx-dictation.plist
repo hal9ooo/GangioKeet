@@ -13,7 +13,7 @@
         <string>dictation_server.main</string>
     </array>
     <key>WorkingDirectory</key>
-    <string>/Users/gangio75/GangioKeet</string>
+    <string>__PROJECT_DIR__</string>
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
@@ -24,8 +24,8 @@
     <key>KeepAlive</key>
     <true/>
     <key>StandardOutPath</key>
-    <string>/Users/gangio75/Library/Logs/mlx-dictation/stdout.log</string>
+    <string>__HOME__/Library/Logs/mlx-dictation/stdout.log</string>
     <key>StandardErrPath</key>
-    <string>/Users/gangio75/Library/Logs/mlx-dictation/stderr.log</string>
+    <string>__HOME__/Library/Logs/mlx-dictation/stderr.log</string>
 </dict>
 </plist>
