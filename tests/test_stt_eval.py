@@ -1,7 +1,9 @@
+import hashlib
 import json
 import subprocess
 import sys
 import textwrap
+import time
 import wave
 from pathlib import Path
 
@@ -346,6 +348,21 @@ class FakeAdapter:
         return self.FINAL_OUTPUTS.get(text, text)
 
 
+class SleepyAdapter(FakeAdapter):
+    """Adapter with deterministic sleeps in load and every transcription."""
+
+    delay = 0.02
+    load_delay = 0.03
+
+    def load(self):
+        time.sleep(self.load_delay)
+        super().load()
+
+    def transcribe(self, pcm):
+        time.sleep(self.delay)
+        return super().transcribe(pcm)
+
+
 class NoFinalizerAdapter(FakeAdapter):
     def __init__(self):
         super().__init__(with_finalizer=False)
@@ -464,6 +481,55 @@ def test_runner_reports_non_deterministic_text(tmp_path):
         "uno due quattro",
         "uno due quattro rumore",
     ]
+
+
+def test_runner_measured_seconds_excludes_warmups_loading_and_io(tmp_path):
+    result, _, _ = _run_fake(
+        tmp_path, SleepyAdapter(), warmups=2, repeats=1
+    )
+
+    measured = result["measured_seconds"]
+    measured_from_samples = (
+        sum(sum(clip["latency_ms"]) for clip in result["clips"]) / 1000
+    )
+
+    assert measured == pytest.approx(measured_from_samples, abs=0.003)
+    # Three measured calls at 20 ms each; two warm-up calls per clip and the
+    # 30 ms model load must not be counted.
+    assert measured == pytest.approx(0.06, abs=0.02)
+    assert measured < 0.12
+
+
+def test_runner_records_provenance_digests_and_versions(tmp_path):
+    result, output, _ = _run_fake(tmp_path, FakeAdapter())
+
+    provenance = result["provenance"]
+    manifest = Path(result["manifest"])
+    manifest_digest = hashlib.sha256(manifest.read_bytes()).hexdigest()
+
+    assert provenance["manifest_sha256"] == manifest_digest
+    repo_commit = provenance["repo_commit"]
+    assert repo_commit == "unknown" or (
+        len(repo_commit) == 40
+        and all(character in "0123456789abcdef" for character in repo_commit)
+    )
+    assert provenance["harness_revision"] == stt_eval.HARNESS_REVISION
+    assert (
+        provenance["normalizer_revision"]
+        == stt_eval_metrics.NORMALIZER_REVISION
+    )
+    assert provenance["mlx_audio_version"] not in (None, "", "unknown")
+    assert "mlx-audio" in result["environment"]["packages"]
+
+    for clip in result["clips"]:
+        audio_digest = hashlib.sha256(
+            Path(clip["audio_path"]).read_bytes()
+        ).hexdigest()
+        assert clip["audio_sha256"] == audio_digest
+        assert provenance["audio_sha256"][clip["id"]] == audio_digest
+
+    written = json.loads(output.read_text(encoding="utf-8"))
+    assert written["provenance"] == provenance
 
 
 def test_runner_output_is_reproducible(tmp_path):

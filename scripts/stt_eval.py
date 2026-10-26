@@ -9,6 +9,7 @@ only when an adapter is loaded.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import importlib.metadata
 import json
 import math
@@ -32,9 +33,12 @@ from stt_eval_adapters import (  # noqa: E402
     create_adapter,
 )
 from stt_eval_metrics import (  # noqa: E402
+    NORMALIZER_REVISION,
     aggregate_scores,
     score_transcripts,
 )
+
+HARNESS_REVISION = "stt-eval-harness-v1"
 
 ALLOWED_CATEGORIES = (
     "it_general",
@@ -261,6 +265,36 @@ def _package_version(name: str) -> str:
         return "unknown"
 
 
+def _optional_package_version(*names: str) -> str:
+    for name in names:
+        try:
+            return importlib.metadata.version(name)
+        except importlib.metadata.PackageNotFoundError:
+            continue
+    return "not-installed"
+
+
+def _repo_commit() -> str:
+    try:
+        commit = subprocess.check_output(
+            ["git", "rev-parse", "HEAD"],
+            cwd=ROOT,
+            text=True,
+            stderr=subprocess.DEVNULL,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError):
+        return "unknown"
+    return commit or "unknown"
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def _sysctl(name: str) -> str:
     try:
         return subprocess.check_output(
@@ -282,6 +316,9 @@ def _environment() -> dict:
         "packages": {
             "mlx": _package_version("mlx"),
             "mlx-lm": _package_version("mlx-lm"),
+            "mlx-audio": _optional_package_version(
+                "mlx-audio", "mlx_audio"
+            ),
             "parakeet-mlx": _package_version("parakeet-mlx"),
         },
     }
@@ -351,6 +388,7 @@ def run_candidate(
 
     manifest = Path(manifest)
     clips = load_manifest(manifest, require_audio=require_audio)
+    manifest_sha256 = _sha256_file(manifest)
 
     if adapter_factory is None:
         adapter = create_adapter(candidate_id)
@@ -365,9 +403,10 @@ def run_candidate(
     has_finalizer = callable(finalizer)
 
     clip_results: list[dict] = []
-    measured_started = time.perf_counter()
+    measured_seconds = 0.0
 
     for clip in clips:
+        audio_sha256 = _sha256_file(clip["audio_path"])
         pcm, duration_seconds = _read_pcm(clip["audio_path"])
 
         # Warm-ups are deliberately unmeasured and never enter the report.
@@ -385,6 +424,10 @@ def run_candidate(
             raw_hypotheses.append(raw_text)
             if has_finalizer:
                 final_hypotheses.append(finalizer(raw_text, clip["profile"]))
+
+        # Measured time covers only the measured transcriptions: no model or
+        # manifest loading, no audio I/O and no warm-up calls.
+        measured_seconds += sum(latencies_ms) / 1000.0
 
         raw_hypothesis = raw_hypotheses[0]
         deterministic = all(
@@ -418,6 +461,7 @@ def run_candidate(
                 "technical_terms": clip["technical_terms"],
                 "is_silence": clip["is_silence"],
                 "audio_path": str(clip["audio_path"]),
+                "audio_sha256": audio_sha256,
                 "duration_seconds": round(duration_seconds, 3),
                 "raw_hypothesis": raw_hypothesis,
                 "final_hypothesis": (
@@ -441,7 +485,6 @@ def run_candidate(
             }
         )
 
-    measured_seconds = time.perf_counter() - measured_started
     peak_rss_mb = _peak_rss_mb()
 
     raw_per_clip = [
@@ -468,6 +511,19 @@ def run_candidate(
         "warmups": warmups,
         "repeats": repeats,
         "environment": _environment(),
+        "provenance": {
+            "repo_commit": _repo_commit(),
+            "harness_revision": HARNESS_REVISION,
+            "normalizer_revision": NORMALIZER_REVISION,
+            "mlx_audio_version": _optional_package_version(
+                "mlx-audio", "mlx_audio"
+            ),
+            "manifest_sha256": manifest_sha256,
+            "audio_sha256": {
+                clip["id"]: clip["audio_sha256"]
+                for clip in clip_results
+            },
+        },
         "load_seconds": round(load_seconds, 3),
         "measured_seconds": round(measured_seconds, 3),
         "peak_rss_mb": round(peak_rss_mb, 1),

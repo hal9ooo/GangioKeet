@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import unicodedata
 
+NORMALIZER_REVISION = "stt-eval-normalizer-v1"
+
 _APOSTROPHES = {"'", "\u2019", "\u2018", "\u02bc"}
 
 
