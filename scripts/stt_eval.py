@@ -58,6 +58,7 @@ REQUIRED_FIELDS = (
     "technical_terms",
     "is_silence",
 )
+OPTIONAL_FIELDS = ("gender", "duration_bucket")
 EXPECTED_SAMPLE_RATE = 16_000
 EXPECTED_SAMPLE_WIDTH = 2  # PCM16
 EXPECTED_CHANNELS = 1
@@ -151,6 +152,17 @@ def _validate_entry(entry, *, line: int, base: Path, require_audio: bool):
     if not isinstance(is_silence, bool):
         raise ManifestError(f"line {line}: 'is_silence' must be a boolean")
 
+    optional = {}
+    for field in OPTIONAL_FIELDS:
+        value = entry.get(field)
+        if value is not None and (
+            not isinstance(value, str) or not value.strip()
+        ):
+            raise ManifestError(
+                f"line {line}: '{field}' must be a non-empty string or null"
+            )
+        optional[field] = value
+
     if is_silence and category != "silence_noise":
         raise ManifestError(
             f"line {line}: is_silence=true requires category "
@@ -201,6 +213,7 @@ def _validate_entry(entry, *, line: int, base: Path, require_audio: bool):
         "profile": profile,
         "technical_terms": list(terms),
         "is_silence": is_silence,
+        **optional,
     }
 
 
