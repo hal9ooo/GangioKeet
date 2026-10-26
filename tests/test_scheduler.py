@@ -457,7 +457,8 @@ async def test_drain_error_is_logged_and_cleanup_is_preserved(caplog):
         )
 
     assert info.value.code == "processing_timeout"
-    assert "drain exploded" in caplog.text
+    assert "RuntimeError" in caplog.text
+    assert "drain exploded" not in caplog.text
     assert lease.closed is True
     assert admission.snapshot().sessions == 0
 

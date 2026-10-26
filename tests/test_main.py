@@ -105,6 +105,12 @@ def test_create_app_exposes_one_scheduler_from_config():
     assert scheduler.snapshot().pending == 0
 
 
+def test_create_app_starts_not_ready():
+    cfg = load_config("config.yaml")
+    app = build_app(cfg, stt=EagerFakeSTT(), llm=EagerFakeLLM())
+    assert app.state.ready is False
+
+
 @pytest.mark.asyncio
 async def test_serve_starts_scheduler_then_warm_up_then_binds_and_closes():
     cfg = load_config("config.yaml")
@@ -114,13 +120,13 @@ async def test_serve_starts_scheduler_then_warm_up_then_binds_and_closes():
     events = []
 
     async def fake_start():
-        events.append("scheduler.start")
+        events.append(("scheduler.start", app.state.ready))
 
     async def fake_close():
-        events.append("scheduler.close")
+        events.append(("scheduler.close", app.state.ready))
 
     async def fake_warm_up():
-        events.append("warm_up")
+        events.append(("warm_up", app.state.ready))
 
     pipeline.warm_up = fake_warm_up
     app.state.scheduler.start = fake_start
@@ -128,15 +134,16 @@ async def test_serve_starts_scheduler_then_warm_up_then_binds_and_closes():
 
     class FakeServer:
         async def serve(self):
-            events.append("serve")
+            events.append(("serve", app.state.ready))
 
     await serve(cfg, app, pipeline, uvicorn_server=FakeServer())
     assert events == [
-        "scheduler.start",
-        "warm_up",
-        "serve",
-        "scheduler.close",
+        ("scheduler.start", False),
+        ("warm_up", False),
+        ("serve", True),
+        ("scheduler.close", False),
     ]
+    assert app.state.ready is False
 
 
 @pytest.mark.asyncio
@@ -148,13 +155,13 @@ async def test_serve_closes_scheduler_when_serving_fails():
     events = []
 
     async def fake_start():
-        events.append("scheduler.start")
+        events.append(("scheduler.start", app.state.ready))
 
     async def fake_close():
-        events.append("scheduler.close")
+        events.append(("scheduler.close", app.state.ready))
 
     async def fake_warm_up():
-        events.append("warm_up")
+        events.append(("warm_up", app.state.ready))
 
     pipeline.warm_up = fake_warm_up
     app.state.scheduler.start = fake_start
@@ -162,18 +169,19 @@ async def test_serve_closes_scheduler_when_serving_fails():
 
     class FakeServer:
         async def serve(self):
-            events.append("serve")
+            events.append(("serve", app.state.ready))
             raise RuntimeError("bind failed")
 
     with pytest.raises(RuntimeError, match="bind failed"):
         await serve(cfg, app, pipeline, uvicorn_server=FakeServer())
 
     assert events == [
-        "scheduler.start",
-        "warm_up",
-        "serve",
-        "scheduler.close",
+        ("scheduler.start", False),
+        ("warm_up", False),
+        ("serve", True),
+        ("scheduler.close", False),
     ]
+    assert app.state.ready is False
 
 
 @pytest.mark.asyncio

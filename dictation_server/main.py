@@ -49,6 +49,8 @@ async def serve(
         if scheduler is not None:
             await scheduler.start()
         await pipeline.warm_up()
+        if state is not None:
+            state.ready = True
         if uvicorn_server is None:
             uvicorn_server = uvicorn.Server(
                 uvicorn.Config(
@@ -60,6 +62,9 @@ async def serve(
             )
         await uvicorn_server.serve()
     finally:
+        # Flip readiness before draining so probes see 503 during shutdown.
+        if state is not None:
+            state.ready = False
         if scheduler is not None:
             await scheduler.close()
 

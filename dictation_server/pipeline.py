@@ -67,8 +67,9 @@ class Pipeline:
                 error = None
             if error is not None:
                 logger.warning(
-                    "engine worker failed during cancellation drain: %s",
-                    error,
+                    "engine worker failed during cancellation drain "
+                    "type=%s",
+                    type(error).__name__,
                 )
 
     async def _run_blocking(self, fn, *args, **kwargs):

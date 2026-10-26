@@ -4,6 +4,7 @@ import logging
 from typing import Literal
 
 from fastapi import (
+    Depends,
     FastAPI,
     File,
     Form,
@@ -24,6 +25,7 @@ from .decode import (
     AudioDecodeError,
     FFmpegUnavailable,
     decode_upload,
+    validate_pcm,
 )
 from .errors import DictationFailure, http_status
 from .http_limits import UploadLimitMiddleware
@@ -43,8 +45,87 @@ logger = logging.getLogger(__name__)
 # AudioDecodeError and FFmpegUnavailable are re-exported for backwards
 # compatibility with callers that imported the decoder error types here.
 
+_ALLOWED_MULTIPART_FIELDS = frozenset(
+    {
+        "file",
+        "model",
+        "response_format",
+        "profile",
+        "language",
+        "prompt",
+        "temperature",
+        "stream",
+        "timestamp_granularities",
+        "timestamp_granularities[]",
+    }
+)
+
+# OpenAI-compatible options that this server accepts syntactically but whose
+# non-empty values cannot be honoured without changing dictation semantics.
+_EMPTY_ONLY_FIELDS = (
+    "language",
+    "prompt",
+    "timestamp_granularities",
+    "timestamp_granularities[]",
+)
+
+
 def _model_aliases(model: str) -> set[str]:
     return {model, model.rsplit("/", 1)[-1]}
+
+
+def _unsupported(message: str) -> DictationFailure:
+    return DictationFailure(
+        "unsupported_parameter", message, retryable=False
+    )
+
+
+def _parameter_values(form, query, name: str) -> list[str]:
+    values: list[str] = []
+    if form is not None:
+        for value in form.getlist(name):
+            if isinstance(value, str):
+                values.append(value)
+    for value in query.getlist(name):
+        values.append(value)
+    return values
+
+
+def _validate_transcription_parameters(form, query, cfg: AppConfig) -> None:
+    """Validate OpenAI-compatible form/query options before any engine work."""
+    if form is not None:
+        for name in form.keys():
+            if name not in _ALLOWED_MULTIPART_FIELDS:
+                raise _unsupported(f"unsupported multipart field: {name}")
+
+    aliases = _model_aliases(cfg.server.stt_model)
+    for value in _parameter_values(form, query, "model"):
+        if value and value not in aliases:
+            raise _unsupported(
+                f"unsupported model; expected one of {sorted(aliases)}"
+            )
+
+    for name in _EMPTY_ONLY_FIELDS:
+        values = _parameter_values(form, query, name)
+        if any(value.strip() for value in values):
+            raise _unsupported(f"{name} is not supported")
+
+    for value in _parameter_values(form, query, "temperature"):
+        text = value.strip()
+        if not text:
+            continue
+        try:
+            number = float(text)
+        except ValueError:
+            raise _unsupported("temperature must be 0") from None
+        if number != 0:
+            raise _unsupported("temperature must be 0")
+
+    for value in _parameter_values(form, query, "stream"):
+        text = value.strip().lower()
+        if text in {"", "false", "0", "no", "off"}:
+            continue
+        raise _unsupported("streaming is not supported")
 
 
 class _DictationConnection:
@@ -253,6 +334,16 @@ class _DictationConnection:
         self.lease = None
         pcm = bytes(self.audio)
         self.audio.clear()
+        try:
+            validate_pcm(pcm, self.max_audio_bytes)
+        except DictationFailure as exc:
+            self.state = "idle"
+            if lease is not None:
+                lease.close()
+            await self._send_error(
+                exc.code, exc.message, retryable=exc.retryable
+            )
+            return True
         self.state = "processing"
         self.process_task = asyncio.create_task(
             self._run_processing(
@@ -323,11 +414,15 @@ class _DictationConnection:
                 )
                 await self._close(1013)
                 return False
-            logger.error("dictation processing failed: %s", exc)
+            logger.error(
+                "dictation processing failed code=%s", exc.code
+            )
             await self._send_error("internal", "processing failed")
             return True
-        except Exception:
-            logger.exception("dictation pipeline failed")
+        except Exception as exc:
+            logger.error(
+                "dictation pipeline failed type=%s", type(exc).__name__
+            )
             self.state = "idle"
             self._release_lease()
             await self._send_error("internal", "processing failed")
@@ -338,6 +433,7 @@ class _DictationConnection:
             final_text=result.final_text,
             fast_path=result.fast_path,
             metrics=result.metrics,
+            warnings=result.warnings,
         )
         try:
             await self.websocket.send_text(envelope.model_dump_json())
@@ -363,8 +459,11 @@ class _DictationConnection:
             pass
         except DictationFailure:
             pass
-        except Exception:
-            logger.exception("dictation pipeline failed during cancellation")
+        except Exception as exc:
+            logger.error(
+                "dictation pipeline failed during cancellation type=%s",
+                type(exc).__name__,
+            )
 
     def _release_lease(self) -> None:
         lease = self.lease
@@ -464,6 +563,9 @@ def create_app(
     app.state.pipeline = pipeline
     app.state.admission = admission
     app.state.auth = auth
+    # Readiness is owned by ``serve``: false until warm-up completes and
+    # false again as soon as shutdown starts.
+    app.state.ready = False
     scheduler = DictationScheduler(
         pipeline,
         max_pending_jobs=cfg.limits.max_pending_jobs,
@@ -504,6 +606,22 @@ def create_app(
     async def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    @app.get("/ready")
+    async def ready() -> JSONResponse:
+        snapshot = scheduler.snapshot()
+        is_ready = bool(app.state.ready)
+        return JSONResponse(
+            status_code=200 if is_ready else 503,
+            content={
+                "ready": is_ready,
+                "busy": snapshot.active,
+                "draining": snapshot.draining,
+                "queue_depth": snapshot.pending,
+                "stt_model": cfg.server.stt_model,
+                "llm_model": cfg.server.llm_model,
+            },
+        )
+
     @app.websocket("/ws/dictate")
     async def dictate(websocket: WebSocket) -> None:
         await _DictationConnection(
@@ -515,7 +633,16 @@ def create_app(
             scheduler=scheduler,
         ).run()
 
-    @app.post("/v1/audio/transcriptions")
+    async def _validate_parameters(request: Request) -> None:
+        form = await request.form()
+        _validate_transcription_parameters(
+            form, request.query_params, cfg
+        )
+
+    @app.post(
+        "/v1/audio/transcriptions",
+        dependencies=[Depends(_validate_parameters)],
+    )
     async def transcriptions(
         request: Request,
         file: UploadFile = File(...),
@@ -527,12 +654,9 @@ def create_app(
         if model is not None and model not in _model_aliases(
             cfg.server.stt_model
         ):
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    "unsupported model; expected one of "
-                    f"{sorted(_model_aliases(cfg.server.stt_model))}"
-                ),
+            raise _unsupported(
+                "unsupported model; expected one of "
+                f"{sorted(_model_aliases(cfg.server.stt_model))}"
             )
 
         lease = getattr(request.state, "audio_lease", None)
@@ -582,17 +706,38 @@ def create_app(
                 lease=lease,
             )
 
-        result = await _run_until_disconnect(
-            request, _decode_and_transcribe()
-        )
+        try:
+            result = await _run_until_disconnect(
+                request, _decode_and_transcribe()
+            )
+        except HTTPException:
+            raise
+        except DictationFailure:
+            raise
+        except Exception as exc:
+            # Raw engine/decoder exceptions may embed dictation text. Log the
+            # class only and expose a stable generic internal error.
+            logger.error(
+                "dictation request failed type=%s", type(exc).__name__
+            )
+            raise DictationFailure(
+                "internal", "transcription failed"
+            ) from exc
+
         if response_format == "text":
-            return PlainTextResponse(result.final_text)
+            headers = None
+            if result.warnings:
+                headers = {
+                    "X-GangioKeet-Warnings": ",".join(result.warnings)
+                }
+            return PlainTextResponse(result.final_text, headers=headers)
 
         return {
             "text": result.final_text,
             "raw_text": result.raw_text,
             "fast_path": result.fast_path,
             "metrics": result.metrics.model_dump(),
+            "warnings": result.warnings,
         }
 
     return app

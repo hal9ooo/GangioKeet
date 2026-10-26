@@ -50,6 +50,26 @@ curl -s http://127.0.0.1:8000/health
 # {"status":"ok"}
 ```
 
+`/health` è sempre pubblico, non esegue inferenza e serve solo a verificare
+che il processo sia vivo.
+
+### Readiness
+
+```bash
+curl -s http://127.0.0.1:8000/ready
+# {"ready":true,"busy":false,"draining":false,"queue_depth":0,
+#  "stt_model":"mlx-community/parakeet-tdt-0.6b-v3",
+#  "llm_model":"mlx-community/Qwen3-1.7B-4bit"}
+```
+
+`/ready` risponde `200` solo dopo che il warm-up è completato e finché il
+server non è in chiusura; durante l'avvio e lo shutdown risponde `503` con
+`ready:false`. `busy` (una richiesta è in esecuzione), `draining` (un worker
+è in fase di svuotamento) e `queue_depth` (job in coda) sono informativi e
+non rendono `ready:false`. Le probe non avviano inferenza né modificano i
+contatori di ammissione. Con l'autenticazione attiva `/ready` è protetto,
+mentre `/health` resta pubblico.
+
 ## Autenticazione opzionale
 
 L'autenticazione è disattivata finché `security.api_key_env` resta `null`.
@@ -157,9 +177,14 @@ invia `{"type":"error","code":"payload_too_large"}` e chiude con codice 1009.
 
 ```json
 {"type": "result", "raw_text": "...", "final_text": "...",
- "fast_path": false,
+ "fast_path": false, "warnings": [],
  "metrics": {"stt_ms": 123.4, "llm_ms": 456.7, "total_ms": 580.1}}
 ```
+
+`warnings` è additivo: contiene codici stabili come `llm_timeout` o
+`llm_failed` quando il post-processing fallisce e il server usa il testo
+normalizzato. `fast_path` resta `false` dopo qualunque tentativo LLM, anche
+se il risultato proviene dal fallback.
 
 `fast_path` è `true` quando l'LLM è stato saltato: testo sotto la soglia,
 nessun trigger di autocorrezione, nessun override fonetico, oppure
@@ -167,12 +192,26 @@ nessun trigger di autocorrezione, nessun override fonetico, oppure
 protocollo non chiudono la connessione:
 
 ```json
-{"type": "error", "code": "protocol", "message": "..."}
+{"type": "error", "code": "protocol", "message": "...", "retryable": false}
 ```
 
 Audio binario fuori da `recording`, JSON non valido, messaggi sconosciuti e
-transizioni di stato non valide producono `code="protocol"`. Un errore interno
-della pipeline produce `code="internal"` e riporta lo stato a `idle`.
+transizioni di stato non valide producono `code="protocol"`. PCM con un
+numero dispari di byte produce `code="invalid_audio"` senza chiamare gli
+engine e la sessione torna `idle`. Un errore interno della pipeline produce
+`code="internal"` con messaggio generico e riporta lo stato a `idle`.
+
+Errori applicativi e codici di chiusura:
+
+| Codice | `retryable` | Chiusura WS |
+|---|---|---|
+| `unauthorized` | `false` | `1008` prima di `start`/audio |
+| `busy` | `true` | `1013` |
+| `queue_timeout` | `true` | nessuna: la connessione resta riusabile |
+| `processing_timeout` | `true` | `1013`; il drain continua in background |
+| `invalid_audio` | `false` | nessuna: la connessione torna `idle` |
+| `payload_too_large` | `false` | `1009` |
+| `internal` | `false` | nessuna: messaggio generico |
 
 Esempio Python:
 
@@ -210,6 +249,16 @@ Parametri supportati:
 | `response_format` | `json` (default) o `text`. `srt`, `vtt` e `verbose_json` non sono supportati. |
 | `profile` | Estensione locale; default `default`. |
 | `format` | Estensione locale in query string. `format=pcm` dichiara PCM16 mono 16 kHz grezzo. |
+| `language` | Accettato solo assente o vuoto (no-op); un valore non vuoto restituisce `400 unsupported_parameter`. |
+| `prompt` | Accettato solo assente o vuoto (no-op); un valore non vuoto restituisce `400 unsupported_parameter`. |
+| `temperature` | Accettato assente/`null` o `0`; qualunque altro valore restituisce `400 unsupported_parameter`. |
+| `stream` | Accettato assente/`false`; `true` restituisce `400 unsupported_parameter`. |
+| `timestamp_granularities`, `timestamp_granularities[]` | Accettati solo assenti o vuoti; valori non vuoti restituiscono `400 unsupported_parameter`. |
+
+I campi multipart sconosciuti restituiscono `400 unsupported_parameter`. I
+parametri query sconosciuti vengono ignorati per compatibilità. Gli errori di
+validazione dei tipi generati dal framework possono mantenere il formato
+`detail` a lista di FastAPI.
 
 Selezione del decoder:
 
@@ -226,11 +275,33 @@ Risposta `json`:
 
 ```json
 {"text": "Testo finale.", "raw_text": "testo grezzo",
- "fast_path": false,
+ "fast_path": false, "warnings": [],
  "metrics": {"stt_ms": 123.4, "llm_ms": 456.7, "total_ms": 580.1}}
 ```
 
-`response_format=text` restituisce `text/plain` con il solo `text`.
+`warnings` è additivo e non cambia le chiavi storiche. `response_format=text`
+restituisce `text/plain` con il solo `text`; se ci sono warning aggiunge
+l'header `X-GangioKeet-Warnings` con i codici separati da virgola, mentre non
+aggiunge nulla quando la lista è vuota.
+
+Errori REST (oltre ai `422` di validazione del framework):
+
+| Codice | HTTP | Note |
+|---|---|---|
+| `unauthorized` | `401` | Auth Bearer attiva. |
+| `busy` | `503` | `Retry-After: 1`. |
+| `queue_timeout` | `503` | `Retry-After: 1`. |
+| `decode_timeout` | `504` | |
+| `upload_timeout` | `408` | |
+| `processing_timeout` | `504` | |
+| `invalid_audio` | `422` | PCM malformato, mai `500`. |
+| `payload_too_large` | `413` | |
+| `unsupported_parameter` | `400` | |
+| `decoder_unavailable` | `503` | |
+| `internal` | `500` | Messaggio generico. |
+
+Il corpo è sempre `{"detail": {"code": "...", "message": "...",
+"retryable": true|false}}`.
 
 ## Configurazione
 
@@ -371,7 +442,12 @@ della metrica.
   e, se attiva, il token viaggia in chiaro su HTTP. Non implementa TLS, rate
   limiting o multi-tenancy; usare una rete fidata o un reverse proxy TLS.
 - Un solo processo e un solo lock Metal: le richieste concorrenti vengono
-  serializzate.
+  serializzate da uno scheduler FIFO a worker singolo. La coda e il budget
+  audio in byte sono condivisi fra WebSocket e REST; `limits` e `timeouts`
+  nel file di configurazione limitano sessioni, coda e durate.
+- I log contengono solo codici, durate, byte, profondità di coda e stato di
+  drain: testo dettato, prompt, nomi file, titoli delle finestre e token non
+  vengono mai registrati.
 - L'audio di input deve essere PCM16 mono 16 kHz; il REST converte solo se
   `ffmpeg` è disponibile.
 - Il campo `model` del REST deve corrispondere al modello STT configurato;

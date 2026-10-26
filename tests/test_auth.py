@@ -466,7 +466,7 @@ def test_rest_unauthorized_does_not_parse_multipart(cfg, monkeypatch):
     assert response.status_code == 401
 
 
-def test_health_is_public_and_future_ready_is_protected(cfg):
+def test_health_is_public_and_ready_is_protected(cfg):
     client, _, _ = make_client(cfg)
 
     health = client.get("/health")
@@ -475,7 +475,8 @@ def test_health_is_public_and_future_ready_is_protected(cfg):
 
     assert client.get("/ready").status_code == 401
     authorized = client.get("/ready", headers=auth_headers())
-    assert authorized.status_code == 404
+    assert authorized.status_code == 503
+    assert authorized.json()["ready"] is False
 
 
 def test_ws_accepts_the_correct_key(cfg):

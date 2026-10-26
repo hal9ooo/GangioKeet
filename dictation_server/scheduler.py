@@ -237,8 +237,11 @@ class DictationScheduler:
                 await self._execute(job, loop)
             except asyncio.CancelledError:
                 raise
-            except Exception:
-                logger.exception("scheduler job failed")
+            except Exception as exc:
+                logger.error(
+                    "scheduler job failed type=%s",
+                    type(exc).__name__,
+                )
                 self._fail_job(
                     job,
                     DictationFailure(
@@ -295,11 +298,7 @@ class DictationScheduler:
         self, job: _Job, loop: asyncio.AbstractEventLoop
     ) -> None:
         queue_ms = max(0.0, (loop.time() - job.accepted_at) * 1000.0)
-        logger.debug(
-            "dictation job start queue_ms=%.1f profile=%s",
-            queue_ms,
-            job.profile,
-        )
+        logger.debug("dictation job start queue_ms=%.1f", queue_ms)
 
         pipeline_task = asyncio.create_task(
             self.pipeline.process(
@@ -340,8 +339,9 @@ class DictationScheduler:
             if error is not None:
                 self._fail_job(job, error)
                 if not isinstance(error, DictationFailure):
-                    logger.exception(
-                        "dictation pipeline failed", exc_info=error
+                    logger.error(
+                        "dictation pipeline failed type=%s",
+                        type(error).__name__,
                     )
                 return
 
@@ -361,8 +361,11 @@ class DictationScheduler:
             job.lease_closed = True
             try:
                 job.lease.close()
-            except Exception:
-                logger.exception("failed to release audio lease")
+            except Exception as exc:
+                logger.error(
+                    "failed to release audio lease type=%s",
+                    type(exc).__name__,
+                )
 
         if self._active is job:
             self._active = None
@@ -427,7 +430,8 @@ class DictationScheduler:
                 error = None
             if error is not None:
                 logger.warning(
-                    "pipeline task failed during drain: %s", error
+                    "pipeline task failed during drain type=%s",
+                    type(error).__name__,
                 )
 
     async def _wait_for_done(self, job: _Job) -> None:
@@ -445,8 +449,12 @@ class DictationScheduler:
                 await asyncio.shield(awaitable)
             except asyncio.CancelledError:
                 continue
-            except Exception:
-                logger.warning("%s failed during drain", label, exc_info=True)
+            except Exception as exc:
+                logger.warning(
+                    "%s failed during drain type=%s",
+                    label,
+                    type(exc).__name__,
+                )
                 break
 
     async def _gather_task(self, task: asyncio.Task) -> None:
@@ -455,9 +463,10 @@ class DictationScheduler:
                 await asyncio.shield(task)
             except asyncio.CancelledError:
                 continue
-            except Exception:
+            except Exception as exc:
                 logger.warning(
-                    "scheduler task failed during close", exc_info=True
+                    "scheduler task failed during close type=%s",
+                    type(exc).__name__,
                 )
                 break
 

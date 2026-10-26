@@ -161,12 +161,14 @@ async def test_process_cancellation_releases_lock_and_clears_metal_cache():
 
 
 @pytest.mark.asyncio
-async def test_cancellation_logs_worker_failure(caplog):
+async def test_cancellation_logs_worker_failure_type_only(caplog):
+    secret = "testo dettato riservato"
+
     class SlowFailingLLM(FakeLLM):
         def clean(self, raw_text, profile, *, deadline=None):
             self.calls.append((raw_text, profile))
             time.sleep(0.1)
-            raise RuntimeError("llm exploded")
+            raise RuntimeError(f"llm exploded with {secret}")
 
     counter = ClearCounter()
     p = Pipeline(
@@ -179,7 +181,9 @@ async def test_cancellation_logs_worker_failure(caplog):
         with pytest.raises(asyncio.CancelledError):
             await t
 
-    assert "llm exploded" in caplog.text
+    assert "RuntimeError" in caplog.text
+    assert "llm exploded" not in caplog.text
+    assert secret not in caplog.text
     assert counter.n == 1
 
 
