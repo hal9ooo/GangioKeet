@@ -5,6 +5,9 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 5
+    # datasets 5 requires torchcodec; the eval venv stays on 3.6.0.
+    ignore:
+      - dependency-name: "datasets"
 
   - package-ecosystem: "nuget"
     directory: "/client-windows/src/GangioKeet.Client"
