@@ -381,6 +381,34 @@ def test_main_loads_config_and_serves(monkeypatch, argv, expected_path):
     assert seen["serve"] == (cfg, app, "pipeline")
 
 
+def test_main_recording_flag_enables_recording(monkeypatch):
+    cfg = load_config("config.yaml")
+    seen = {}
+
+    class FakeApp:
+        state = type("State", (), {"pipeline": "pipeline"})()
+
+    def fake_build_app(received_cfg):
+        seen["recording_enabled"] = received_cfg.recording.enabled
+        return FakeApp()
+
+    async def fake_serve(received_cfg, received_app, pipeline):
+        pass
+
+    monkeypatch.setattr(
+        "dictation_server.main.load_config", lambda path: cfg
+    )
+    monkeypatch.setattr("dictation_server.main.build_app", fake_build_app)
+    monkeypatch.setattr("dictation_server.main.serve", fake_serve)
+    monkeypatch.setattr(
+        "dictation_server.main.configure_logging", lambda: None
+    )
+
+    main(["--recording"])
+
+    assert seen["recording_enabled"] is True
+
+
 def test_launchd_plist_template():
     with open(TEMPLATE, "rb") as fh:
         plist = plistlib.load(fh)

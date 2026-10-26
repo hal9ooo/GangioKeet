@@ -8,7 +8,8 @@ WebSocket con fallback REST compatibile con l'API OpenAI Audio.
   contemporaneamente.
 - KV cache del system prompt congelata a boot e riusata a ogni richiesta.
 - Warm-up di entrambi gli engine prima del bind HTTP.
-- Nessun file temporaneo nel percorso principale: il PCM viaggia in RAM.
+- Nessun file temporaneo nel percorso principale: il PCM viaggia in RAM
+  (l'unica eccezione è la modalità opt-in `--recording`).
 - `mx.clear_cache()` dopo ogni richiesta gestita dalla pipeline, completata,
   annullata o fallita.
 
@@ -121,6 +122,24 @@ vuoto, lo aggiunge al plist locale generato
 Senza la variabile il campo è omesso. Il valore non viene mai stampato,
 passato in argv o scritto nel template versionato; dopo l'installazione si
 può fare `unset GANGIOKEET_API_KEY`.
+
+## Accesso remoto via Tailscale
+
+Il server ascolta su `0.0.0.0`, quindi è già raggiungibile anche
+sull'interfaccia Tailscale del Mac senza modifiche al codice. Sul Mac:
+
+```bash
+tailscale ip -4
+curl -s "http://$(tailscale ip -4):8000/health"
+```
+
+Sul client Windows, in `%APPDATA%\GangioKeet\client_config.yaml`, impostare
+`server.host` all'IP Tailscale (o al nome MagicDNS) del Mac. Il traffico del
+tailnet è cifrato da WireGuard, ma il server continua a non implementare TLS:
+non esporlo su Internet. Con l'autenticazione attiva il token resta comunque
+protetto dal tunnel; senza API key, qualunque dispositivo del tailnet può
+usare STT e LLM. Il Mac deve essere sveglio e il processo in esecuzione: per
+la sopravvivenza ai riavvii usare il LaunchAgent qui sotto.
 
 ## LaunchAgent
 
@@ -340,6 +359,11 @@ timeouts:
 
 security:
   api_key_env: null  # oppure "GANGIOKEET_API_KEY"
+
+recording:
+  enabled: false        # oppure avvia con --recording
+  directory: "recordings"
+  store_context: false  # app_name/window_title; selected_text mai
 
 routing:
   fast_path_max_words: 5
@@ -593,6 +617,39 @@ hanno 16–38 parole, la production non attiva mai il fast-path: production e
 forced-cleaner coincidono. Non cambiare il cleaner di produzione basandosi
 solo su questo corpus.
 
+## Registrazione della propria voce (opt-in)
+
+La registrazione è **spenta di default** e non salva nulla. Per raccogliere un
+corpus delle proprie dettature:
+
+```bash
+uv run python -m dictation_server.main --recording
+# equivalente: recording.enabled: true in config.yaml
+```
+
+Ogni dettatura completata (WebSocket o REST) scrive:
+
+- `recordings/audio/<id>.wav`: PCM16 mono 16 kHz, permessi `0600`;
+- una riga in `recordings/manifest.jsonl`: testo `raw_text`/`final_text`,
+  profilo, trasporto, durata, modelli, metriche e SHA-256 dell'audio.
+
+Il manifest è già nel formato del corpus di `scripts/stt_eval.py`.
+`reference_raw` e `reference_final` partono vuoti e vanno annotati a mano:
+finché restano vuoti la raccolta non produce un WER. Dopo l'annotazione:
+
+```bash
+.venv-stt-eval/bin/python scripts/stt_eval.py \
+  --manifest recordings/manifest.jsonl \
+  --candidate parakeet_baseline --warmups 2 --repeats 3 \
+  --output .superpowers/stt-benchmark/raw/parakeet_baseline.json
+```
+
+`selected_text` non viene mai salvato; `app_name` e `window_title` solo con
+`recording.store_context: true`. La directory è `0700`, i file sono `0600`.
+Le dettature annullate o fallite non vengono registrate e un errore di
+scrittura non fa fallire la dettatura. Non c'è pulizia automatica: la
+retention è manuale. `recordings/` è ignorata da git.
+
 ## Limiti di compatibilità
 
 - Il server è pensato per la rete locale: l'autenticazione Bearer è opzionale
@@ -611,7 +668,8 @@ solo su questo corpus.
   continua a rispondere; serve un riavvio operativo.
 - I log contengono solo codici, durate, byte, profondità di coda e stato di
   drain: testo dettato, prompt, nomi file, titoli delle finestre e token non
-  vengono mai registrati.
+  vengono mai registrati. Audio e trascrizioni finiscono su disco solo quando
+  la modalità `--recording` è attiva.
 - L'audio di input deve essere PCM16 mono 16 kHz; il REST converte solo se
   `ffmpeg` è disponibile.
 - Il campo `model` del REST deve corrispondere al modello STT configurato;

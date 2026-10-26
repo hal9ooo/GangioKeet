@@ -76,6 +76,18 @@ class SecurityConfig(_StrictModel):
     api_key_env: str | None = None
 
 
+class RecordingConfig(_StrictModel):
+    enabled: bool = False
+    directory: str = "recordings"
+    store_context: bool = False
+
+    @model_validator(mode="after")
+    def _check_directory(self) -> "RecordingConfig":
+        if not self.directory.strip():
+            raise ValueError("recording.directory must not be empty")
+        return self
+
+
 class AppConfig(_StrictModel):
     server: ServerConfig
     routing: RoutingConfig
@@ -83,6 +95,7 @@ class AppConfig(_StrictModel):
     limits: LimitsConfig = Field(default_factory=LimitsConfig)
     timeouts: TimeoutsConfig = Field(default_factory=TimeoutsConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
+    recording: RecordingConfig = Field(default_factory=RecordingConfig)
 
 
 def load_config(path: str | Path) -> AppConfig:

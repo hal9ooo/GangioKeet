@@ -150,6 +150,13 @@ def test_invalid_timeouts_rejected(tmp_path: Path, timeouts_yaml: str):
         load_config(p)
 
 
+def test_empty_recording_directory_is_rejected(tmp_path: Path):
+    p = tmp_path / "recording.yaml"
+    p.write_text(LEGACY_SERVER + "recording:\n  directory: '   '\n")
+    with pytest.raises(ValidationError):
+        load_config(p)
+
+
 def test_unknown_key_still_rejected(tmp_path: Path):
     p = tmp_path / "unknown.yaml"
     p.write_text(LEGACY_SERVER + "limits:\n  max_audio_byte: 1\n")

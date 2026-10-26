@@ -107,9 +107,19 @@ def main(argv: list[str] | None = None) -> None:
         description="On-device MLX dictation server"
     )
     parser.add_argument("--config", default="./config.yaml")
+    parser.add_argument(
+        "--recording",
+        action="store_true",
+        help=(
+            "store completed dictations as WAV + JSONL for local voice "
+            "benchmarks (off by default)"
+        ),
+    )
     args = parser.parse_args(argv)
 
     cfg = load_config(args.config)
+    if args.recording:
+        cfg.recording.enabled = True
     app = build_app(cfg)
     asyncio.run(serve(cfg, app, app.state.pipeline))
 

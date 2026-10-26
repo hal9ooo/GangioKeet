@@ -26,3 +26,6 @@ reports/stt_eval/
 *.pfx
 client_config.yaml
 *.log
+
+# Local opt-in dictation recordings: audio and transcripts never get committed
+recordings/
