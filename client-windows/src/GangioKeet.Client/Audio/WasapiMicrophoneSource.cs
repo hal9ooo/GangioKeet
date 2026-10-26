@@ -247,7 +247,7 @@ public sealed class WasapiMicrophoneSource : IMicrophoneSource
         byte[] mono;
         try
         {
-            mono = ToMonoPcm16(buffer, _recorder.WaveFormat);
+            mono = Pcm16.FromCaptureBuffer(buffer, _recorder.WaveFormat);
         }
         catch (NotSupportedException)
         {
@@ -268,52 +268,5 @@ public sealed class WasapiMicrophoneSource : IMicrophoneSource
         }
 
         DeviceLost?.Invoke(this, EventArgs.Empty);
-    }
-
-    private static byte[] ToMonoPcm16(ReadOnlySpan<byte> buffer, WaveFormat format)
-    {
-        int channels = Math.Max(format.Channels, 1);
-        int bytesPerSample = format.BitsPerSample / 8;
-
-        if (format.Encoding == WaveFormatEncoding.IeeeFloat && bytesPerSample == 4)
-        {
-            int frames = buffer.Length / (4 * channels);
-            float[] mono = new float[frames];
-            for (int frame = 0; frame < frames; frame++)
-            {
-                float sum = 0;
-                for (int channel = 0; channel < channels; channel++)
-                {
-                    sum += BitConverter.ToSingle(buffer.Slice(((frame * channels) + channel) * 4, 4));
-                }
-
-                mono[frame] = sum / channels;
-            }
-
-            return Pcm16.FromFloat(mono);
-        }
-
-        if (format.Encoding == WaveFormatEncoding.Pcm && bytesPerSample == 2)
-        {
-            int frames = buffer.Length / (2 * channels);
-            byte[] mono = new byte[frames * 2];
-            for (int frame = 0; frame < frames; frame++)
-            {
-                int sum = 0;
-                for (int channel = 0; channel < channels; channel++)
-                {
-                    sum += BitConverter.ToInt16(buffer.Slice(((frame * channels) + channel) * 2, 2));
-                }
-
-                short value = (short)(sum / channels);
-                mono[frame * 2] = (byte)value;
-                mono[(frame * 2) + 1] = (byte)(value >> 8);
-            }
-
-            return mono;
-        }
-
-        throw new NotSupportedException(
-            $"Unsupported capture format: {format.Encoding}, {format.BitsPerSample} bit, {format.Channels} channel(s).");
     }
 }

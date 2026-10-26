@@ -1,5 +1,7 @@
 namespace GangioKeet.Client.Audio;
 
+using NAudio.Wave;
+
 /// <summary>
 /// Frammenta il flusso PCM16 in chunk di dimensione fissa (~100 ms = 3200 byte a 16 kHz mono).
 /// <see cref="Feed"/> emette solo chunk interi e conserva il resto; <see cref="Flush"/> evacua il
@@ -101,5 +103,85 @@ public static class Pcm16
         }
 
         return pcm;
+    }
+
+    /// <summary>
+    /// Converte un buffer nativo WASAPI (spesso <c>WAVE_FORMAT_EXTENSIBLE</c>, non
+    /// <c>WaveFormatEncoding.IeeeFloat</c>) in PCM16 mono: downmix dei canali e conversione
+    /// float→PCM16. Riconosce il formato reale dal subformat, non solo dall'encoding.
+    /// </summary>
+    public static byte[] FromCaptureBuffer(ReadOnlySpan<byte> buffer, WaveFormat format)
+    {
+        int channels = Math.Max(format.Channels, 1);
+        int bytesPerSample = format.BitsPerSample / 8;
+
+        if (IsIeeeFloat(format) && bytesPerSample == 4)
+        {
+            int frames = buffer.Length / (4 * channels);
+            float[] mono = new float[frames];
+            for (int frame = 0; frame < frames; frame++)
+            {
+                float sum = 0;
+                for (int channel = 0; channel < channels; channel++)
+                {
+                    sum += BitConverter.ToSingle(
+                        buffer.Slice(((frame * channels) + channel) * 4, 4));
+                }
+
+                mono[frame] = sum / channels;
+            }
+
+            return FromFloat(mono);
+        }
+
+        if (IsPcm16(format) && bytesPerSample == 2)
+        {
+            int frames = buffer.Length / (2 * channels);
+            byte[] mono = new byte[frames * 2];
+            for (int frame = 0; frame < frames; frame++)
+            {
+                int sum = 0;
+                for (int channel = 0; channel < channels; channel++)
+                {
+                    sum += BitConverter.ToInt16(
+                        buffer.Slice(((frame * channels) + channel) * 2, 2));
+                }
+
+                short value = (short)(sum / channels);
+                mono[frame * 2] = (byte)value;
+                mono[(frame * 2) + 1] = (byte)(value >> 8);
+            }
+
+            return mono;
+        }
+
+        throw new NotSupportedException(
+            $"Unsupported capture format: {format.Encoding}, {format.BitsPerSample} bit, {format.Channels} channel(s).");
+    }
+
+    private static bool IsIeeeFloat(WaveFormat format)
+    {
+        if (format.Encoding == WaveFormatEncoding.IeeeFloat)
+        {
+            return true;
+        }
+
+        return format.Encoding == WaveFormatEncoding.Extensible
+            && format.BitsPerSample == 32
+            && format is WaveFormatExtensible extensible
+            && extensible.SubFormat == AudioMediaSubtypes.MEDIASUBTYPE_IEEE_FLOAT;
+    }
+
+    private static bool IsPcm16(WaveFormat format)
+    {
+        if (format.Encoding == WaveFormatEncoding.Pcm)
+        {
+            return true;
+        }
+
+        return format.Encoding == WaveFormatEncoding.Extensible
+            && format.BitsPerSample == 16
+            && format is WaveFormatExtensible extensible
+            && extensible.SubFormat == AudioMediaSubtypes.MEDIASUBTYPE_PCM;
     }
 }

@@ -1,4 +1,5 @@
 using GangioKeet.Client.Audio;
+using NAudio.Wave;
 using Xunit;
 
 namespace GangioKeet.Client.Tests.Audio;
@@ -162,5 +163,57 @@ public sealed class Pcm16ConversionTests
         byte[] pcm = Pcm16.FromFloat([3f / 32768f, -3f / 32768f]);
 
         Assert.Equal(new byte[] { 0x03, 0x00, 0xFD, 0xFF }, pcm);
+    }
+
+    [Fact]
+    public void FromCaptureBuffer_ExtensibleFloat32_DownmixesToMonoPcm16()
+    {
+        // WASAPI shared consegna WAVE_FORMAT_EXTENSIBLE / IEEE float 32 bit: non è
+        // WaveFormatEncoding.IeeeFloat e va riconosciuto dal subformat.
+        WaveFormatExtensible format = new(48000, 32, 4, 0);
+        float[] frame = [1.0f, 0.0f, 0.0f, 0.0f];
+        byte[] buffer = new byte[frame.Length * 4];
+        Buffer.BlockCopy(frame, 0, buffer, 0, buffer.Length);
+
+        byte[] pcm = Pcm16.FromCaptureBuffer(buffer, format);
+
+        // Media dei 4 canali = 0.25 -> 8192 (0x2000)
+        Assert.Equal(new byte[] { 0x00, 0x20 }, pcm);
+    }
+
+    [Fact]
+    public void FromCaptureBuffer_ExtensiblePcm16_DownmixesToMono()
+    {
+        WaveFormatExtensible format = new(16000, 16, 2, 0);
+        byte[] buffer =
+        [
+            0xE8, 0x03, // +1000
+            0x18, 0xFC, // -1000
+        ];
+
+        byte[] pcm = Pcm16.FromCaptureBuffer(buffer, format);
+
+        Assert.Equal(new byte[] { 0x00, 0x00 }, pcm);
+    }
+
+    [Fact]
+    public void FromCaptureBuffer_PlainFloat32_IsSupported()
+    {
+        WaveFormat format = WaveFormat.CreateIeeeFloatWaveFormat(48000, 1);
+        byte[] buffer = new byte[8];
+        Buffer.BlockCopy(new float[] { 0.5f, -0.5f }, 0, buffer, 0, 8);
+
+        byte[] pcm = Pcm16.FromCaptureBuffer(buffer, format);
+
+        Assert.Equal(new byte[] { 0x00, 0x40, 0x00, 0xC0 }, pcm);
+    }
+
+    [Fact]
+    public void FromCaptureBuffer_UnsupportedFormat_Throws()
+    {
+        WaveFormat format = new(48000, 24, 1);
+
+        Assert.Throws<NotSupportedException>(
+            () => Pcm16.FromCaptureBuffer(new byte[6], format));
     }
 }
