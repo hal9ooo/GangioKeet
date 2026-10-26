@@ -182,7 +182,12 @@ public sealed class WasapiAudioCapture : IAudioCapture
             {
             }
 
-            byte[] tail = _chunker.Flush();
+            byte[] tail;
+            lock (_gate)
+            {
+                tail = _chunker.Flush();
+            }
+
             if (tail.Length > 0)
             {
                 ChunkReady?.Invoke(this, tail);
@@ -216,14 +221,21 @@ public sealed class WasapiAudioCapture : IAudioCapture
     {
         bool first;
         double level;
+        IReadOnlyList<byte[]> chunks;
         lock (_gate)
         {
+            if (_tearingDown)
+            {
+                return;
+            }
+
             first = !_ready;
             _ready = true;
             ITimer? timer = _readyTimer;
             _readyTimer = null;
             timer?.Dispose();
             level = _tracker.AppendPcm16(pcm.Span);
+            chunks = _chunker.Feed(pcm.Span);
         }
 
         if (first)
@@ -231,7 +243,7 @@ public sealed class WasapiAudioCapture : IAudioCapture
             Ready?.Invoke(this, EventArgs.Empty);
         }
 
-        foreach (byte[] chunk in _chunker.Feed(pcm.Span))
+        foreach (byte[] chunk in chunks)
         {
             ChunkReady?.Invoke(this, chunk);
         }
@@ -266,16 +278,16 @@ public sealed class WasapiAudioCapture : IAudioCapture
 
         FailAndTearDown(new CaptureFailure(
             "microphone_not_ready",
-            $"No audio arrived from the microphone within {_readyTimeout.TotalSeconds:0.#} s."));
+            $"No audio arrived from the microphone within {_readyTimeout.TotalSeconds:0.#} s."), onlyIfNotReady: true);
     }
 
-    private void FailAndTearDown(CaptureFailure failure)
+    private void FailAndTearDown(CaptureFailure failure, bool onlyIfNotReady = false)
     {
         IMicrophoneSource? source;
         ITimer? readyTimer;
         lock (_gate)
         {
-            if (_tearingDown)
+            if (_tearingDown || (onlyIfNotReady && _ready))
             {
                 return;
             }
