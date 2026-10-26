@@ -1,185 +1,470 @@
-# MLX Dictation Server
+<p align="center">
+  <img src="assets/icon.png" width="160" alt="Icona di GangioKeet">
+</p>
 
-Demone locale per macOS Apple Silicon che tiene in memoria un modello STT
-Parakeet e un LLM quantizzato MLX, ed espone una pipeline di dettatura su
-WebSocket con fallback REST compatibile con l'API OpenAI Audio.
+<h1 align="center">GangioKeet</h1>
 
-- Un solo processo, una sola `asyncio.Lock`: STT e LLM non usano Metal
-  contemporaneamente.
-- KV cache del system prompt congelata a boot e riusata a ogni richiesta.
-- Warm-up di entrambi gli engine prima del bind HTTP.
-- Nessun file temporaneo nel percorso principale: il PCM viaggia in RAM
-  (l'unica eccezione è la modalità opt-in `--recording`).
-- `mx.clear_cache()` dopo ogni richiesta gestita dalla pipeline, completata,
-  annullata o fallita.
+<p align="center">
+  <strong>Dettatura vocale locale, push-to-talk, per macOS + Windows.</strong><br/>
+  Il clone casalingo di Wispr Flow che non paga l'abbonamento.
+</p>
 
-## Requisiti
+<p align="center">
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-2ea44f.svg"></a>
+  <img alt="Python 3.12+" src="https://img.shields.io/badge/python-3.12%2B-3776AB.svg">
+  <img alt=".NET 10" src="https://img.shields.io/badge/.NET-10-512BD4.svg">
+  <img alt="Server: macOS Apple Silicon" src="https://img.shields.io/badge/server-macOS%20Apple%20Silicon-000000.svg">
+  <img alt="Client: Windows 11" src="https://img.shields.io/badge/client-Windows%2011-0078D4.svg">
+  <a href="https://github.com/hal9ooo/GangioKeet/actions/workflows/security.yml"><img alt="Security" src="https://github.com/hal9ooo/GangioKeet/actions/workflows/security.yml/badge.svg"></a>
+</p>
 
-- macOS su Apple Silicon.
-- [uv](https://docs.astral.sh/uv/).
-- `ffmpeg` opzionale: serve solo al REST per i formati compressi o i WAV
-  non PCM16/mono/16 kHz. Il percorso WebSocket e il PCM grezzo non lo usano.
+> **TL;DR** — Tieni premuto **Caps Lock**, parla, rilascia. Il testo appare
+> nella finestra attiva. Audio, modelli e trascrizioni restano sulla tua
+> macchina: nessun cloud, nessun account, nessun abbonamento.
 
-## Installazione
+## Indice
+
+- [Perché esiste](#perché-esiste)
+- [Cosa sa fare](#cosa-sa-fare)
+- [Architettura](#architettura)
+- [Quick start](#quick-start)
+- [Come si usa](#come-si-usa)
+- [Configurazione](#configurazione)
+- [Privacy e sicurezza](#privacy-e-sicurezza)
+- [Performance](#performance)
+- [Dettagli tecnici](#dettagli-tecnici)
+- [Sviluppo e test](#sviluppo-e-test)
+- [Limiti](#limiti)
+- [Crediti](#crediti)
+- [Licenza](#licenza)
+
+## Perché esiste
+
+Wispr Flow è fantastico. Il suo abbonamento da **12 €/mese** un po' meno.
+
+Quindi ho fatto quello che farebbe qualsiasi persona ragionevole: invece di
+pagare, ho passato qualche sera a costruire un clone casalingo. Il risultato è
+**GangioKeet**: premi un tasto, parli, il testo appare dove stai scrivendo.
+La differenza è che l'audio non esce di casa, i modelli girano sul mio Mac e il
+conto mensile è **0 €**.
+
+Il nome? **Gangio** + **Parakeet**, il modello STT che ascolta e scrive.
+GangioKeet è un progetto indipendente, non affiliato a Wispr Flow: è solo un
+modo divertente di risolvere lo stesso problema senza abbonamento.
+
+Se hai un Mac Apple Silicon e un PC Windows, puoi usarlo anche tu. Se non li
+hai, puoi sempre leggere l'architettura e rubare qualche idea. 😄
+
+## Cosa sa fare
+
+- **Push-to-talk come Wispr Flow**: tieni premuto **Caps Lock** (o F8), parla,
+  rilascia. Doppio tap per la modalità hands-free, **Esc** per annullare.
+- **Tutto in locale**: Parakeet TDT 0.6B per lo STT e Qwen3 1.7B 4-bit per la
+  pulizia del testo, entrambi su MLX/Apple Silicon. Niente cloud, account o
+  telemetria.
+- **Context-aware**: profili `code`, `terminal`, `chat`, `email`, `document`
+  scelti in base all'app e al titolo della finestra; regole speciali per i
+  browser (Gmail, GitHub, Slack, Google Docs…).
+- **WebSocket + REST**: streaming PCM a bassa latenza; se il WebSocket non è
+  disponibile, il client fa fallback via REST.
+- **Qualità della vita**: pill flottante, tray, scelta del microfono, recupero
+  dell'ultima dettatura, paste con clipboard preservata.
+- **Privacy by default**: log senza contenuto, nessuno storico su disco; la
+  registrazione per i benchmark è opt-in e protetta da permessi `0700`/`0600`.
+
+## Architettura
+
+GangioKeet è diviso in due parti perché i modelli MLX girano su Apple Silicon,
+mentre microfono, tastiera e paste vivono sul PC Windows.
+
+```mermaid
+flowchart LR
+  subgraph W["Windows 11"]
+    HK["Caps Lock / F8"] --> CL["GangioKeet.Client<br/>WPF + NAudio"]
+    CL -->|PCM16 16 kHz / WebSocket| SRV["FastAPI server"]
+    CL -.->|REST fallback| SRV
+    CL -->|paste| APP["Finestra attiva"]
+  end
+
+  subgraph M["macOS Apple Silicon"]
+    SRV --> STT["Parakeet TDT 0.6B<br/>MLX"]
+    STT --> ROUTE{"Routing"}
+    ROUTE -->|frase breve| TXT["Testo pulito"]
+    ROUTE -->|frase lunga| LLM["Qwen3 1.7B 4-bit<br/>MLX"]
+    LLM --> TXT
+  end
+
+  SRV -->|result| CL
+```
+
+Il flusso, in breve:
+
+1. Il client Windows cattura l'audio WASAPI, lo converte in PCM16 mono 16 kHz
+   e lo manda al server via WebSocket.
+2. Il server tiene Parakeet e Qwen in memoria. Un solo `asyncio.Lock`
+   serializza l'accesso a Metal; il system prompt del LLM è prefillato e
+   congelato a boot.
+3. Parakeet trascrive. Se la frase è breve e non contiene trigger di
+   autocorrezione o override fonetici, il server salta l'LLM (**fast path**).
+   Altrimenti Qwen sistema punteggiatura, autocorrezioni e glossario.
+4. Il testo torna al client, che lo incolla nella finestra attiva con la
+   clipboard preservata e **senza premere Enter**.
+
+**Perché due macchine?** Perché MLX è il modo più veloce per far girare
+Parakeet e Qwen su un Mac Apple Silicon, e perché il client deve stare sulla
+scrivania Windows dove lavori. Il server è un demone locale: non c'è un
+servizio cloud in mezzo.
+
+## Quick start
+
+### Requisiti
+
+| Parte | Serve |
+|---|---|
+| **Server** | macOS su Apple Silicon, [uv](https://docs.astral.sh/uv/); `ffmpeg` opzionale per i formati compressi via REST |
+| **Client** | Windows 11 (Windows 10 non certificato), .NET 10 SDK |
+
+### 1. Server (Mac)
 
 ```bash
+git clone https://github.com/hal9ooo/GangioKeet.git
+cd GangioKeet
 uv sync
-```
-
-I modelli vengono scaricati al primo avvio (o al primo test gated) e restano
-nella cache Hugging Face (`~/.cache/huggingface`). Il default è:
-
-- STT: `mlx-community/parakeet-tdt-0.6b-v3`
-- LLM: `mlx-community/Qwen3-1.7B-4bit`
-
-Questi restano i modelli selezionati anche dopo il confronto STT locale del
-26 ottobre 2026: quel confronto è **BLOCKED** (nessun corpus reale) e non ha
-prodotto un vincitore, quindi non c'è stata alcuna promozione di backend.
-
-## Avvio manuale
-
-```bash
 uv run python -m dictation_server.main
-# equivalente, con config esplicita:
-uv run python -m dictation_server.main --config ./config.yaml
 ```
 
-Il server ascolta su `0.0.0.0:8000` (configurabile). Non accetta connessioni
-finché STT e LLM non sono caricati, il system prompt non è congelato e il
-warm-up non è terminato.
-
-Health check:
+Al primo avvio scarica i modelli (diversi GB) e fa il warm-up: aspetta che
+`/ready` risponda prima di dettare.
 
 ```bash
 curl -s http://127.0.0.1:8000/health
-# {"status":"ok"}
+curl -s http://127.0.0.1:8000/ready
 ```
 
-`/health` è sempre pubblico, non esegue inferenza e serve solo a verificare
-che il processo sia vivo.
+Il server ascolta su `0.0.0.0:8000` per permettere al client sulla LAN di
+raggiungerlo. Se vuoi solo locale, imposta `server.host: 127.0.0.1` in
+`config.yaml`.
 
-### Readiness
+### 2. Client (Windows)
+
+```powershell
+git clone https://github.com/hal9ooo/GangioKeet.git
+cd GangioKeet
+New-Item -ItemType Directory -Force "$env:APPDATA\GangioKeet" | Out-Null
+Copy-Item client-windows\client_config.example.yaml "$env:APPDATA\GangioKeet\client_config.yaml"
+# apri il file e imposta server.host con l'IP del Mac
+dotnet build client-windows\GangioKeet.Client.sln
+dotnet run --project client-windows\src\GangioKeet.Client
+```
+
+Il client parte in tray, senza finestra principale. Se il server è dietro un
+terminatore TLS, imposta anche `server.scheme: https`: il client userà
+`https://` e `wss://`.
+
+### 3. La prima dettatura
+
+Tieni premuto **Caps Lock**, di' qualcosa, rilascia. Il testo appare nella
+finestra attiva. Doppio tap su Caps Lock per la modalità hands-free, **Esc** per
+annullare.
+
+### 4. LaunchAgent (opzionale, macOS)
 
 ```bash
-curl -s http://127.0.0.1:8000/ready
-# {"ready":true,"busy":false,"draining":false,"queue_depth":0,
-#  "stt_model":"mlx-community/parakeet-tdt-0.6b-v3",
-#  "llm_model":"mlx-community/Qwen3-1.7B-4bit"}
+./deploy/install_launchd.sh
+# per avviare il server già in modalità registrazione:
+GANGIOKEET_RECORDING=1 ./deploy/install_launchd.sh
 ```
 
-`/ready` risponde `200` solo dopo che il warm-up è completato e finché il
-server non è in chiusura; durante l'avvio e lo shutdown risponde `503` con
-`ready:false`. `busy` (una richiesta è in esecuzione), `draining` (un worker
-è in fase di svuotamento) e `queue_depth` (job in coda) sono informativi e
-non rendono `ready:false`. Le probe non avviano inferenza né modificano i
-contatori di ammissione. Con l'autenticazione attiva `/ready` è protetto,
-mentre `/health` resta pubblico.
+L'installer sostituisce `__PROJECT_DIR__` e `__HOME__` con il checkout e la
+home dell'utente, scrive il plist locale con permessi `0600` e avvia il job.
+Se sposti il progetto, rilancia l'installer.
 
-## Autenticazione opzionale
+### 5. Autenticazione (opzionale)
 
-L'autenticazione è disattivata finché `security.api_key_env` resta `null`.
-Per attivarla, indicare il nome della variabile d'ambiente in `config.yaml`:
+L'auth è disattivata finché `security.api_key_env` resta `null`. Per attivarla:
 
 ```yaml
 security:
   api_key_env: "GANGIOKEET_API_KEY"
 ```
 
-e avviare il server con la variabile valorizzata:
-
 ```bash
 export GANGIOKEET_API_KEY="$(openssl rand -hex 32)"
 uv run python -m dictation_server.main
 ```
 
-Se il nome è configurato ma la variabile è assente o vuota, l'avvio fallisce
-prima di caricare o bindare i modelli. La chiave non viene mai scritta nei log.
+Sul client, imposta lo stesso nome di variabile:
 
-Con auth attiva `/health` resta pubblico; tutte le altre rotte HTTP e il
-WebSocket richiedono l'header:
-
-```bash
-curl -s -X POST http://127.0.0.1:8000/v1/audio/transcriptions \
-  -H "Authorization: Bearer $GANGIOKEET_API_KEY" \
-  -F file=@audio.wav
+```yaml
+server:
+  api_key_env: "GANGIOKEET_API_KEY"
 ```
 
-```python
-async with websockets.connect(
-    "ws://127.0.0.1:8000/ws/dictate",
-    additional_headers={
-        "Authorization": f"Bearer {api_key}",
-    },
-) as ws:
-    ...
-```
+Il token vive solo nell'ambiente, mai nel YAML. `/health` resta pubblico; tutte
+le altre rotte HTTP e il WebSocket sono protetti. Con l'auth attiva il token
+viaggia comunque in chiaro su HTTP, a meno di TLS: usa una rete fidata o un
+terminatore TLS.
 
-L'ambiente di una shell non viene ereditato da launchd. Per il LaunchAgent,
-esportare `GANGIOKEET_API_KEY` nella shell da cui si lancia l'installer:
-`deploy/install_launchd.sh` legge il valore dall'ambiente e, solo se non è
-vuoto, lo aggiunge al plist locale generato
-(`~/Library/LaunchAgents/com.gangio.mlx-dictation.plist`, permessi `0600`).
-Senza la variabile il campo è omesso. Il valore non viene mai stampato,
-passato in argv o scritto nel template versionato; dopo l'installazione si
-può fare `unset GANGIOKEET_API_KEY`.
+### Accesso remoto via Tailscale
 
-## Accesso remoto via Tailscale
-
-Il server ascolta su `0.0.0.0`, quindi è già raggiungibile anche
-sull'interfaccia Tailscale del Mac senza modifiche al codice. Sul Mac:
+Il server ascolta su `0.0.0.0`, quindi è raggiungibile anche sull'interfaccia
+Tailscale del Mac senza modifiche al codice. Sul Mac:
 
 ```bash
 tailscale ip -4
 curl -s "http://$(tailscale ip -4):8000/health"
 ```
 
-Sul client Windows, in `%APPDATA%\GangioKeet\client_config.yaml`, impostare
-`server.host` all'IP Tailscale (o al nome MagicDNS) del Mac. Il traffico del
-tailnet è cifrato da WireGuard, ma il server continua a non implementare TLS:
-non esporlo su Internet. Con l'autenticazione attiva il token resta comunque
-protetto dal tunnel; senza API key, qualunque dispositivo del tailnet può
-usare STT e LLM. Il Mac deve essere sveglio e il processo in esecuzione: per
-la sopravvivenza ai riavvii usare il LaunchAgent qui sotto.
+Sul client Windows, imposta `server.host` all'IP Tailscale (o al nome MagicDNS)
+del Mac. Il traffico del tailnet è cifrato da WireGuard, ma il server continua a
+non implementare TLS: **non esporlo su Internet**. Con l'autenticazione attiva
+il token resta protetto dal tunnel; senza API key, qualunque dispositivo del
+tailnet può usare STT e LLM.
 
-## LaunchAgent
+## Come si usa
 
-```bash
-./deploy/install_launchd.sh
+| Azione | Come |
+|---|---|
+| Dettatura push-to-talk | Tieni premuto **Caps Lock** (o F8) e parla |
+| Hands-free | Doppio tap su **Caps Lock** |
+| Annulla | **Esc** |
+| Cambia microfono | Tray → **Microfono** → predefinito o dispositivo |
+| Recupera l'ultima dettatura | Tray → **Riprova**, **Copia ultimo testo**, **Scarta** |
+| Configurazione | Tray → **Apri configurazione** (`%APPDATA%\GangioKeet\client_config.yaml`) |
+| Pill | In basso al centro; `ui.pill_position: cursor` la fa apparire vicino al puntatore |
+
+Il testo viene **incollato**, non inviato: nessun Enter automatico. Il client
+non legge la clipboard e non fa Ctrl+C; se il paste fallisce, il testo resta
+recuperabile per 600 secondi.
+
+### Profili automatici
+
+Il client sceglie il profilo in base alla finestra attiva:
+
+| Profilo | Esempi |
+|---|---|
+| `code` | VS Code, Visual Studio, Cursor, PyCharm |
+| `terminal` | Windows Terminal, cmd, PowerShell |
+| `chat` | Slack, Teams, Discord, Telegram |
+| `email` | Outlook, Thunderbird |
+| `document` | Word, Obsidian, Notion |
+| `default` | Tutto il resto |
+
+Per i browser valgono le regole sul titolo della pagina: Gmail/Outlook/Proton
+Mail → `email`, WhatsApp/Telegram/Slack/Discord/Teams → `chat`,
+GitHub/GitLab/Stack Overflow → `code`, Google Docs/Notion/Overleaf → `document`.
+
+La pill mostra lo stato: registrazione, connessione, elaborazione, errore. Se
+Windows nega il microfono, il client propone di aprire le impostazioni sulla
+privacy del microfono.
+
+## Configurazione
+
+### Server
+
+`config.yaml` (estratto: il file completo contiene 21 termini canonici e 13
+override fonetici):
+
+```yaml
+server:
+  host: "0.0.0.0"
+  port: 8000
+  stt_model: "mlx-community/parakeet-tdt-0.6b-v3"
+  llm_model: "mlx-community/Qwen3-1.7B-4bit"
+
+limits:
+  max_audio_bytes: 67108864
+  max_http_body_bytes: 68157440
+  max_buffered_audio_bytes: 201326592
+  max_sessions: 4
+  max_pending_jobs: 2
+
+timeouts:
+  upload_seconds: 10.0
+  decode_seconds: 5.0
+  queue_seconds: 2.0
+  processing_seconds: 10.0
+  llm_seconds: 5.0
+
+security:
+  api_key_env: null  # oppure "GANGIOKEET_API_KEY"
+
+recording:
+  enabled: false        # oppure avvia con --recording
+  directory: "recordings"
+  store_context: false  # app_name/window_title; selected_text mai
+
+routing:
+  fast_path_max_words: 5
+  self_correction_triggers: ["anzi", "scusa", "aspetta", "cioè", "o meglio", "volevo dire"]
+
+glossary:
+  canonical_terms: ["FastAPI", "Proxmox VE", "MLX", "WebSocket"]
+  phonetic_overrides:
+    "fast a pi": "FastAPI"
+    "emme elle ics": "MLX"
 ```
 
-Per installare il LaunchAgent già in modalità registrazione:
+- `routing.fast_path_max_words`: sotto questa soglia l'LLM viene saltato,
+  salvo trigger o override fonetici presenti nel testo.
+- `routing.self_correction_triggers`: frasi che forzano il post-processing.
+- `glossary.canonical_terms` e `glossary.phonetic_overrides` vengono iniettati
+  nel system prompt congelato a boot; cambiarli richiede un riavvio.
+- Il file è validato con `extra="forbid"`: chiavi sconosciute sono errori.
+- Tutti i valori numerici di `limits` e `timeouts` devono essere positivi;
+  `max_audio_bytes` non può superare né `max_buffered_audio_bytes` né
+  `max_http_body_bytes`.
+
+#### Limiti e timeout
+
+| Impostazione | Default | Effetto |
+|---|---:|---|
+| `limits.max_audio_bytes` | 67.108.864 (64 MiB) | PCM massimo trattenuto per sessione WS e audio massimo accettato dal REST, incluso `format=pcm`. |
+| `limits.max_http_body_bytes` | 68.157.440 (65 MiB) | Corpo HTTP massimo per `POST /v1/audio/transcriptions`. Controllato prima del multipart e, per richieste chunked, contando i byte ricevuti. |
+| `limits.max_buffered_audio_bytes` | 201.326.592 (192 MiB) | Budget di audio trattenuto condiviso fra WebSocket e REST. Esaurito il budget, la richiesta fallisce con `busy`. |
+| `limits.max_sessions` | 4 | Sessioni audio contemporanee (WS + REST). Oltre il limite: `busy`. |
+| `limits.max_pending_jobs` | 2 | Job in coda oltre a quello attivo. Coda piena: `busy` immediato. |
+| `timeouts.upload_seconds` | 10,0 | Tempo per ricevere il corpo REST. Allo scadere: `upload_timeout` (408). |
+| `timeouts.decode_seconds` | 5,0 | Decodifica WAV/ffmpeg. Allo scadere: `decode_timeout` (504). |
+| `timeouts.queue_seconds` | 2,0 | Attesa in coda prima dello start. Allo scadere: `queue_timeout` (503). |
+| `timeouts.processing_seconds` | 10,0 | Limite rigido del job attivo, STT + LLM. Allo scadere: `processing_timeout` (504 lato REST, 1013 lato WS) e drain. |
+| `timeouts.llm_seconds` | 5,0 | Deadline cooperativa del cleaner LLM. Allo scadere il server usa il testo normalizzato con warning `llm_timeout`, entro il limite di processing. |
+
+Il limite del corpo HTTP è più alto di quello audio perché comprende
+l'overhead multipart. Il PCM grezzo dichiarato con `format=pcm` resta comunque
+soggetto a `max_audio_bytes`. `max_audio_bytes` è anche il `ws_max_size`
+passato a uvicorn, quindi un frame oltre il limite viene rifiutato prima di
+essere accodato.
+
+### Client
+
+La configurazione del client vive in `%APPDATA%\GangioKeet\client_config.yaml`.
+Il file di esempio è `client-windows/client_config.example.yaml`; lo schema è
+strict e le chiavi sconosciute vengono rifiutate. Le voci principali:
+
+| Sezione | Cosa contiene |
+|---|---|
+| `server` | `host`, `scheme` (`http` default / `https`), `port`, `transport` (`websocket`/`rest`), timeout, `rest_fallback`, `api_key_env` |
+| `hotkey` | `mode` (`push_to_talk`/`toggle`), `key` (`capslock` default, f1–f24, mouse_x1), `abort_key` (escape) |
+| `audio` | `input_device` (`null` = default Windows), sample rate 16000, mono, chunk 100 ms |
+| `paste` | combo `ctrl+v`/`ctrl+shift+v`, app terminale, delay clipboard, refocus |
+| `ui` | pill flottante, posizione (`center_bottom`/`cursor`), feedback sonoro |
+| `context_profiles` | mappe exe → profilo |
+| `browser_profiles` | browser e regole per titolo |
+| `recovery` | retention dell'ultima dettatura (default 600 s) |
+
+Dettagli completi: [`client-windows/README.md`](client-windows/README.md).
+
+### Registrazione opt-in
+
+La registrazione è **spenta di default** e non salva nulla. Per raccogliere un
+corpus delle proprie dettature:
 
 ```bash
-GANGIOKEET_RECORDING=1 ./deploy/install_launchd.sh
+uv run python -m dictation_server.main --recording
+# equivalente: recording.enabled: true in config.yaml
 ```
 
-La variabile viene usata solo dall'installer: aggiunge `--recording` agli
-argomenti del plist locale. Senza la variabile la registrazione resta spenta;
-per disattivarla basta rilanciare l'installer senza `GANGIOKEET_RECORDING`.
+Ogni dettatura completata (WebSocket o REST) scrive:
 
-Lo script:
+- `recordings/audio/<id>.wav`: PCM16 mono 16 kHz, permessi `0600`;
+- una riga in `recordings/manifest.jsonl`: testo `raw_text`/`final_text`,
+  profilo, trasporto, durata, modelli, metriche e SHA-256 dell'audio.
 
-1. risolve `uv` dal `PATH`;
-2. crea `~/Library/Logs/mlx-dictation/`;
-3. sostituisce `__UV_PATH__`, `__HOME__` e `__PROJECT_DIR__` nel template e
-   copia il plist in `~/Library/LaunchAgents/com.gangio.mlx-dictation.plist`;
-4. rimuove un eventuale caricamento precedente e fa `bootstrap`, con
-   fallback a `launchctl load`.
+Il manifest è già nel formato del corpus di `scripts/stt_eval.py`.
+`reference_raw` e `reference_final` partono vuoti e vanno annotati a mano:
+finché restano vuoti la raccolta non produce un WER. `selected_text` non viene
+mai salvato; `app_name` e `window_title` solo con
+`recording.store_context: true`. La directory è `0700`, i file sono `0600`.
+Le dettature annullate o fallite non vengono registrate e un errore di
+scrittura non fa fallire la dettatura. Non c'è pulizia automatica: la
+retention è manuale. `recordings/` è ignorata da git.
 
-Log:
+## Privacy e sicurezza
+
+- **Nessun cloud**: audio, trascrizioni e modelli restano sulla tua macchina.
+  Non ci sono account, telemetria o chiamate a servizi esterni durante l'uso.
+- **Log senza contenuto**: i log contengono codici, durate, byte, profondità di
+  coda e stato; mai testo dettato, prompt, titoli delle finestre o token.
+- **Nessuno storico su disco**: audio e trascrizioni vivono in RAM. L'unica
+  eccezione è la registrazione opt-in descritta sopra.
+- **LAN, non Internet**: il server non implementa TLS, rate limiting o
+  multi-tenancy. Di default token e audio viaggiano in chiaro su HTTP/WS; usa
+  una rete fidata, Tailscale/VPN, o `server.scheme: https` dietro un
+  terminatore TLS. Non esporre il server su Internet.
+- **Auth opzionale**: se più persone condividono la LAN, attiva
+  `security.api_key_env` e impostala anche sul client. `/health` resta pubblico;
+  tutte le altre rotte e il WebSocket sono protetti.
+- **Segnalazioni**: non aprire una issue pubblica per una vulnerabilità; vedi
+  [`SECURITY.md`](SECURITY.md).
+
+## Performance
+
+Numeri reali, senza marketing. Il default resta **Parakeet** per la latenza; il
+benchmark pubblico è uno screening, non una promozione automatica del modello
+migliore in assoluto.
+
+| Benchmark | Risultato |
+|---|---|
+| FLEURS italiano, 30 clip, Parakeet 0.6B | **3,88% WER raw**, p50 849 ms, p95 1060 ms |
+| FLEURS italiano, Qwen3-ASR 1.7B 8-bit | **2,01% WER raw**, p50 2251 ms, p95 3343 ms |
+| FLEURS italiano, Whisper turbo fp16 | **2,81% WER raw**, p50 1868 ms |
+| Smoke M1/8 GB, 3,9 s, con LLM | `stop → result` p50 **1041 ms**; STT ~559 ms; LLM ~479 ms |
+| Smoke M1/8 GB, fast path | `stop → result` p50 **570 ms**; STT ~558 ms |
+
+I target di latenza `< 400 ms` **non sono raggiunti** su un MacBook Air M1 con
+8 GB: lo STT ha un costo fisso di circa 558–576 ms anche su un audio di 3,9 s.
+Il fast path elimina l'LLM ma resta dominato dallo STT. I numeri sono quelli
+reali, senza cambiare la definizione delle metriche.
+
+<details>
+<summary><strong>Numeri completi e caveat</strong></summary>
+
+**Smoke benchmark** del 26 ottobre 2026, server in-process dopo warm-up,
+30 campioni per modalità e 2 warm-up, MacBook Air M1/8 GB, macOS 27.0.1,
+mlx 0.32.4, mlx-lm 0.32.2, parakeet-mlx 0.5.3, audio sintetico da 3,9 s
+(124.848 byte, chunk da 3200 byte), caricamento modelli + freeze 6,83 s,
+warm-up 1,08 s.
+
+| Metrica (ms) | p50 | p95 | max |
+|---|---:|---:|---:|
+| WebSocket `stop` → `result` (LLM) | 1041,4 | 1053,6 | 1059,8 |
+| WebSocket `stop` → `result` (fast path) | 570,1 | 577,7 | 577,7 |
+| Pipeline `total_ms` (LLM) | 1039,1 | 1051,0 | 1057,7 |
+| STT `stt_ms` (modalità LLM) | 558,9 | 566,4 | 575,8 |
+| LLM `llm_ms` (modalità LLM) | 479,3 | 489,0 | 499,0 |
+| LLM TTFT (`generate_step` → primo token) | 228,5 | 233,2 | 235,0 |
+| Pipeline `total_ms` (fast path) | 567,5 | 574,9 | 575,4 |
+| STT `stt_ms` (fast path) | 558,3 | 563,2 | 565,5 |
+
+Memoria: RSS `ps` 297 MB dopo il warm-up, picco 944 MB; picco Metal 3113 MB.
+Su memoria unificata la RSS di `ps` non rappresenta la memoria realmente
+impegnata da MLX: il dato Metal è quello significativo. **RSS e Metal non
+vanno sommati.**
+
+Questo è uno **smoke benchmark** su un singolo audio sintetico: non è il
+confronto completo sul corpus da 60 clip e non misura qualità, WER o RTF.
+Il benchmark pubblico FLEURS usa 30 registrazioni (21 frasi uniche, 15 corte +
+15 medie), licenza CC-BY-4.0, e resta uno screening: non copre
+sistematicamente termini tecnici, identificatori, path, numeri,
+autocorrezioni, silenzi o il dominio reale.
+
+</details>
+
+Per riprodurre:
 
 ```bash
-tail -f ~/Library/Logs/mlx-dictation/stdout.log
-tail -f ~/Library/Logs/mlx-dictation/stderr.log
+uv run python scripts/benchmark_mac.py --samples 30 --warmups 2
 ```
 
-Il template usa `WorkingDirectory=__PROJECT_DIR__` e log in
-`__HOME__/Library/Logs/mlx-dictation/`; `install_launchd.sh` sostituisce i
-placeholder con la root del checkout e con `$HOME`. Il `PATH` include
-`/opt/homebrew/bin` e `/usr/local/bin`, così `ffmpeg` è visibile anche sotto
-launchd. Se il progetto viene spostato, basta rilanciare l'installer.
+Il benchmark completo FLEURS è in `scripts/stt_eval*.py`; il corpus audio è
+locale e ignorato da git. La fixture `tests/fixtures/it_short.pcm` è una frase
+sintetica generata con `say -v Alice`, non la mia voce.
 
-## Contratto WebSocket
+## Dettagli tecnici
+
+<details>
+<summary><strong>Protocollo WebSocket</strong></summary>
 
 Endpoint: `ws://<host>:8000/ws/dictate`.
 
@@ -188,7 +473,7 @@ Stati: `idle → recording → processing → idle`. Un `start` è accettato sol
 Dopo `abort` il server cancella e drena il worker prima di accettare un nuovo
 `start`, e non invia alcun `result` per la richiesta annullata.
 
-### Messaggi client
+Messaggi client:
 
 ```json
 {"type": "start", "app_name": "...", "window_title": "...",
@@ -201,7 +486,7 @@ nel prompt del post-processore.
 
 Audio: frame binari PCM16 signed little-endian, mono, 16 kHz. I chunk vengono
 accodati in RAM; il limite per sessione è `limits.max_audio_bytes` (default
-`64 MiB`). Un singolo frame oltre `ws_max_size` (lo stesso valore, passato a
+64 MiB). Un singolo frame oltre `ws_max_size` (lo stesso valore, passato a
 uvicorn) viene chiuso dal layer WebSocket con codice 1009. Se è il buffer
 cumulativo a superare il limite, il server invia
 `{"type":"error","code":"payload_too_large"}` e chiude con codice 1009.
@@ -211,7 +496,7 @@ cumulativo a superare il limite, il server invia
 {"type": "abort"}
 ```
 
-### Risposte
+Risposte:
 
 ```json
 {"type": "result", "raw_text": "...", "final_text": "...",
@@ -234,12 +519,10 @@ protocollo non chiudono la connessione:
 ```
 
 Audio binario fuori da `recording`, JSON non valido, messaggi sconosciuti e
-transizioni di stato non valide producono `code="protocol"`. PCM con un
-numero dispari di byte produce `code="invalid_audio"` senza chiamare gli
-engine e la sessione torna `idle`. Un errore interno della pipeline produce
+transizioni di stato non valide producono `code="protocol"`. PCM con un numero
+dispari di byte produce `code="invalid_audio"` senza chiamare gli engine e la
+sessione torna `idle`. Un errore interno della pipeline produce
 `code="internal"` con messaggio generico e riporta lo stato a `idle`.
-
-Errori applicativi e codici di chiusura:
 
 | Codice | `retryable` | Chiusura WS |
 |---|---|---|
@@ -269,7 +552,10 @@ async def main():
 asyncio.run(main())
 ```
 
-## REST OpenAI-compatible
+</details>
+
+<details>
+<summary><strong>REST OpenAI-compatible</strong></summary>
 
 ```bash
 curl -s -X POST http://127.0.0.1:8000/v1/audio/transcriptions \
@@ -341,361 +627,89 @@ Errori REST (oltre ai `422` di validazione del framework):
 Il corpo è sempre `{"detail": {"code": "...", "message": "...",
 "retryable": true|false}}`.
 
-## Configurazione
+</details>
 
-`config.yaml` (estratto: il file completo contiene 21 termini canonici e 13
-override fonetici):
+## Sviluppo e test
 
-```yaml
-server:
-  host: "0.0.0.0"
-  port: 8000
-  stt_model: "mlx-community/parakeet-tdt-0.6b-v3"
-  llm_model: "mlx-community/Qwen3-1.7B-4bit"
-
-limits:
-  max_audio_bytes: 67108864
-  max_http_body_bytes: 68157440
-  max_buffered_audio_bytes: 201326592
-  max_sessions: 4
-  max_pending_jobs: 2
-
-timeouts:
-  upload_seconds: 10.0
-  decode_seconds: 5.0
-  queue_seconds: 2.0
-  processing_seconds: 10.0
-  llm_seconds: 5.0
-
-security:
-  api_key_env: null  # oppure "GANGIOKEET_API_KEY"
-
-recording:
-  enabled: false        # oppure avvia con --recording
-  directory: "recordings"
-  store_context: false  # app_name/window_title; selected_text mai
-
-routing:
-  fast_path_max_words: 5
-  self_correction_triggers: ["anzi", "scusa", "aspetta", "cioè", "o meglio", "volevo dire"]
-
-glossary:
-  canonical_terms: ["FastAPI", "Proxmox VE", "MLX", "WebSocket"]
-  phonetic_overrides:
-    "fast a pi": "FastAPI"
-    "emme elle ics": "MLX"
-```
-
-- `routing.fast_path_max_words`: sotto questa soglia l'LLM viene saltato,
-  salvo trigger o override fonetici presenti nel testo.
-- `routing.self_correction_triggers`: frasi che forzano il post-processing.
-- `glossary.canonical_terms` e `glossary.phonetic_overrides` vengono iniettati
-  nel system prompt congelato a boot; cambiarli richiede un riavvio.
-- Il file è validato con `extra="forbid"`: chiavi sconosciute sono errori.
-- Tutti i valori numerici di `limits` e `timeouts` devono essere positivi;
-  `max_audio_bytes` non può superare né `max_buffered_audio_bytes` né
-  `max_http_body_bytes`.
-
-### Limiti e timeout
-
-I default di `config.yaml` sono:
-
-| Impostazione | Default | Effetto |
-|---|---:|---|
-| `limits.max_audio_bytes` | 67.108.864 (64 MiB) | PCM massimo trattenuto per sessione WS e audio massimo accettato dal REST, incluso `format=pcm`. |
-| `limits.max_http_body_bytes` | 68.157.440 (65 MiB) | Corpo HTTP massimo per `POST /v1/audio/transcriptions`. Controllato prima del multipart e, per richieste chunked, contando i byte ricevuti. |
-| `limits.max_buffered_audio_bytes` | 201.326.592 (192 MiB) | Budget di audio trattenuto condiviso fra WebSocket e REST. Esaurito il budget, la richiesta fallisce con `busy`. |
-| `limits.max_sessions` | 4 | Sessioni audio contemporanee (WS + REST). Oltre il limite: `busy`. |
-| `limits.max_pending_jobs` | 2 | Job in coda oltre a quello attivo. Coda piena: `busy` immediato. |
-| `timeouts.upload_seconds` | 10,0 | Tempo per ricevere il corpo REST. Allo scadere: `upload_timeout` (408). |
-| `timeouts.decode_seconds` | 5,0 | Decodifica WAV/ffmpeg. Allo scadere: `decode_timeout` (504). |
-| `timeouts.queue_seconds` | 2,0 | Attesa in coda prima dello start. Allo scadere: `queue_timeout` (503). |
-| `timeouts.processing_seconds` | 10,0 | Limite rigido del job attivo, STT + LLM. Allo scadere: `processing_timeout` (504 lato REST, 1013 lato WS) e drain. |
-| `timeouts.llm_seconds` | 5,0 | Deadline cooperativa del cleaner LLM. Allo scadere il server usa il testo normalizzato con warning `llm_timeout`, entro il limite di processing. |
-
-Il limite del corpo HTTP è più alto di quello audio perché comprende
-l'overhead multipart. Il PCM grezzo dichiarato con `format=pcm` resta comunque
-soggetto a `max_audio_bytes`. `max_audio_bytes` è anche il `ws_max_size`
-passato a uvicorn, quindi un frame oltre il limite viene rifiutato prima di
-essere accodato.
-
-## Test
-
-Suite default, senza download né caricamento di modelli reali:
+**Server** (macOS/MLX):
 
 ```bash
 uv run pytest -q
-```
-
-Suite gated con Parakeet e Qwen reali (la prima esecuzione può scaricare i
-pesi):
-
-```bash
 RUN_REAL_MODELS=1 uv run pytest tests/integration -v
 ```
 
-La fixture `tests/fixtures/it_short.pcm` è una breve frase italiana sintetica
-di circa 3,9 s (PCM16 mono 16 kHz). È stata generata su macOS 27.0.1 con la
-voce italiana `Alice` e `ffmpeg`; versioni diverse della voce possono produrre
-byte diversi. Per rigenerarla:
+**Client** (Windows):
 
-```bash
-say -v Alice -r 230 -o /tmp/it_short.aiff \
-  "Ehm, controlla lo stato del servizio sul server, anzi no, solo lo stato."
-ffmpeg -y -i /tmp/it_short.aiff -f s16le -ar 16000 -ac 1 tests/fixtures/it_short.pcm
+```powershell
+dotnet test client-windows/GangioKeet.Client.sln --filter "Category!=Integration"
+$env:RUN_DESKTOP_TESTS="1"
+$env:RUN_REAL_SERVER="1"
+$env:GANGIOKEET_HOST="<IP_DEL_MAC>:8000"
+dotnet test client-windows/GangioKeet.Client.sln --filter "Category=Integration"
 ```
 
-## Benchmark
+La suite client di default usa fake; i test `Integration` toccano clipboard,
+finestra in primo piano, microfono, registry o un server reale e sono gated.
+La fixture audio è sintetica, quindi puoi eseguire i test senza registrare la
+tua voce.
 
-```bash
-uv run python scripts/benchmark_mac.py --samples 30 --warmups 2
+Struttura del repo:
+
+```
+dictation_server/    server FastAPI, scheduler, STT/LLM, auth, recording
+client-windows/     client WPF (hotkey, audio WASAPI, paste, tray, pill)
+deploy/             LaunchAgent macOS
+scripts/            benchmark e STT evaluation
+tests/              pytest del server
+assets/             icona
 ```
 
-Il benchmark avvia il server in-process (modelli reali, warm-up incluso),
-invia il PCM a chunk via WebSocket e misura:
+## Limiti
 
-- `stop → result` con LLM e con `bypass_llm=true`;
-- metriche interne `stt_ms`, `llm_ms`, `total_ms`;
-- TTFT LLM: dal lancio di `generate_step` al primo token; include il prefill
-  del suffisso utente ed esclude il clone della cache e il rendering del
-  template, che restano dentro `llm_ms`;
-- RSS dopo warm-up, dopo richieste brevi e dopo una richiesta lunga;
-- picco di memoria Metal.
-
-Esce con codice 1 se `p95 >= 400 ms`, TTFT `p95 >= 25 ms` oppure RSS
-`>= 2,8 GB`. Con `--url ws://...` contatta un server già caldo: in quel caso
-TTFT e dati di memoria del processo remoto (RSS e Metal) non sono
-disponibili; `--rss-pid` abilita il solo campionamento RSS. Il default
-in-process è il modo corretto per i gate.
-
-### Risultati misurati
-
-Run del **26 ottobre 2026**, server in-process dopo warm-up, 30 campioni per
-modalità e 2 warm-up per modalità:
-
-- MacBook Air Apple M1, 8 GB, macOS 27.0.1 (26A434), Python 3.12.15
-- mlx 0.32.4, mlx-lm 0.32.2, parakeet-mlx 0.5.3
-- commit di accettazione `568ad49`
-- STT `mlx-community/parakeet-tdt-0.6b-v3`, LLM
-  `mlx-community/Qwen3-1.7B-4bit`
-- audio `tests/fixtures/it_short.pcm`: 3,90 s (124.848 byte), chunk da
-  3200 byte
-- caricamento modelli + freeze: 6,83 s; warm-up: 1,08 s
-
-Questo è uno **smoke benchmark** su un singolo audio sintetico di 3,9 s: non è
-il confronto sul corpus da 60 clip (che resta **BLOCKED**) e non misura
-qualità, WER o RTF. I vecchi target di latenza restano **non raggiunti**.
-
-| Metrica (ms) | p50 | p95 | max |
-|---|---:|---:|---:|
-| WebSocket `stop` → `result` (LLM) | 1041,4 | 1053,6 | 1059,8 |
-| WebSocket `stop` → `result` (fast path) | 570,1 | 577,7 | 577,7 |
-| Pipeline `total_ms` (LLM) | 1039,1 | 1051,0 | 1057,7 |
-| STT `stt_ms` (modalità LLM) | 558,9 | 566,4 | 575,8 |
-| LLM `llm_ms` (modalità LLM) | 479,3 | 489,0 | 499,0 |
-| LLM TTFT (`generate_step` → primo token) | 228,5 | 233,2 | 235,0 |
-| Pipeline `total_ms` (fast path) | 567,5 | 574,9 | 575,4 |
-| STT `stt_ms` (fast path) | 558,3 | 563,2 | 565,5 |
-
-Memoria:
-
-- RSS misurata con `ps`: 297 MB dopo il warm-up, 74 MB dopo le richieste
-  brevi, 76 MB dopo la richiesta lunga, picco 944 MB.
-- Metal: picco 2986 MB dopo il warm-up, 3113 MB durante il benchmark,
-  2234 MB attivi al termine. Su memoria unificata la RSS di `ps` non
-  rappresenta la memoria realmente impegnata da MLX; il dato Metal è quello
-  significativo. **RSS e Metal non vanno sommati.**
-- Vecchio gate RSS `< 2,8 GB`: **PASS** con 944 MB.
-- Il criterio proposto per un Mac dedicato (8 GiB − 2 GiB per l'OS = 6 GiB)
-  resta **non verificato** come gate di footprint: i due picchi osservati
-  separatamente sono sotto 6 GiB (RSS ~0,92 GiB, Metal ~3,04 GiB), ma non
-  sono stati misurati footprint del processo, memory pressure o delta swap.
-
-Gate della run:
-
-| Gate | Esito | Valore |
-|---|---|---|
-| WebSocket p95 LLM < 400 ms | **FAIL** | 1053,6 ms |
-| WebSocket p95 fast path < 400 ms | **FAIL** | 577,7 ms |
-| RSS < 2,8 GB | **PASS** | 944 MB |
-| LLM TTFT p95 < 25 ms | **FAIL** | 233,2 ms |
-
-Il benchmark esce con **codice 1**. I target di latenza **non sono raggiunti su
-questo hardware**: anche con un audio di 3,9 s lo STT ha un costo fisso di
-circa 558–576 ms, e il TTFT misurato include il prefill del suffisso utente
-(circa 77 token), non solo il riuso della KV cache del system prompt. Il
-valore esclude il clone della cache e il rendering del template, conteggiati
-in `llm_ms`. Il fast path elimina l'LLM ma resta dominato dallo STT. I numeri
-sopra sono quelli reali, senza escludere il prefill o cambiare la definizione
-della metrica.
-
-L'accettazione locale dell'affidabilità è **PASS per il contratto e i test di
-breve durata**: suite default `387 passed, 7 skipped`, integrazione con modelli
-reali `7 passed`. Lo **smoke lungo con modelli caldi non è stato eseguito**.
-Il report completo, inclusi blocker e procedura di rollback, è mantenuto
-internamente e non è incluso nel repository pubblico.
-Deploy e smoke Windows **non sono stati eseguiti**.
-
-## Benchmark pubblico italiano (STT + cleaner)
-
-Questa sezione è separata dal benchmark di produzione qui sopra. Serve a
-confrontare modelli STT e cleaner su **parlato pubblico italiano**, senza
-registrare clip dell'utente. È uno screening, non una promozione del modello:
-non copre sistematicamente termini tecnici, identificatori, path, numeri,
-autocorrezioni, silenzi o il dominio reale. Sette clip su 30 contengono
-incidentalmente date o misure; la dettatura numerica/tecnica reale resta da
-testare.
-
-Il report completo è mantenuto internamente e non è incluso nel repository
-pubblico.
-
-### Setup isolato
-
-```bash
-uv venv .venv-stt-eval --python 3.12
-uv pip install --python .venv-stt-eval/bin/python \
-  -e . -r scripts/stt_eval_requirements.txt
-```
-
-`scripts/stt_eval_requirements.txt` è separato dal lock di produzione. Usa
-`datasets==3.6.0` perché `datasets` 5 richiede `torchcodec`; non modifica
-`pyproject.toml` né `uv.lock`.
-
-### Corpus FLEURS italiano
-
-```bash
-.venv-stt-eval/bin/python scripts/stt_eval_ingest_fleurs.py \
-  --output-dir tests/fixtures/stt_eval/public/fleurs_it \
-  --count 30 --seed 20261026 --split test \
-  --revision 70bb2e84b976b7e960aa89f1c648e09c59f894dd
-```
-
-Il manifest e la provenienza sono committati; `audio/` è ignorata da git.
-Il campione è di 30 registrazioni (21 frasi uniche; 15 corte + 15 medie),
-licenza FLEURS CC-BY-4.0. La selezione è deterministica (lowest-id per
-genere/durata), non casuale; il seed rompe solo i pareggi di durata. Le
-revisioni dei modelli sono in `model_revisions.json`: gli adapter risolvono lo
-snapshot cachato di quella revisione e falliscono se manca.
-
-### Esecuzione
-
-Fermare il server live prima del run se tiene già i modelli in memoria.
-
-```bash
-# Phase A: STT raw
-.venv-stt-eval/bin/python scripts/stt_eval.py \
-  --manifest tests/fixtures/stt_eval/public/fleurs_it/manifest.jsonl \
-  --candidate <stt_id> --warmups 2 --repeats 3 \
-  --output .superpowers/stt-benchmark/raw/<stt_id>.json
-
-# Phase B: cleaner sui transcript raw
-.venv-stt-eval/bin/python scripts/stt_eval_cleaners.py \
-  --raw .superpowers/stt-benchmark/raw/<stt_id>.json \
-  --manifest tests/fixtures/stt_eval/public/fleurs_it/manifest.jsonl \
-  --cleaner <cleaner_id> \
-  --output .superpowers/stt-benchmark/cleaners/<cleaner_id>__<stt_id>.json
-
-# Analisi riproducibile (WER, CI clip e cluster, latenza, memoria)
-python3 scripts/stt_eval_analyze.py \
-  --raw-dir .superpowers/stt-benchmark/raw \
-  --cleaners-dir .superpowers/stt-benchmark/cleaners \
-  --manifest tests/fixtures/stt_eval/public/fleurs_it/manifest.jsonl \
-  --output .superpowers/stt-benchmark/summary.json
-```
-
-STT disponibili: `parakeet_baseline`, `qwen3_asr_1_7b_8bit`,
-`nemotron_3_5_asr_streaming_0_6b`, `whisper_large_v3_turbo`.
-Cleaner disponibili: `qwen3_1_7b_4bit`, `qwen2_5_1_5b_instruct_4bit`.
-`cohere_transcribe_03_2026` è gated su Hugging Face e `qwen3_5_0_8b_4bit` non
-è compatibile con il freeze attuale: entrambi sono `NOT RUN` nel report.
-
-### Risultati sintetici (30 registrazioni FLEURS, M1/8 GB)
-
-| STT | WER raw | p50/p95 ms | Peak RSS/Metal MB |
-|---|---:|---:|---:|
-| Parakeet 0.6B | 3,88% | 849 / 1060 | 733 / 2128 |
-| Qwen3-ASR 1.7B 8bit | **2,01%** | 2251 / 3343 | 1803 / 3415 |
-| Nemotron 0.6B | 7,75% | 2867 / 4006 | 1375 / 1940 |
-| Whisper turbo fp16 | 2,81% | 1868 / 2077 | 1279 / 2043 |
-
-RSS e Metal non si sommano; il picco Metal include load e warm-up.
-
-I cleaner peggiorano il parlato letto già pulito: Qwen3-1.7B porta Parakeet
-da 3,88% a 8,42% e Qwen3-ASR da 2,01% a 9,89%; Qwen2.5 è peggiore su tre STT
-su quattro (è leggermente meglio su Whisper). Poiché tutte le clip FLEURS
-hanno 16–38 parole, la production non attiva mai il fast-path: production e
-forced-cleaner coincidono. Non cambiare il cleaner di produzione basandosi
-solo su questo corpus.
-
-## Registrazione della propria voce (opt-in)
-
-La registrazione è **spenta di default** e non salva nulla. Per raccogliere un
-corpus delle proprie dettature:
-
-```bash
-uv run python -m dictation_server.main --recording
-# equivalente: recording.enabled: true in config.yaml
-```
-
-Per farla partire anche al boot tramite LaunchAgent:
-
-```bash
-GANGIOKEET_RECORDING=1 ./deploy/install_launchd.sh
-```
-
-Ogni dettatura completata (WebSocket o REST) scrive:
-
-- `recordings/audio/<id>.wav`: PCM16 mono 16 kHz, permessi `0600`;
-- una riga in `recordings/manifest.jsonl`: testo `raw_text`/`final_text`,
-  profilo, trasporto, durata, modelli, metriche e SHA-256 dell'audio.
-
-Il manifest è già nel formato del corpus di `scripts/stt_eval.py`.
-`reference_raw` e `reference_final` partono vuoti e vanno annotati a mano:
-finché restano vuoti la raccolta non produce un WER. Dopo l'annotazione:
-
-```bash
-.venv-stt-eval/bin/python scripts/stt_eval.py \
-  --manifest recordings/manifest.jsonl \
-  --candidate parakeet_baseline --warmups 2 --repeats 3 \
-  --output .superpowers/stt-benchmark/raw/parakeet_baseline.json
-```
-
-`selected_text` non viene mai salvato; `app_name` e `window_title` solo con
-`recording.store_context: true`. La directory è `0700`, i file sono `0600`.
-Le dettature annullate o fallite non vengono registrate e un errore di
-scrittura non fa fallire la dettatura. Non c'è pulizia automatica: la
-retention è manuale. `recordings/` è ignorata da git.
-
-## Limiti di compatibilità
-
-- Il server è pensato per la rete locale: l'autenticazione Bearer è opzionale
-  e, se attiva, il token viaggia in chiaro su HTTP. Non implementa TLS, rate
-  limiting o multi-tenancy; usare una rete fidata o un reverse proxy TLS.
-- Il client Windows supporta `server.scheme: https` per usare `https://` e
-  `wss://` dietro un terminatore TLS (reverse proxy o tunnel). Con `http`
-  (default), token, audio e titoli delle finestre viaggiano in chiaro.
+- Il server è pensato per la **rete locale**: niente TLS, rate limiting o
+  multi-tenancy. Token e audio viaggiano in chiaro su HTTP/WS; usa una rete
+  fidata, Tailscale/VPN o un terminatore TLS con `server.scheme: https`.
 - Un solo processo e un solo lock Metal: le richieste concorrenti vengono
-  serializzate da uno scheduler FIFO a worker singolo. La coda e il budget
-  audio in byte sono condivisi fra WebSocket e REST; `limits` e `timeouts`
-  nel file di configurazione limitano sessioni, coda e durate.
+  serializzate da uno scheduler FIFO a worker singolo. Coda e budget audio sono
+  condivisi fra WebSocket e REST.
 - Lo scheduler rende visibile il timeout e impedisce l'overlap, ma non
   guarisce un kernel bloccato per sempre: se il kernel non ritorna, il job va
   in `processing_timeout`, il servizio resta `busy`/`draining` e `/health`
   continua a rispondere; serve un riavvio operativo.
 - I log contengono solo codici, durate, byte, profondità di coda e stato di
   drain: testo dettato, prompt, nomi file, titoli delle finestre e token non
-  vengono mai registrati. Audio e trascrizioni finiscono su disco solo quando
-  la modalità `--recording` è attiva.
+  vengono mai registrati.
 - L'audio di input deve essere PCM16 mono 16 kHz; il REST converte solo se
   `ffmpeg` è disponibile.
-- Il campo `model` del REST deve corrispondere al modello STT configurato;
-  non è un proxy per modelli OpenAI.
-- Nessun streaming parziale dei risultati: il client riceve un solo
-  `result` dopo `stop` (o nessun risultato dopo `abort`).
-- I target di latenza sono gate sperimentali e dipendono da chip, RAM,
-  modello e durata della dettatura; vedere la sezione misurata.
+- Il campo `model` del REST deve corrispondere al modello STT configurato; non
+  è un proxy per modelli OpenAI.
+- Nessun streaming parziale dei risultati: il client riceve un solo `result`
+  dopo `stop` (o nessun risultato dopo `abort`).
+- I target di latenza sono gate sperimentali e dipendono da chip, RAM, modello
+  e durata della dettatura; sul mio M1/8 GB i target `< 400 ms` non sono
+  raggiunti.
+
+## Crediti
+
+- **STT**: [Parakeet TDT 0.6B](https://huggingface.co/mlx-community/parakeet-tdt-0.6b-v3) su MLX.
+- **LLM**: [Qwen3 1.7B 4-bit](https://huggingface.co/mlx-community/Qwen3-1.7B-4bit) su MLX.
+- **Server**: FastAPI, uvicorn, Pydantic.
+- **Client**: WPF, NAudio, YamlDotNet, Hardcodet.NotifyIcon.Wpf.
+- **Corpus**: FLEURS (CC-BY-4.0).
+- **Icona**: wave-bird.
+- **Ispirazione**: Wispr Flow.
 
 ## Licenza
 
-MIT — vedi [LICENSE](LICENSE). Le trascrizioni FLEURS incluse nel manifest
-restano sotto CC-BY-4.0; vedi [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+MIT — vedi [`LICENSE`](LICENSE). Le trascrizioni FLEURS incluse nel manifest
+restano sotto CC-BY-4.0; vedi [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
+
+Wispr Flow è un marchio del rispettivo proprietario. GangioKeet è un progetto
+indipendente, non affiliato a Wispr Flow.
+
+---
+
+<p align="center">
+  Fatto con ☕, un MacBook Air M1 e la testardaggine di non voler pagare
+  l'abbonamento.
+</p>
