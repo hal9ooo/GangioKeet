@@ -103,6 +103,9 @@ class UploadLimitMiddleware:
             return
 
         scope.setdefault("state", {})["audio_lease"] = lease
+        # Keep the raw receive callable for disconnect monitoring after the
+        # body has been fully buffered and replaced by a replay callable.
+        scope["state"]["client_receive"] = receive
         try:
             body = await self._read_body(scope, receive, send)
             if body is None:

@@ -185,3 +185,36 @@ async def test_engine_error_still_clears_and_releases_lock():
     assert counter.n == 1
     r = await p.process(make_silence(0.5), bypass_llm=True)
     assert r.fast_path is True
+
+
+@pytest.mark.asyncio
+async def test_pcm_conversion_runs_inside_the_metal_lock(monkeypatch):
+    import dictation_server.pipeline as pipeline_module
+
+    calls = []
+
+    def recording_conversion(pcm):
+        calls.append(len(pcm))
+        return object()
+
+    monkeypatch.setattr(
+        pipeline_module, "pcm_bytes_to_mlx_array", recording_conversion
+    )
+    counter = ClearCounter()
+    stt = FakeSTT()
+    p = Pipeline(stt, FakeLLM(), load_config(CONFIG_PATH), counter)
+
+    await p._metal.acquire()
+    task = asyncio.create_task(p.process(make_silence(0.1), bypass_llm=True))
+    try:
+        await asyncio.sleep(0.05)
+        assert calls == []
+        assert stt.seen == []
+    finally:
+        p._metal.release()
+
+    result = await task
+    assert calls == [3200]
+    assert len(stt.seen) == 1
+    assert result.fast_path is True
+    assert counter.n == 1

@@ -36,6 +36,7 @@ from .protocol import (
     StartMsg,
     StopMsg,
 )
+from .scheduler import DictationScheduler
 
 logger = logging.getLogger(__name__)
 
@@ -56,12 +57,14 @@ class _DictationConnection:
         admission: AdmissionController,
         max_audio_bytes: int,
         auth: ApiKeyPolicy | None = None,
+        scheduler: DictationScheduler | None = None,
     ):
         self.websocket = websocket
         self.pipeline = pipeline
         self.admission = admission
         self.max_audio_bytes = max_audio_bytes
         self.auth = auth if auth is not None else ApiKeyPolicy()
+        self.scheduler = scheduler
         self.state = "idle"
         self.audio = bytearray()
         self.profile: Profile = "default"
@@ -69,6 +72,21 @@ class _DictationConnection:
         self.metadata: dict[str, str] = {}
         self.process_task: asyncio.Task | None = None
         self.lease: AudioLease | None = None
+
+    def _dictation_scheduler(self) -> DictationScheduler:
+        if self.scheduler is None:
+            cfg = getattr(self.pipeline, "cfg", None)
+            if cfg is None:
+                raise DictationFailure(
+                    "internal", "dictation scheduler is missing"
+                )
+            self.scheduler = DictationScheduler(
+                self.pipeline,
+                max_pending_jobs=cfg.limits.max_pending_jobs,
+                queue_timeout=cfg.timeouts.queue_seconds,
+                processing_timeout=cfg.timeouts.processing_seconds,
+            )
+        return self.scheduler
 
     async def run(self) -> None:
         await self.websocket.accept()
@@ -129,7 +147,7 @@ class _DictationConnection:
 
         if self.process_task is not None and self.process_task.done():
             if self.state == "processing":
-                await self._finish_processing()
+                return await self._finish_processing()
         return True
 
     async def _handle(self, message: dict) -> bool:
@@ -236,8 +254,6 @@ class _DictationConnection:
         pcm = bytes(self.audio)
         self.audio.clear()
         self.state = "processing"
-        if lease is not None:
-            lease.transfer()
         self.process_task = asyncio.create_task(
             self._run_processing(
                 pcm,
@@ -256,14 +272,19 @@ class _DictationConnection:
         profile: Profile,
         bypass_llm: bool,
     ) -> DictationResult:
+        if lease is None:
+            raise DictationFailure(
+                "internal", "audio admission lease is missing"
+            )
         try:
-            return await self.pipeline.process(
+            return await self._dictation_scheduler().submit(
                 pcm,
                 profile=profile,
                 bypass_llm=bypass_llm,
+                lease=lease,
             )
         finally:
-            if lease is not None:
+            if not lease.transferred:
                 lease.close()
 
     async def _abort(self, payload: dict) -> bool:
@@ -278,7 +299,7 @@ class _DictationConnection:
         await self._cancel_processing()
         return True
 
-    async def _finish_processing(self) -> None:
+    async def _finish_processing(self) -> bool:
         task = self.process_task
         assert task is not None
         self.process_task = None
@@ -286,12 +307,31 @@ class _DictationConnection:
             result = task.result()
         except asyncio.CancelledError:
             self.state = "idle"
-            return
+            self._release_lease()
+            return True
+        except DictationFailure as exc:
+            self.state = "idle"
+            self._release_lease()
+            if exc.code == "queue_timeout":
+                await self._send_error(
+                    exc.code, exc.message, retryable=exc.retryable
+                )
+                return True
+            if exc.code in {"busy", "processing_timeout"}:
+                await self._send_error(
+                    exc.code, exc.message, retryable=exc.retryable
+                )
+                await self._close(1013)
+                return False
+            logger.error("dictation processing failed: %s", exc)
+            await self._send_error("internal", "processing failed")
+            return True
         except Exception:
             logger.exception("dictation pipeline failed")
             self.state = "idle"
+            self._release_lease()
             await self._send_error("internal", "processing failed")
-            return
+            return True
 
         envelope = ResultEnvelope(
             raw_text=result.raw_text,
@@ -305,6 +345,7 @@ class _DictationConnection:
             pass
         finally:
             self.state = "idle"
+        return True
 
     async def _cancel_processing(self) -> None:
         task = self.process_task
@@ -319,6 +360,8 @@ class _DictationConnection:
         try:
             await task
         except asyncio.CancelledError:
+            pass
+        except DictationFailure:
             pass
         except Exception:
             logger.exception("dictation pipeline failed during cancellation")
@@ -351,6 +394,57 @@ class _DictationConnection:
             return False
 
 
+async def _wait_for_disconnect(request: Request) -> None:
+    receive = getattr(request.state, "client_receive", None)
+    if receive is None:
+        while not await request.is_disconnected():
+            await asyncio.sleep(0.05)
+        return
+
+    while True:
+        try:
+            message = await receive()
+        except Exception:
+            return
+        if message.get("type") == "http.disconnect":
+            return
+
+
+async def _run_until_disconnect(request: Request, work):
+    """Run one REST transcription job, cancelling it on client disconnect.
+
+    ``work`` is a coroutine that already owns any lease it acquires. The
+    cancelled coroutine is awaited before returning so a queued job or a
+    running engine thread cannot outlive the request without cleanup.
+    """
+    work_task = asyncio.create_task(work, name="dictation-rest-job")
+    disconnect_task = asyncio.create_task(
+        _wait_for_disconnect(request), name="dictation-rest-disconnect"
+    )
+    try:
+        done, _ = await asyncio.wait(
+            {work_task, disconnect_task},
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+        if work_task in done:
+            return work_task.result()
+
+        work_task.cancel()
+        try:
+            await work_task
+        except asyncio.CancelledError:
+            pass
+        raise HTTPException(
+            status_code=499, detail="client disconnected"
+        )
+    finally:
+        disconnect_task.cancel()
+        await asyncio.gather(disconnect_task, return_exceptions=True)
+        if not work_task.done():
+            work_task.cancel()
+            await asyncio.gather(work_task, return_exceptions=True)
+
+
 def create_app(
     cfg: AppConfig,
     pipeline: Pipeline,
@@ -370,6 +464,13 @@ def create_app(
     app.state.pipeline = pipeline
     app.state.admission = admission
     app.state.auth = auth
+    scheduler = DictationScheduler(
+        pipeline,
+        max_pending_jobs=cfg.limits.max_pending_jobs,
+        queue_timeout=cfg.timeouts.queue_seconds,
+        processing_timeout=cfg.timeouts.processing_seconds,
+    )
+    app.state.scheduler = scheduler
     app.add_middleware(
         UploadLimitMiddleware,
         admission=admission,
@@ -411,6 +512,7 @@ def create_app(
             admission,
             cfg.limits.max_audio_bytes,
             auth=auth,
+            scheduler=scheduler,
         ).run()
 
     @app.post("/v1/audio/transcriptions")
@@ -463,17 +565,26 @@ def create_app(
             lease.reserve(file_size)
             data = await file.read()
 
-        pcm = await decode_upload(
-            data,
-            file.filename,
-            file.content_type,
-            raw_pcm=format == "pcm",
-            lease=lease,
-            limits=cfg.limits,
-            timeout=cfg.timeouts.decode_seconds,
-        )
+        async def _decode_and_transcribe():
+            pcm = await decode_upload(
+                data,
+                file.filename,
+                file.content_type,
+                raw_pcm=format == "pcm",
+                lease=lease,
+                limits=cfg.limits,
+                timeout=cfg.timeouts.decode_seconds,
+            )
+            return await scheduler.submit(
+                pcm,
+                profile=profile,
+                bypass_llm=False,
+                lease=lease,
+            )
 
-        result = await pipeline.process(pcm, profile=profile)
+        result = await _run_until_disconnect(
+            request, _decode_and_transcribe()
+        )
         if response_format == "text":
             return PlainTextResponse(result.final_text)
 

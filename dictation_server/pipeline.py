@@ -91,13 +91,13 @@ class Pipeline:
         llm_ms = 0.0
         fast_path = True
 
-        if pcm:
-            audio = pcm_bytes_to_mlx_array(pcm)
-        else:
-            audio = None
-
         async with self._metal:
             try:
+                if pcm:
+                    audio = pcm_bytes_to_mlx_array(pcm)
+                else:
+                    audio = None
+
                 if audio is not None:
                     stt_start = time.perf_counter()
                     raw_text = await self._run_blocking(

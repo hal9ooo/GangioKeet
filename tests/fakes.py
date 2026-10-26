@@ -1,3 +1,4 @@
+import threading
 import time
 
 
@@ -105,3 +106,60 @@ class ClearCounter:
 
     def __call__(self):
         self.n += 1
+
+
+class BlockingFakeSTT(FakeSTT):
+    """STT whose worker thread can be held across a processing deadline.
+
+    ``started`` is set when a transcription begins, and the thread then waits
+    for ``release``. This keeps a real ``asyncio.to_thread`` worker blocked so
+    tests can observe scheduler deadlines and drain semantics.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.finished = threading.Event()
+        self._lock = threading.Lock()
+        self.starts = 0
+        self.active = 0
+        self.max_active = 0
+
+    def transcribe(self, audio):
+        with self._lock:
+            self.starts += 1
+            self.active += 1
+            self.max_active = max(self.max_active, self.active)
+        self.started.set()
+        try:
+            self.release.wait()
+            return super().transcribe(audio)
+        finally:
+            with self._lock:
+                self.active -= 1
+            self.finished.set()
+
+
+class BlockingFakeLLM(FakeLLM):
+    """LLM whose worker thread can be held across a processing deadline."""
+
+    def __init__(self):
+        super().__init__()
+        self.started = threading.Event()
+        self.release = threading.Event()
+        self.finished = threading.Event()
+        self.starts = 0
+
+    def clean(self, raw_text, profile):
+        self.starts += 1
+        self.started.set()
+        try:
+            self.release.wait()
+            return super().clean(raw_text, profile)
+        finally:
+            self.finished.set()
+
+
+def wait_thread_event(event: threading.Event, timeout: float = 3.0) -> bool:
+    return event.wait(timeout)

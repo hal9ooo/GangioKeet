@@ -10,6 +10,7 @@ from dictation_server.config import load_config
 from dictation_server.errors import DictationFailure
 from dictation_server.main import build_app, main, serve
 from dictation_server.protocol import MAX_AUDIO_BYTES
+from dictation_server.scheduler import DictationScheduler
 from tests.fakes import EagerFakeLLM, EagerFakeSTT
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -91,6 +92,88 @@ def test_build_app_enables_optional_bearer_auth(monkeypatch):
         app.state.auth.authorize("Bearer wrong-token")
     assert stt.loads == ["load"]
     assert llm.loads == ["load", "freeze"]
+
+
+def test_create_app_exposes_one_scheduler_from_config():
+    cfg = load_config("config.yaml")
+    app = build_app(cfg, stt=EagerFakeSTT(), llm=EagerFakeLLM())
+
+    scheduler = app.state.scheduler
+    assert isinstance(scheduler, DictationScheduler)
+    assert app.state.scheduler is scheduler
+    assert scheduler.snapshot().active is False
+    assert scheduler.snapshot().pending == 0
+
+
+@pytest.mark.asyncio
+async def test_serve_starts_scheduler_then_warm_up_then_binds_and_closes():
+    cfg = load_config("config.yaml")
+    stt, llm = EagerFakeSTT(), EagerFakeLLM()
+    app = build_app(cfg, stt=stt, llm=llm)
+    pipeline = app.state.pipeline
+    events = []
+
+    async def fake_start():
+        events.append("scheduler.start")
+
+    async def fake_close():
+        events.append("scheduler.close")
+
+    async def fake_warm_up():
+        events.append("warm_up")
+
+    pipeline.warm_up = fake_warm_up
+    app.state.scheduler.start = fake_start
+    app.state.scheduler.close = fake_close
+
+    class FakeServer:
+        async def serve(self):
+            events.append("serve")
+
+    await serve(cfg, app, pipeline, uvicorn_server=FakeServer())
+    assert events == [
+        "scheduler.start",
+        "warm_up",
+        "serve",
+        "scheduler.close",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_serve_closes_scheduler_when_serving_fails():
+    cfg = load_config("config.yaml")
+    stt, llm = EagerFakeSTT(), EagerFakeLLM()
+    app = build_app(cfg, stt=stt, llm=llm)
+    pipeline = app.state.pipeline
+    events = []
+
+    async def fake_start():
+        events.append("scheduler.start")
+
+    async def fake_close():
+        events.append("scheduler.close")
+
+    async def fake_warm_up():
+        events.append("warm_up")
+
+    pipeline.warm_up = fake_warm_up
+    app.state.scheduler.start = fake_start
+    app.state.scheduler.close = fake_close
+
+    class FakeServer:
+        async def serve(self):
+            events.append("serve")
+            raise RuntimeError("bind failed")
+
+    with pytest.raises(RuntimeError, match="bind failed"):
+        await serve(cfg, app, pipeline, uvicorn_server=FakeServer())
+
+    assert events == [
+        "scheduler.start",
+        "warm_up",
+        "serve",
+        "scheduler.close",
+    ]
 
 
 @pytest.mark.asyncio

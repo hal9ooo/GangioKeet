@@ -43,17 +43,25 @@ async def serve(
     pipeline: Pipeline,
     uvicorn_server: uvicorn.Server | None = None,
 ) -> None:
-    await pipeline.warm_up()
-    if uvicorn_server is None:
-        uvicorn_server = uvicorn.Server(
-            uvicorn.Config(
-                app,
-                host=cfg.server.host,
-                port=cfg.server.port,
-                ws_max_size=cfg.limits.max_audio_bytes,
+    state = getattr(app, "state", None)
+    scheduler = getattr(state, "scheduler", None)
+    try:
+        if scheduler is not None:
+            await scheduler.start()
+        await pipeline.warm_up()
+        if uvicorn_server is None:
+            uvicorn_server = uvicorn.Server(
+                uvicorn.Config(
+                    app,
+                    host=cfg.server.host,
+                    port=cfg.server.port,
+                    ws_max_size=cfg.limits.max_audio_bytes,
+                )
             )
-        )
-    await uvicorn_server.serve()
+        await uvicorn_server.serve()
+    finally:
+        if scheduler is not None:
+            await scheduler.close()
 
 
 def main(argv: list[str] | None = None) -> None:

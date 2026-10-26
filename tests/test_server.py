@@ -8,7 +8,9 @@ import wave
 
 import httpx
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from starlette.datastructures import UploadFile
 from starlette.websockets import WebSocketDisconnect
 
 from dictation_server.admission import (
@@ -20,12 +22,18 @@ from dictation_server.config import load_config
 from dictation_server.errors import DictationFailure
 from dictation_server.pipeline import Pipeline
 from dictation_server.protocol import MAX_AUDIO_BYTES
+from dictation_server.scheduler import DictationScheduler, SchedulerSnapshot
 from dictation_server.server import (
     AudioDecodeError,
     _DictationConnection,
     create_app,
 )
-from tests.fakes import FakeLLM, FakeSTT, SlowFakeLLM
+from tests.fakes import (
+    BlockingFakeSTT,
+    FakeLLM,
+    FakeSTT,
+    SlowFakeLLM,
+)
 from tests.helpers import make_silence
 
 PROFILES = ["code", "terminal", "chat", "email", "document", "default"]
@@ -941,6 +949,447 @@ def test_rest_and_ws_share_the_same_audio_budget(cfg):
 
             ws.send_json({"type": "stop"})
             assert ws.receive_json()["type"] == "result"
+
+        assert wait_for(
+            lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+        )
+
+
+async def _wait_until_async(predicate, timeout: float = 3.0) -> None:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while loop.time() < deadline:
+        if predicate():
+            return
+        await asyncio.sleep(0.01)
+    assert predicate()
+
+
+async def _wait_thread_event(event, timeout: float = 3.0) -> None:
+    await asyncio.wait_for(asyncio.to_thread(event.wait), timeout)
+
+
+def _route_endpoint(app, path: str):
+    for route in app.routes:
+        if getattr(route, "path", None) == path:
+            return route.endpoint
+    raise AssertionError(f"route {path} not found")
+
+
+class _FakeRESTRequest:
+    def __init__(self, lease, disconnected):
+        self.state = type("State", (), {"audio_lease": lease})()
+        self._disconnected = disconnected
+
+    async def is_disconnected(self) -> bool:
+        return self._disconnected.is_set()
+
+
+@pytest.mark.asyncio
+async def test_rest_disconnect_cancels_submit_and_releases_lease(cfg):
+    cfg.timeouts.queue_seconds = 5.0
+    cfg.timeouts.processing_seconds = 5.0
+    stt = BlockingFakeSTT()
+    app = create_app(cfg, Pipeline(stt, FakeLLM(), cfg))
+    admission = app.state.admission
+    scheduler = app.state.scheduler
+    pcm = make_silence(0.1)
+
+    blocker_lease = admission.acquire()
+    blocker_lease.reserve(len(pcm))
+    blocker = asyncio.create_task(
+        scheduler.submit(pcm, "default", True, blocker_lease)
+    )
+    await _wait_thread_event(stt.started)
+
+    lease = admission.acquire()
+    lease.reserve(len(pcm))
+    disconnected = asyncio.Event()
+    request = _FakeRESTRequest(lease, disconnected)
+    endpoint = _route_endpoint(app, "/v1/audio/transcriptions")
+    upload = UploadFile(
+        file=io.BytesIO(pcm), size=len(pcm), filename="d.pcm"
+    )
+    route_task = asyncio.create_task(
+        endpoint(
+            request=request,
+            file=upload,
+            model=None,
+            response_format="json",
+            profile="default",
+            format="pcm",
+        )
+    )
+    await _wait_until_async(lambda: scheduler.snapshot().pending == 1)
+
+    disconnected.set()
+    with pytest.raises(HTTPException) as info:
+        await asyncio.wait_for(route_task, timeout=3.0)
+    assert info.value.status_code == 499
+    assert scheduler.snapshot().pending == 0
+    assert lease.closed is True
+
+    stt.release.set()
+    await blocker
+    await _wait_until_async(
+        lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+    )
+    await scheduler.close()
+
+
+@pytest.mark.asyncio
+async def test_rest_disconnect_cancels_decoder_before_submit(cfg, monkeypatch):
+    cfg.timeouts.queue_seconds = 5.0
+    cfg.timeouts.processing_seconds = 5.0
+    cfg.timeouts.decode_seconds = 5.0
+    app = create_app(cfg, Pipeline(FakeSTT(), FakeLLM(), cfg))
+    admission = app.state.admission
+    scheduler = app.state.scheduler
+
+    decode_started = asyncio.Event()
+    decode_cancelled = asyncio.Event()
+
+    async def blocking_decode(*_args, **_kwargs):
+        decode_started.set()
+        try:
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            decode_cancelled.set()
+            raise
+
+    monkeypatch.setattr(
+        "dictation_server.server.decode_upload", blocking_decode
+    )
+
+    lease = admission.acquire()
+    lease.reserve(4)
+    disconnected = asyncio.Event()
+    request = _FakeRESTRequest(lease, disconnected)
+    endpoint = _route_endpoint(app, "/v1/audio/transcriptions")
+    upload = UploadFile(
+        file=io.BytesIO(b"\x00\x00\x00\x00"), size=4, filename="d.wav"
+    )
+    route_task = asyncio.create_task(
+        endpoint(
+            request=request,
+            file=upload,
+            model=None,
+            response_format="json",
+            profile="default",
+            format=None,
+        )
+    )
+    await asyncio.wait_for(decode_started.wait(), timeout=2.0)
+
+    disconnected.set()
+    with pytest.raises(HTTPException) as info:
+        await asyncio.wait_for(route_task, timeout=3.0)
+    assert info.value.status_code == 499
+    assert decode_cancelled.is_set()
+    assert scheduler.snapshot() == SchedulerSnapshot(
+        active=False, pending=0, draining=False
+    )
+    assert lease.transferred is False
+    lease.close()
+    await scheduler.close()
+
+
+@pytest.mark.asyncio
+async def test_rest_scheduler_busy_keeps_lease_caller_owned(cfg):
+    cfg.timeouts.queue_seconds = 5.0
+    cfg.timeouts.processing_seconds = 5.0
+    stt = BlockingFakeSTT()
+    app = create_app(cfg, Pipeline(stt, FakeLLM(), cfg))
+    admission = app.state.admission
+    scheduler = app.state.scheduler
+    pcm = make_silence(0.1)
+
+    jobs = []
+    for index in range(3):
+        lease = admission.acquire()
+        lease.reserve(len(pcm))
+        jobs.append(
+            asyncio.create_task(
+                scheduler.submit(pcm, "default", True, lease)
+            )
+        )
+        if index == 0:
+            await _wait_thread_event(stt.started)
+    await _wait_until_async(lambda: scheduler.snapshot().pending == 2)
+
+    lease = admission.acquire()
+    lease.reserve(len(pcm))
+    request = _FakeRESTRequest(lease, asyncio.Event())
+    endpoint = _route_endpoint(app, "/v1/audio/transcriptions")
+    upload = UploadFile(
+        file=io.BytesIO(pcm), size=len(pcm), filename="d.pcm"
+    )
+
+    with pytest.raises(DictationFailure) as info:
+        await endpoint(
+            request=request,
+            file=upload,
+            model=None,
+            response_format="json",
+            profile="default",
+            format="pcm",
+        )
+    assert info.value.code == "busy"
+    assert lease.transferred is False
+    assert lease.closed is False
+
+    lease.close()
+    stt.release.set()
+    await asyncio.gather(*jobs)
+    await _wait_until_async(
+        lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+    )
+    await scheduler.close()
+
+
+def test_rest_processing_timeout_returns_504_and_drains(cfg):
+    cfg.timeouts.queue_seconds = 5.0
+    cfg.timeouts.processing_seconds = 0.15
+    stt = BlockingFakeSTT()
+    client, _, _ = build_client(cfg, stt=stt)
+    admission = client.app.state.admission
+    scheduler = client.app.state.scheduler
+
+    with client:
+        response = client.post(
+            "/v1/audio/transcriptions?format=pcm",
+            files={
+                "file": (
+                    "d.pcm",
+                    make_silence(0.2),
+                    "application/octet-stream",
+                )
+            },
+        )
+        assert response.status_code == 504
+        detail = response.json()["detail"]
+        assert detail["code"] == "processing_timeout"
+        assert detail["retryable"] is True
+        assert scheduler.snapshot().draining is True
+
+        stt.release.set()
+        assert wait_for(
+            lambda: scheduler.snapshot()
+            == SchedulerSnapshot(active=False, pending=0, draining=False)
+        )
+        assert wait_for(
+            lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+        )
+
+
+@pytest.mark.asyncio
+async def test_health_responds_while_engine_thread_is_blocked(cfg):
+    cfg.timeouts.queue_seconds = 5.0
+    cfg.timeouts.processing_seconds = 5.0
+    stt = BlockingFakeSTT()
+    app = create_app(cfg, Pipeline(stt, FakeLLM(), cfg))
+    admission = app.state.admission
+    scheduler = app.state.scheduler
+    pcm = make_silence(0.1)
+
+    lease = admission.acquire()
+    lease.reserve(len(pcm))
+    job = asyncio.create_task(
+        scheduler.submit(pcm, "default", True, lease)
+    )
+    await _wait_thread_event(stt.started)
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as async_client:
+        response = await asyncio.wait_for(
+            async_client.get("/health"), timeout=2.0
+        )
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    assert scheduler.snapshot() == SchedulerSnapshot(
+        active=True, pending=0, draining=False
+    )
+
+    stt.release.set()
+    await job
+    await _wait_until_async(
+        lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+    )
+    await scheduler.close()
+
+
+def test_ws_queue_timeout_returns_idle_and_connection_is_reusable(cfg):
+    cfg.timeouts.queue_seconds = 0.15
+    cfg.timeouts.processing_seconds = 5.0
+    stt = BlockingFakeSTT()
+    client, _, _ = build_client(cfg, stt=stt)
+    admission = client.app.state.admission
+    scheduler = client.app.state.scheduler
+
+    with client:
+        with client.websocket_connect("/ws/dictate") as first:
+            send_start(first)
+            first.send_bytes(make_silence(0.2))
+            first.send_json({"type": "stop"})
+            assert wait_for(lambda: stt.started.is_set())
+
+            with client.websocket_connect("/ws/dictate") as second:
+                send_start(second)
+                second.send_bytes(make_silence(0.2))
+                second.send_json({"type": "stop"})
+                error = second.receive_json()
+                assert error["type"] == "error"
+                assert error["code"] == "queue_timeout"
+                assert error["retryable"] is True
+                assert scheduler.snapshot().pending == 0
+                assert stt.starts == 1
+
+                stt.release.set()
+                assert first.receive_json()["type"] == "result"
+
+                send_start(second)
+                second.send_bytes(make_silence(0.2))
+                second.send_json({"type": "stop"})
+                assert second.receive_json()["type"] == "result"
+
+        assert wait_for(
+            lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+        )
+
+
+def test_ws_processing_timeout_sends_error_and_closes_1013(cfg):
+    cfg.timeouts.queue_seconds = 5.0
+    cfg.timeouts.processing_seconds = 0.15
+    stt = BlockingFakeSTT()
+    client, _, _ = build_client(cfg, stt=stt)
+    admission = client.app.state.admission
+    scheduler = client.app.state.scheduler
+
+    with client:
+        with client.websocket_connect("/ws/dictate") as ws:
+            send_start(ws)
+            ws.send_bytes(make_silence(0.2))
+            ws.send_json({"type": "stop"})
+            assert wait_for(lambda: stt.started.is_set())
+
+            error = ws.receive_json()
+            assert error["type"] == "error"
+            assert error["code"] == "processing_timeout"
+            assert error["retryable"] is True
+            assert scheduler.snapshot().draining is True
+
+            with pytest.raises(WebSocketDisconnect) as excinfo:
+                ws.receive_json()
+            assert excinfo.value.code == 1013
+
+        stt.release.set()
+        assert wait_for(
+            lambda: scheduler.snapshot()
+            == SchedulerSnapshot(active=False, pending=0, draining=False)
+        )
+        assert wait_for(
+            lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+        )
+
+
+def test_ws_abort_while_queued_leaves_connection_reusable(cfg):
+    cfg.timeouts.queue_seconds = 5.0
+    cfg.timeouts.processing_seconds = 5.0
+    stt = BlockingFakeSTT()
+    client, _, _ = build_client(cfg, stt=stt)
+    admission = client.app.state.admission
+    scheduler = client.app.state.scheduler
+
+    with client:
+        with client.websocket_connect("/ws/dictate") as first:
+            send_start(first)
+            first.send_bytes(make_silence(0.2))
+            first.send_json({"type": "stop"})
+            assert wait_for(lambda: stt.started.is_set())
+
+            with client.websocket_connect("/ws/dictate") as second:
+                send_start(second)
+                second.send_bytes(make_silence(0.2))
+                second.send_json({"type": "stop"})
+                assert wait_for(
+                    lambda: scheduler.snapshot().pending == 1
+                )
+
+                second.send_json({"type": "abort"})
+                assert wait_for(
+                    lambda: scheduler.snapshot().pending == 0
+                )
+                assert stt.starts == 1
+
+                stt.release.set()
+                assert first.receive_json()["type"] == "result"
+
+                send_start(second)
+                second.send_bytes(make_silence(0.2))
+                second.send_json({"type": "stop"})
+                result = second.receive_json()
+                assert result["type"] == "result"
+
+        assert wait_for(
+            lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+        )
+
+
+def test_ws_busy_stop_releases_lease_and_closes_1013(cfg):
+    cfg.timeouts.queue_seconds = 5.0
+    cfg.timeouts.processing_seconds = 5.0
+    stt = BlockingFakeSTT()
+    client, _, _ = build_client(cfg, stt=stt)
+    admission = client.app.state.admission
+    scheduler = client.app.state.scheduler
+    audio = make_silence(0.2)
+
+    with client:
+        with client.websocket_connect("/ws/dictate") as first:
+            send_start(first)
+            first.send_bytes(audio)
+            first.send_json({"type": "stop"})
+            assert wait_for(lambda: stt.started.is_set())
+
+            with client.websocket_connect("/ws/dictate") as second:
+                send_start(second)
+                second.send_bytes(audio)
+                second.send_json({"type": "stop"})
+                assert wait_for(
+                    lambda: scheduler.snapshot().pending == 1
+                )
+
+                with client.websocket_connect("/ws/dictate") as third:
+                    send_start(third)
+                    third.send_bytes(audio)
+                    third.send_json({"type": "stop"})
+                    assert wait_for(
+                        lambda: scheduler.snapshot().pending == 2
+                    )
+
+                    with client.websocket_connect(
+                        "/ws/dictate"
+                    ) as fourth:
+                        send_start(fourth)
+                        fourth.send_bytes(audio)
+                        fourth.send_json({"type": "stop"})
+                        error = fourth.receive_json()
+                        assert error["type"] == "error"
+                        assert error["code"] == "busy"
+                        assert error["retryable"] is True
+                        with pytest.raises(
+                            WebSocketDisconnect
+                        ) as excinfo:
+                            fourth.receive_json()
+                        assert excinfo.value.code == 1013
+
+                        stt.release.set()
+
+                    assert third.receive_json()["type"] == "result"
+                assert second.receive_json()["type"] == "result"
+            assert first.receive_json()["type"] == "result"
 
         assert wait_for(
             lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
