@@ -72,6 +72,43 @@ def wait_for(predicate, timeout: float = 3.0) -> bool:
     return predicate()
 
 
+def test_result_defaults_warnings_to_empty(client):
+    with client.websocket_connect("/ws/dictate") as ws:
+        send_start(ws)
+        ws.send_json({"type": "stop"})
+        d = ws.receive_json()
+    assert d["type"] == "result"
+    assert d["warnings"] == []
+
+
+def test_error_envelope_defaults_retryable_to_false(client):
+    with client.websocket_connect("/ws/dictate") as ws:
+        ws.send_json({"type": "unexpected"})
+        d = ws.receive_json()
+    assert d["type"] == "error"
+    assert d["retryable"] is False
+
+
+def test_result_and_error_dto_defaults():
+    from dictation_server.pipeline import DictationResult, Metrics
+    from dictation_server.protocol import ErrorMsg, ResultEnvelope
+
+    result = DictationResult(
+        raw_text="", final_text="", fast_path=True,
+        metrics=Metrics(stt_ms=1.0, llm_ms=1.0, total_ms=2.0),
+    )
+    assert result.warnings == []
+
+    envelope = ResultEnvelope(
+        raw_text="", final_text="", fast_path=True,
+        metrics=Metrics(stt_ms=1.0, llm_ms=1.0, total_ms=2.0),
+    )
+    assert envelope.warnings == []
+
+    err = ErrorMsg(code="protocol", message="bad")
+    assert err.retryable is False
+
+
 def test_health(client):
     response = client.get("/health")
     assert response.status_code == 200

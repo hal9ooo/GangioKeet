@@ -3,7 +3,7 @@ import logging
 import time
 from typing import Callable
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .audio import SAMPLE_RATE, pcm_bytes_to_mlx_array
 from .config import AppConfig
@@ -27,6 +27,7 @@ class DictationResult(BaseModel):
     final_text: str
     fast_path: bool
     metrics: Metrics
+    warnings: list[str] = Field(default_factory=list)
 
 
 def _clear_metal_cache() -> None:

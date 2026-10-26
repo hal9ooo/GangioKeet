@@ -64,3 +64,99 @@ def test_unknown_config_key_raises(tmp_path: Path):
     )
     with pytest.raises(ValidationError):
         load_config(p)
+
+
+LEGACY_SERVER = (
+    "server:\n"
+    "  host: 127.0.0.1\n"
+    "  stt_model: stt\n"
+    "  llm_model: llm\n"
+    "routing:\n"
+    "  self_correction_triggers: []\n"
+    "glossary:\n"
+    "  canonical_terms: []\n"
+    "  phonetic_overrides: {}\n"
+)
+
+
+def test_legacy_config_gets_reliability_defaults(tmp_path: Path):
+    p = tmp_path / "legacy.yaml"
+    p.write_text(LEGACY_SERVER)
+    cfg = load_config(p)
+
+    assert cfg.limits.max_audio_bytes == 67108864
+    assert cfg.limits.max_http_body_bytes == 68157440
+    assert cfg.limits.max_buffered_audio_bytes == 201326592
+    assert cfg.limits.max_sessions == 4
+    assert cfg.limits.max_pending_jobs == 2
+
+    assert cfg.timeouts.upload_seconds == 10.0
+    assert cfg.timeouts.decode_seconds == 5.0
+    assert cfg.timeouts.queue_seconds == 2.0
+    assert cfg.timeouts.processing_seconds == 10.0
+    assert cfg.timeouts.llm_seconds == 5.0
+
+    assert cfg.security.api_key_env is None
+
+
+def _write_limits(tmp_path: Path, limits_yaml: str) -> Path:
+    p = tmp_path / "limits.yaml"
+    p.write_text(LEGACY_SERVER + "limits:\n" + limits_yaml)
+    return p
+
+
+@pytest.mark.parametrize(
+    "limits_yaml",
+    [
+        "  max_audio_bytes: 0\n",
+        "  max_audio_bytes: -1\n",
+        "  max_http_body_bytes: 0\n",
+        "  max_buffered_audio_bytes: -5\n",
+        "  max_sessions: 0\n",
+        "  max_pending_jobs: -2\n",
+    ],
+)
+def test_invalid_limits_rejected_non_positive(tmp_path: Path, limits_yaml: str):
+    with pytest.raises(ValidationError):
+        load_config(_write_limits(tmp_path, limits_yaml))
+
+
+@pytest.mark.parametrize(
+    "limits_yaml",
+    [
+        "  max_audio_bytes: 201326593\n",  # > max_buffered_audio_bytes
+        "  max_audio_bytes: 68157441\n",  # > max_http_body_bytes
+    ],
+)
+def test_invalid_limits_rejected_audio_exceeds_budgets(tmp_path: Path, limits_yaml: str):
+    with pytest.raises(ValidationError):
+        load_config(_write_limits(tmp_path, limits_yaml))
+
+
+@pytest.mark.parametrize(
+    "timeouts_yaml",
+    [
+        "  upload_seconds: 0\n",
+        "  decode_seconds: -1.0\n",
+        "  queue_seconds: 0\n",
+        "  processing_seconds: -0.5\n",
+        "  llm_seconds: 0\n",
+    ],
+)
+def test_invalid_timeouts_rejected(tmp_path: Path, timeouts_yaml: str):
+    p = tmp_path / "timeouts.yaml"
+    p.write_text(LEGACY_SERVER + "timeouts:\n" + timeouts_yaml)
+    with pytest.raises(ValidationError):
+        load_config(p)
+
+
+def test_unknown_key_still_rejected(tmp_path: Path):
+    p = tmp_path / "unknown.yaml"
+    p.write_text(LEGACY_SERVER + "limits:\n  max_audio_byte: 1\n")
+    with pytest.raises(ValidationError):
+        load_config(p)
+
+    p = tmp_path / "unknown-top.yaml"
+    p.write_text(LEGACY_SERVER + "limts:\n  max_audio_bytes: 1\n")
+    with pytest.raises(ValidationError):
+        load_config(p)

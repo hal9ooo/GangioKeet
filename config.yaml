@@ -4,6 +4,23 @@ server:
   stt_model: "mlx-community/parakeet-tdt-0.6b-v3"
   llm_model: "mlx-community/Qwen3-1.7B-4bit"
 
+limits:
+  max_audio_bytes: 67108864
+  max_http_body_bytes: 68157440
+  max_buffered_audio_bytes: 201326592
+  max_sessions: 4
+  max_pending_jobs: 2
+
+timeouts:
+  upload_seconds: 10.0
+  decode_seconds: 5.0
+  queue_seconds: 2.0
+  processing_seconds: 10.0
+  llm_seconds: 5.0
+
+security:
+  api_key_env: null
+
 routing:
   fast_path_max_words: 5
   self_correction_triggers:

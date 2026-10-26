@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .pipeline import Metrics
 from .prompt import Profile
@@ -41,9 +41,11 @@ class ResultEnvelope(BaseModel):
     final_text: str
     fast_path: bool
     metrics: Metrics
+    warnings: list[str] = Field(default_factory=list)
 
 
 class ErrorMsg(BaseModel):
     type: Literal["error"] = "error"
     code: str
     message: str
+    retryable: bool = False
