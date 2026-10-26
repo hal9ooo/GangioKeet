@@ -33,6 +33,7 @@ public partial class App : Application
     private PillWindow? _pill;
     private WasapiAudioCapture? _capture;
     private LowLevelInputHooks? _hooks;
+    private GesturePump? _gestures;
     private StaPasteDispatcher? _pasteDispatcher;
     private SynthSoundPlayer? _soundPlayer;
     private HttpClient? _healthHttp;
@@ -130,8 +131,11 @@ public partial class App : Application
             new Win32InputHookBackend(),
             new HookSuppressionPolicy(config.Hotkey.Key, config.Hotkey.AbortKey));
 
-        GestureDetector gestures = new(config.Hotkey, time);
-        _hooks.RawEvent += (_, raw) => HandleRawEvent(raw, gestures, config);
+        _gestures = new GesturePump(
+            new GestureDetector(config.Hotkey, time),
+            DispatchGesture,
+            time);
+        _hooks.RawEvent += (_, raw) => HandleRawEvent(raw, config);
 
         _healthHttp = new HttpClient();
         _health = new HealthMonitor(
@@ -217,7 +221,7 @@ public partial class App : Application
             TimeSpan.FromSeconds(config.Server.ResponseTimeoutSeconds));
     }
 
-    private void HandleRawEvent(RawKeyEvent raw, GestureDetector gestures, ClientConfig config)
+    private void HandleRawEvent(RawKeyEvent raw, ClientConfig config)
     {
         KeyCode abortKey = KeyCodes.Parse(config.Hotkey.AbortKey);
         if (!raw.FromMouse && raw.VirtualKey == abortKey.VirtualKey)
@@ -230,24 +234,29 @@ public partial class App : Application
             return;
         }
 
-        IReadOnlyList<GestureKind> kinds = raw.IsDown
-            ? gestures.OnKeyDown()
-            : gestures.OnKeyUp();
+        _gestures?.OnRaw(raw);
+    }
 
-        foreach (GestureKind kind in kinds)
+    private void DispatchGesture(GestureKind kind)
+    {
+        switch (kind)
         {
-            switch (kind)
-            {
-                case GestureKind.Start:
-                    _hooks!.AbortActive = true;
-                    _controller?.Start();
-                    break;
-                case GestureKind.StopAndTranscribe:
-                    _ = StopAndClearAsync();
-                    break;
-                case GestureKind.HandsFreeEntered:
-                    break;
-            }
+            case GestureKind.Start:
+                if (_hooks is not null)
+                {
+                    _hooks.AbortActive = true;
+                }
+
+                _controller?.Start();
+                break;
+            case GestureKind.StopAndTranscribe:
+                _ = StopAndClearAsync();
+                break;
+            case GestureKind.Abort:
+                _ = AbortAndClearAsync();
+                break;
+            case GestureKind.HandsFreeEntered:
+                break;
         }
     }
 
@@ -257,10 +266,11 @@ public partial class App : Application
         {
             _logger?.Write("shutdown", "Shutting down.");
 
-            // Prima si ferma chi produce eventi (hook, health), poi chi li consuma,
-            // infine le risorse WPF. Mai il contrario: gli handler non devono toccare
-            // servizi già disposti.
+            // Prima si ferma chi produce eventi (hook, gesture pump, health), poi chi li
+            // consuma, infine le risorse WPF. Mai il contrario: gli handler non devono
+            // toccare servizi già disposti.
             _hooks?.Dispose();
+            _gestures?.Dispose();
             _healthCts?.Cancel();
 
             if (_controller is not null)
