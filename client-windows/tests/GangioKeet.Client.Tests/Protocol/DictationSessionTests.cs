@@ -279,7 +279,17 @@ public sealed class DictationSessionTests
         Task<DictationOutcome> completion = session.Completion;
         await transport.WhenStopSent;
 
-        clock.Advance(ResponseTimeout);
+        // La deadline viene armata dopo l'invio effettivo di stop: avanzare il clock
+        // subito può cadere prima dell'armamento (race). Avanzare finché il terminale
+        // non è pubblicato, con un bound reale per non appendersi.
+        using (CancellationTokenSource guard = new(TimeSpan.FromSeconds(10)))
+        {
+            while (!completion.IsCompleted)
+            {
+                clock.Advance(ResponseTimeout);
+                await Task.Delay(TimeSpan.FromMilliseconds(10), guard.Token);
+            }
+        }
 
         DictationOutcome outcome = await completion;
         DictationOutcome finishOutcome = await finishTask;
@@ -341,7 +351,16 @@ public sealed class DictationSessionTests
 
         transport.HangNextClose();
         Task abortTask = session.AbortAsync(CancellationToken.None);
-        clock.Advance(AbortGrace);
+
+        // Stessa race del timeout: il grace period viene armato dopo la close.
+        using (CancellationTokenSource guard = new(TimeSpan.FromSeconds(10)))
+        {
+            while (!abortTask.IsCompleted)
+            {
+                clock.Advance(AbortGrace);
+                await Task.Delay(TimeSpan.FromMilliseconds(10), guard.Token);
+            }
+        }
 
         await abortTask;
 

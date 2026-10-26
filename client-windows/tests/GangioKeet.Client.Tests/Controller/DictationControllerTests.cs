@@ -83,6 +83,55 @@ public sealed class DictationControllerTests
     }
 
     [Fact]
+    public async Task StopAsync_WhenIdle_DoesNothing()
+    {
+        FakeCapture capture = new();
+        FakeTimeProvider time = new();
+
+        DictationController controller = new(
+            capture,
+            () => throw new InvalidOperationException("should not be called"),
+            CreatePasteService(time),
+            new RecoveryStore(time, TimeSpan.FromSeconds(600)),
+            new FakeForeground(),
+            new FakeElevation(),
+            new FakePillView(),
+            new FakeSoundPlayer(),
+            DefaultConfig,
+            time);
+
+        await controller.StopAsync(CancellationToken.None);
+
+        Assert.Equal(0, capture.StopCalls);
+        Assert.Equal(ClientState.Idle, controller.State);
+    }
+
+    [Fact]
+    public async Task AbortAsync_WhenIdle_LeavesStateIdleAndHidesPill()
+    {
+        FakeCapture capture = new();
+        FakeTimeProvider time = new();
+        FakePillView pill = new();
+
+        DictationController controller = new(
+            capture,
+            () => throw new InvalidOperationException("should not be called"),
+            CreatePasteService(time),
+            new RecoveryStore(time, TimeSpan.FromSeconds(600)),
+            new FakeForeground(),
+            new FakeElevation(),
+            pill,
+            new FakeSoundPlayer(),
+            DefaultConfig,
+            time);
+
+        await controller.AbortAsync(CancellationToken.None);
+
+        Assert.Equal(ClientState.Idle, controller.State);
+        Assert.Equal(1, pill.HideCalls);
+    }
+
+    [Fact]
     public void DiscardLast_DelegatesToStore()
     {
         FakeCapture capture = new();

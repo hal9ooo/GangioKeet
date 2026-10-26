@@ -142,6 +142,60 @@ public sealed class DictationController : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Ferma la registrazione: drena la cattura, invia stop e attende il risultato.
+    /// Il completamento viene gestito dal flusso della dettatura in corso.
+    /// </summary>
+    public async Task StopAsync(CancellationToken ct)
+    {
+        DictationSession? session = _session;
+        if (session is null) return;
+        if (_state is not (ClientState.Recording or ClientState.Connecting)) return;
+
+        try
+        {
+            await _capture.StopAsync(ct).ConfigureAwait(false);
+            await session.FinishAsync(ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            // stop annullato: il flusso principale resta responsabile del cleanup
+        }
+    }
+
+    /// <summary>
+    /// Annulla la dettatura (Esc): invalida la generazione, interrompe cattura e socket,
+    /// svuota il buffer e non offre recupero. Un RecoveryItem precedente non viene toccato.
+    /// </summary>
+    public async Task AbortAsync(CancellationToken ct)
+    {
+        Interlocked.Increment(ref _generation);
+
+        _state = ClientState.Idle;
+        _pill.Hide();
+        _audioBuffer.Clear();
+
+        try
+        {
+            await _capture.StopAsync(ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+
+        DictationSession? session = _session;
+        if (session is not null)
+        {
+            try
+            {
+                await session.AbortAsync(ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+    }
+
     public async Task CopyLastTextAsync(CancellationToken ct)
     {
         RecoveryItem? item = _recovery.GetCurrent();

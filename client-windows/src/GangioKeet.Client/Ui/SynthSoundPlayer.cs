@@ -9,7 +9,7 @@ namespace GangioKeet.Client.Ui;
 /// Tono Start: 880 Hz / 60 ms. Stop: 660 Hz / 60 ms. Error: 220 Hz / 180 ms.
 /// Fade-out 10 ms. Disattivabile impostando <see cref="Enabled"/> = false.
 /// </summary>
-public sealed class SynthSoundPlayer : ISoundPlayer
+public sealed class SynthSoundPlayer : ISoundPlayer, IDisposable
 {
     private static readonly int SampleRate = 22050;
 

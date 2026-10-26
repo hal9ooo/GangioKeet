@@ -167,6 +167,42 @@ public partial class App : Application
         return image;
     }
 
+    private async Task AbortAndClearAsync()
+    {
+        try
+        {
+            if (_controller is not null)
+            {
+                await _controller.AbortAsync(CancellationToken.None);
+            }
+        }
+        finally
+        {
+            if (_hooks is not null)
+            {
+                _hooks.AbortActive = false;
+            }
+        }
+    }
+
+    private async Task StopAndClearAsync()
+    {
+        try
+        {
+            if (_controller is not null)
+            {
+                await _controller.StopAsync(CancellationToken.None);
+            }
+        }
+        finally
+        {
+            if (_hooks is not null)
+            {
+                _hooks.AbortActive = false;
+            }
+        }
+    }
+
     private DictationSession CreateSession()
     {
         ClientConfig config = _config!;
@@ -179,9 +215,15 @@ public partial class App : Application
 
     private void HandleRawEvent(RawKeyEvent raw, GestureDetector gestures, ClientConfig config)
     {
-        if (raw.FromMouse)
+        KeyCode abortKey = KeyCodes.Parse(config.Hotkey.AbortKey);
+        if (!raw.FromMouse && raw.VirtualKey == abortKey.VirtualKey)
         {
-            // mouse_x1: gestito come hotkey principale
+            if (raw.IsDown)
+            {
+                _ = AbortAndClearAsync();
+            }
+
+            return;
         }
 
         IReadOnlyList<GestureKind> kinds = raw.IsDown
@@ -193,21 +235,16 @@ public partial class App : Application
             switch (kind)
             {
                 case GestureKind.Start:
+                    _hooks!.AbortActive = true;
                     _controller?.Start();
                     break;
                 case GestureKind.StopAndTranscribe:
-                    _ = StopAndTranscribeAsync();
+                    _ = StopAndClearAsync();
                     break;
                 case GestureKind.HandsFreeEntered:
                     break;
             }
         }
-    }
-
-    private async Task StopAndTranscribeAsync()
-    {
-        // Il controller gestisce lo stop tramite la sessione in corso.
-        await Task.CompletedTask;
     }
 
     protected override void OnExit(ExitEventArgs e)

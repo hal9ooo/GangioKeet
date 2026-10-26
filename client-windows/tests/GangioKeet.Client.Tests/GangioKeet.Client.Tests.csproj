@@ -26,6 +26,7 @@
 
   <ItemGroup>
     <None Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\..\..\tests\fixtures\it_short.pcm" Link="fixtures\it_short.pcm" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
