@@ -8,7 +8,6 @@ from .config import AppConfig, load_config
 from .llm import LLMCleaner
 from .pipeline import Pipeline
 from .prompt import build_system_prompt
-from .protocol import MAX_AUDIO_BYTES
 from .server import create_app
 from .stt import ParakeetSTT
 
@@ -43,7 +42,7 @@ async def serve(
                 app,
                 host=cfg.server.host,
                 port=cfg.server.port,
-                ws_max_size=MAX_AUDIO_BYTES,
+                ws_max_size=cfg.limits.max_audio_bytes,
             )
         )
     await uvicorn_server.serve()

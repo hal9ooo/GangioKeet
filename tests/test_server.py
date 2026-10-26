@@ -1,4 +1,5 @@
 import io
+import json
 import struct
 import threading
 import time
@@ -9,11 +10,16 @@ import pytest
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
+from dictation_server.admission import (
+    AdmissionController,
+    AdmissionSnapshot,
+)
 from dictation_server.config import load_config
 from dictation_server.pipeline import Pipeline
 from dictation_server.protocol import MAX_AUDIO_BYTES
 from dictation_server.server import (
     AudioDecodeError,
+    _DictationConnection,
     create_app,
     ffmpeg_to_pcm,
 )
@@ -45,10 +51,12 @@ def cfg():
     return load_config("config.yaml")
 
 
-def build_client(cfg, stt=None, llm=None):
+def build_client(cfg, stt=None, llm=None, admission=None):
     stt = stt if stt is not None else FakeSTT()
     llm = llm if llm is not None else FakeLLM()
-    app = create_app(cfg, Pipeline(stt, llm, cfg))
+    app = create_app(
+        cfg, Pipeline(stt, llm, cfg), admission=admission
+    )
     return TestClient(app), stt, llm
 
 
@@ -527,3 +535,337 @@ def test_ffmpeg_pipe_args_no_disk_io(monkeypatch):
         "pipe:1",
     ]
     assert captured["input"] == b"raw"
+
+
+def test_create_app_uses_one_admission_controller(cfg):
+    admission = AdmissionController(max_sessions=2, max_bytes=1000)
+    client, _, _ = build_client(cfg, admission=admission)
+
+    assert client.app.state.admission is admission
+    assert admission.snapshot() == AdmissionSnapshot(0, 0)
+
+
+def test_ws_start_holds_lease_and_stop_releases_it(cfg):
+    client, _, _ = build_client(cfg)
+    admission = client.app.state.admission
+    audio = make_silence(0.2)
+
+    with client:
+        with client.websocket_connect("/ws/dictate") as ws:
+            assert admission.snapshot() == AdmissionSnapshot(0, 0)
+            send_start(ws)
+            assert wait_for(
+                lambda: admission.snapshot().sessions == 1
+            )
+            assert (
+                admission.snapshot().retained_audio_bytes == 0
+            )
+
+            ws.send_bytes(audio)
+            assert wait_for(
+                lambda: (
+                    admission.snapshot().retained_audio_bytes
+                    == len(audio)
+                )
+            )
+
+            ws.send_json({"type": "stop"})
+            assert ws.receive_json()["type"] == "result"
+
+        assert wait_for(
+            lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+        )
+
+
+def test_ws_idle_connection_holds_no_lease(cfg):
+    client, _, _ = build_client(cfg)
+    admission = client.app.state.admission
+
+    with client:
+        with client.websocket_connect("/ws/dictate"):
+            assert admission.snapshot() == AdmissionSnapshot(0, 0)
+
+    assert admission.snapshot() == AdmissionSnapshot(0, 0)
+
+
+def test_ws_processing_keeps_transferred_lease_until_job_finishes(cfg):
+    llm = CountingSlowLLM(delay=0.3)
+    client, _, _ = build_client(cfg, llm=llm)
+    admission = client.app.state.admission
+    audio = make_silence(0.2)
+
+    with client:
+        with client.websocket_connect("/ws/dictate") as ws:
+            send_start(ws)
+            ws.send_bytes(audio)
+            ws.send_json({"type": "stop"})
+            assert wait_for(lambda: bool(llm.calls))
+
+            snapshot = admission.snapshot()
+            assert snapshot.sessions == 1
+            assert snapshot.retained_audio_bytes == len(audio)
+
+            assert ws.receive_json()["type"] == "result"
+
+        assert wait_for(
+            lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+        )
+
+
+def test_ws_busy_start_sends_error_and_closes_1013(cfg):
+    admission = AdmissionController(max_sessions=1, max_bytes=1000)
+    client, _, _ = build_client(cfg, admission=admission)
+
+    with client:
+        with client.websocket_connect("/ws/dictate") as first:
+            send_start(first)
+            assert wait_for(
+                lambda: admission.snapshot().sessions == 1
+            )
+
+            with client.websocket_connect("/ws/dictate") as second:
+                send_start(second)
+                error = second.receive_json()
+                assert error["type"] == "error"
+                assert error["code"] == "busy"
+                assert error["retryable"] is True
+                with pytest.raises(
+                    WebSocketDisconnect
+                ) as excinfo:
+                    second.receive_json()
+                assert excinfo.value.code == 1013
+
+            first.send_json({"type": "stop"})
+            assert first.receive_json()["type"] == "result"
+
+    assert admission.snapshot() == AdmissionSnapshot(0, 0)
+
+
+def test_ws_payload_over_configured_session_cap_closes_1009(cfg):
+    cfg.limits.max_audio_bytes = 1024
+    client, _, _ = build_client(cfg)
+    admission = client.app.state.admission
+
+    with client:
+        with client.websocket_connect("/ws/dictate") as ws:
+            send_start(ws)
+            ws.send_bytes(b"\x00" * 1025)
+            error = ws.receive_json()
+            assert error["type"] == "error"
+            assert error["code"] == "payload_too_large"
+            assert error["retryable"] is False
+            with pytest.raises(WebSocketDisconnect) as excinfo:
+                ws.receive_json()
+            assert excinfo.value.code == 1009
+
+    assert wait_for(
+        lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+    )
+
+
+def test_ws_budget_exhaustion_is_busy_and_releases_lease(cfg):
+    admission = AdmissionController(max_sessions=4, max_bytes=10)
+    client, _, _ = build_client(cfg, admission=admission)
+
+    with client:
+        with client.websocket_connect("/ws/dictate") as ws:
+            send_start(ws)
+            ws.send_bytes(b"x" * 8)
+            assert wait_for(
+                lambda: (
+                    admission.snapshot().retained_audio_bytes == 8
+                )
+            )
+
+            ws.send_bytes(b"x" * 4)
+            error = ws.receive_json()
+            assert error["type"] == "error"
+            assert error["code"] == "busy"
+            assert error["retryable"] is True
+            with pytest.raises(WebSocketDisconnect) as excinfo:
+                ws.receive_json()
+            assert excinfo.value.code == 1013
+
+    assert wait_for(
+        lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+    )
+
+
+@pytest.mark.asyncio
+async def test_ws_reserves_before_extending_audio_buffer(cfg):
+    class StubSocket:
+        def __init__(self):
+            self.sent = []
+            self.close_code = None
+
+        async def send_text(self, text):
+            self.sent.append(json.loads(text))
+
+        async def close(self, code=1000):
+            self.close_code = code
+
+    admission = AdmissionController(max_sessions=1, max_bytes=4)
+    websocket = StubSocket()
+    connection = _DictationConnection(
+        websocket, object(), admission, max_audio_bytes=1024
+    )
+    connection.lease = admission.acquire()
+    connection.state = "recording"
+
+    accepted = await connection._handle_audio(b"123456")
+
+    assert accepted is False
+    assert connection.audio == bytearray()
+    assert connection.lease is None
+    assert websocket.sent[-1]["code"] == "busy"
+    assert websocket.sent[-1]["retryable"] is True
+    assert websocket.close_code == 1013
+    assert admission.snapshot() == AdmissionSnapshot(0, 0)
+
+
+def test_ws_disconnect_while_recording_releases_lease(cfg):
+    client, _, _ = build_client(cfg)
+    admission = client.app.state.admission
+    audio = make_silence(0.2)
+
+    with client:
+        with client.websocket_connect("/ws/dictate") as ws:
+            send_start(ws)
+            ws.send_bytes(audio)
+            assert wait_for(
+                lambda: (
+                    admission.snapshot().retained_audio_bytes
+                    == len(audio)
+                )
+            )
+
+    assert wait_for(
+        lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+    )
+
+
+def test_ws_abort_during_processing_releases_lease_after_drain(cfg):
+    llm = CountingSlowLLM(delay=0.3)
+    client, _, _ = build_client(cfg, llm=llm)
+    admission = client.app.state.admission
+
+    with client:
+        with client.websocket_connect("/ws/dictate") as ws:
+            send_start(ws)
+            ws.send_bytes(make_silence(0.2))
+            ws.send_json({"type": "stop"})
+            assert wait_for(lambda: bool(llm.calls))
+            assert admission.snapshot().sessions == 1
+
+            ws.send_json({"type": "abort"})
+            assert wait_for(
+                lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+            )
+
+
+def test_rest_file_over_configured_audio_cap_413(cfg):
+    cfg.limits.max_audio_bytes = 10
+    client, _, _ = build_client(cfg)
+
+    response = client.post(
+        "/v1/audio/transcriptions?format=pcm",
+        files={
+            "file": (
+                "d.pcm",
+                b"\x00" * 11,
+                "application/octet-stream",
+            )
+        },
+    )
+
+    assert response.status_code == 413
+    detail = response.json()["detail"]
+    assert detail["code"] == "payload_too_large"
+    assert detail["retryable"] is False
+    assert client.app.state.admission.snapshot() == AdmissionSnapshot(
+        0, 0
+    )
+
+
+def test_rest_budget_exhaustion_returns_503_busy(cfg):
+    admission = AdmissionController(max_sessions=4, max_bytes=5)
+    client, _, _ = build_client(cfg, admission=admission)
+
+    response = client.post(
+        "/v1/audio/transcriptions?format=pcm",
+        files={
+            "file": (
+                "d.pcm",
+                b"\x00" * 6,
+                "application/octet-stream",
+            )
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.headers["retry-after"] == "1"
+    detail = response.json()["detail"]
+    assert detail["code"] == "busy"
+    assert detail["retryable"] is True
+    assert admission.snapshot() == AdmissionSnapshot(0, 0)
+
+
+def test_rest_and_ws_share_the_same_audio_budget(cfg):
+    llm = CountingSlowLLM(delay=0.3)
+    client, _, _ = build_client(cfg, llm=llm)
+    admission = client.app.state.admission
+    audio = make_silence(0.2)
+    results = []
+
+    with client:
+        with client.websocket_connect("/ws/dictate") as ws:
+            send_start(ws)
+            ws.send_bytes(audio)
+            assert wait_for(
+                lambda: (
+                    admission.snapshot().retained_audio_bytes
+                    == len(audio)
+                )
+            )
+
+            def upload():
+                results.append(
+                    client.post(
+                        "/v1/audio/transcriptions?format=pcm",
+                        files={
+                            "file": (
+                                "d.pcm",
+                                audio,
+                                "application/octet-stream",
+                            )
+                        },
+                    )
+                )
+
+            threads = [
+                threading.Thread(target=upload) for _ in range(2)
+            ]
+            for thread in threads:
+                thread.start()
+            try:
+                assert wait_for(
+                    lambda: admission.snapshot().sessions == 3
+                )
+                shared = admission.snapshot()
+                assert shared.retained_audio_bytes == 3 * len(audio)
+            finally:
+                for thread in threads:
+                    thread.join(timeout=5)
+
+            assert all(not thread.is_alive() for thread in threads)
+            assert [r.status_code for r in results] == [200, 200]
+            rest_done = admission.snapshot()
+            assert rest_done.sessions == 1
+            assert rest_done.retained_audio_bytes == len(audio)
+
+            ws.send_json({"type": "stop"})
+            assert ws.receive_json()["type"] == "result"
+
+        assert wait_for(
+            lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+        )
