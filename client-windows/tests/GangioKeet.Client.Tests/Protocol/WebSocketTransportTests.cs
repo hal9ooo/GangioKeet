@@ -112,6 +112,37 @@ public sealed class WebSocketTransportTests
         Assert.Contains("1 MiB", protocolError.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task ReceiveAsync_RejectsOneMiBCapWhenOverflowArrivesInFinalFragment()
+    {
+        await using FakeDictationServer server = await FakeDictationServer.StartAsync();
+        Uri uri = new(WebSocketUri(server, FakeDictationServer.DictationPath));
+        await using WebSocketDictationTransport transport = new();
+        using CancellationTokenSource operationCts = new(TestOperationTimeout);
+
+        await transport.ConnectAsync(uri, null, operationCts.Token);
+        FakeWsSession session = await server.WaitForSessionAsync(SessionTimeout);
+
+        // Ogni frammento resta sotto il cap da 1 MiB: solo il totale, che sfora con
+        // il frammento finale (EndOfMessage), deve superare il limite.
+        string firstFragment = "{\"type\":\"result\",\"raw_text\":\"" + new string('a', 520_000);
+        string finalFragment = new string('a', 530_016) + "\"}";
+        string oversized = firstFragment + finalFragment;
+        Assert.True(oversized.Length > WebSocketDictationTransport.MaxJsonMessageBytes);
+        Assert.True(firstFragment.Length <= WebSocketDictationTransport.MaxJsonMessageBytes);
+
+        // L'invio parte in parallelo: senza un lettore durante lo streaming, il flush lato
+        // server si inceppa su una finestra TCP satura prima che la ricezione cominci.
+        Task sendTask = session.SendTextFragmentedAsync([firstFragment, finalFragment], operationCts.Token);
+        Exception exception = await Record.ExceptionAsync(() => transport.ReceiveAsync(operationCts.Token));
+        // Il client-transport, rigettando il frame oversized, smette di leggere: l'invio
+        // server-side può abortire e non è parte del contratto qui in verifica.
+        await Record.ExceptionAsync(() => sendTask);
+
+        ProtocolFrameException protocolError = Assert.IsType<ProtocolFrameException>(exception);
+        Assert.Contains("1 MiB", protocolError.Message, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(1009, "payload_too_large")]
     [InlineData(1008, "policy_violation")]

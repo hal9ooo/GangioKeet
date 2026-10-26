@@ -112,6 +112,14 @@ public sealed class WebSocketDictationTransport : IDictationTransport
         }
     }
 
+    /// <summary>
+    /// Riceve il frame JSON successivo, ri-assemblando gli eventuali frammenti.
+    /// Contratto a morte dopo errore di protocollo: se (o quando) un <see cref="ProtocolFrameException"/>
+    /// esce da questo metodo (messaggio JSON oversized o frame binario inatteso), i frammenti residui
+    /// restano nel buffer del socket e una chiamata successiva può ri-assemblare dati incoerenti;
+    /// dopo un errore di protocollo non bisogna riutilizzare il transport: chiamare <see cref="Abort"/>
+    /// (o <see cref="DisposeAsync"/>) e riconnettere.
+    /// </summary>
     public async Task<ServerFrame> ReceiveAsync(CancellationToken ct)
     {
         ClientWebSocket socket = ConnectedSocket();
@@ -132,14 +140,16 @@ public sealed class WebSocketDictationTransport : IDictationTransport
 
                 messageType ??= result.MessageType;
                 message.Write(buffer, 0, result.Count);
-                if (result.EndOfMessage)
-                {
-                    break;
-                }
-
+                // Il limite vale per l'intero messaggio: verificato dopo ogni frammento,
+                // incluso l'ultimo, prima di uscire dal ciclo.
                 if (message.Length > MaxJsonMessageBytes)
                 {
                     throw new ProtocolFrameException($"WebSocket JSON message exceeds the 1 MiB limit ({MaxJsonMessageBytes} bytes).");
+                }
+
+                if (result.EndOfMessage)
+                {
+                    break;
                 }
             }
 
