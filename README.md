@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Local push-to-talk dictation for macOS + Windows.</strong><br/>
-  The homegrown Wispr Flow clone that refuses to pay the subscription.
+  A one-user project built because I had a spare Mac and a €12/month subscription to dodge.
 </p>
 
 <p align="center">
@@ -19,13 +19,17 @@
 </p>
 
 > **TL;DR** — Hold **Caps Lock**, talk, release. The text appears in the active
-> window. Audio, models, and transcripts stay on your machines: no cloud, no
-> account, no subscription.
+> window. The Mac gets a purpose. The subscription remains unpaid.
+
+> **Status:** works on my machine. There is exactly one known user. If you are
+> not me, you are an early adopter, a mistake, or a very bored person.
 
 ## Contents
 
 - [Why this exists](#why-this-exists)
+- [Who is this for?](#who-is-this-for)
 - [What it does](#what-it-does)
+- [What it doesn't do](#what-it-doesnt-do)
 - [Architecture](#architecture)
 - [Quick start](#quick-start)
 - [How to use](#how-to-use)
@@ -34,6 +38,7 @@
 - [Performance](#performance)
 - [Technical details](#technical-details)
 - [Development and tests](#development-and-tests)
+- [FAQ](#faq)
 - [Limits](#limits)
 - [Credits](#credits)
 - [License](#license)
@@ -43,20 +48,34 @@
 Wispr Flow is genuinely great. Its **€12/month** subscription is also
 genuinely great — for them.
 
-So I did what any reasonable person would do: instead of paying, I built my own
-clone. My weekends are gone, but my wallet is happy. The result is
-**GangioKeet**: hold a key, talk, and the text appears wherever you were
-typing. The audio never leaves your machines, the models run on your Mac, and
-the monthly bill is **€0**.
+I have a MacBook Air M1 that spends most of its life displaying the dock. I
+also have a strong opinion about subscriptions. So I did what any reasonable
+person would do: I built a two-machine dictation system that nobody asked for.
 
-The name? **Gangio** + **Parakeet**, the speech model that does the listening.
-The bird on the icon is a wave-bird, because apparently a parakeet made of
-sound waves was the only logical choice.
+GangioKeet is the result. It turns my unemployed Mac into a very expensive
+speech-to-text server and my Windows PC into a very normal microphone. The
+audio stays on my LAN, the models stay on my Mac, and the €12 stays in my
+pocket.
 
-GangioKeet is an independent project, not affiliated with Wispr Flow. It is
-just a fun, slightly obsessive homegrown alternative to a subscription. If you
-have a Mac Apple Silicon and a Windows PC, you are the target audience. If you
-don't, feel free to read the architecture and steal some ideas. 😄
+The name is **Gangio** + **Parakeet**. The parakeet does the listening; I take
+the credit. The bird on the icon is a wave-bird, because a parakeet made of
+sound waves was the only logical choice at 1 a.m.
+
+This is not a startup. There is no waitlist, no Discord, no "join our
+community". There is one user, one Mac, and one README that is longer than the
+user base.
+
+## Who is this for?
+
+- **Me.** I am the target demographic, the QA team, and the customer success
+  department.
+- **You**, if you have a spare Apple Silicon Mac and a Windows PC, and you
+  enjoy solving a €12/month problem with a two-machine architecture.
+- **Not you**, if you want a supported product with an SLA. This is a personal
+  project with a license and a bird.
+
+If you are a recruiter: yes, I also write serious code. This is just what
+happens when I am left alone with a Mac and a Markdown file.
 
 ## What it does
 
@@ -74,10 +93,21 @@ don't, feel free to read the architecture and steal some ideas. 😄
 - **Privacy by default**: content-free logs, no on-disk history; benchmark
   recording is opt-in and protected with `0700`/`0600` permissions.
 
+## What it doesn't do
+
+- No team plan, no pricing page, no "Contact sales".
+- No roadmap with a Q4 sticker.
+- No Discord, no community, no waitlist.
+- No users, except me.
+- No cloud. It sends your audio to your Mac, which is technically a data center
+  if you squint.
+- No coffee. The Mac gets warm enough to keep the coffee warm, though.
+
 ## Architecture
 
 GangioKeet has two halves because MLX runs on Apple Silicon, while the
-microphone, keyboard, and paste live on the Windows PC.
+microphone, keyboard, and paste live on the Windows PC. The architecture is
+more elaborate than the business plan.
 
 ```mermaid
 flowchart LR
@@ -113,9 +143,10 @@ The flow, in short:
    with clipboard preservation and **without pressing Enter**.
 
 **Why two machines?** Because MLX is the fastest way to run Parakeet and Qwen
-on an Apple Silicon Mac, and because the client belongs on the Windows desktop
-where you actually work. The server is a local daemon; there is no cloud in the
-middle.
+on an Apple Silicon Mac, and because the Mac needed a job. The alternative was
+using it as a very expensive clock. The server is a local daemon; there is no
+cloud in the middle, no high availability, no load balancer, and no on-call
+rotation. If it breaks, I look at it.
 
 ## Quick start
 
@@ -125,6 +156,9 @@ middle.
 |---|---|
 | **Server** | macOS on Apple Silicon, [uv](https://docs.astral.sh/uv/); `ffmpeg` optional for compressed formats over REST |
 | **Client** | Windows 11 (Windows 10 is not certified), .NET 10 SDK |
+
+If you don't have a Mac Apple Silicon, you can still read the architecture.
+That part is free.
 
 ### 1. Server (Mac)
 
@@ -136,7 +170,8 @@ uv run python -m dictation_server.main
 ```
 
 The first run downloads the models (several GB) and warms up. Wait for
-`/ready` before dictating.
+`/ready` before dictating. This is the part where the €12/month starts to look
+reasonable.
 
 ```bash
 curl -s http://127.0.0.1:8000/health
@@ -145,6 +180,8 @@ curl -s http://127.0.0.1:8000/ready
 
 The server listens on `0.0.0.0:8000` so the Windows client can reach it on the
 LAN. If you want loopback only, set `server.host: 127.0.0.1` in `config.yaml`.
+If you want to expose it to the Internet, please don't; there is a whole
+section about it later.
 
 ### 2. Client (Windows)
 
@@ -158,14 +195,15 @@ dotnet build client-windows\GangioKeet.Client.sln
 dotnet run --project client-windows\src\GangioKeet.Client
 ```
 
-The client starts in the tray with no main window. If the server sits behind a
-TLS terminator, also set `server.scheme: https`: the client will use `https://`
-and `wss://`.
+The client starts in the tray with no main window. If you don't see it, check
+the tray; it's the bird. If the server sits behind a TLS terminator, also set
+`server.scheme: https`: the client will use `https://` and `wss://`.
 
 ### 3. First dictation
 
 Hold **Caps Lock**, say something, release. The text appears in the active
-window. Double-tap Caps Lock for hands-free mode; press **Esc** to abort.
+window. Double-tap Caps Lock for hands-free mode; press **Esc** to abort. If
+nothing happens, check the server, the firewall, and the phase of the moon.
 
 ### 4. LaunchAgent (optional, macOS)
 
@@ -177,7 +215,8 @@ GANGIOKEET_RECORDING=1 ./deploy/install_launchd.sh
 
 The installer replaces `__PROJECT_DIR__` and `__HOME__` with the checkout and
 the user's home, writes the local plist with `0600` permissions, and loads the
-job. If you move the project, run the installer again.
+job. If you move the project, run the installer again. Because the Mac should
+work even when you're not looking at it.
 
 ### 5. Authentication (optional)
 
@@ -203,7 +242,8 @@ server:
 The token lives only in the environment, never in YAML. `/health` stays public;
 every other HTTP route and the WebSocket are protected. With auth enabled the
 token still travels in clear text over HTTP unless you add TLS, so use a
-trusted network or a TLS terminator.
+trusted network or a TLS terminator. If you don't enable auth, at least keep
+the server on a network you trust. I'm not your sysadmin.
 
 ### Remote access over Tailscale
 
@@ -217,9 +257,9 @@ curl -s "http://$(tailscale ip -4):8000/health"
 
 On the Windows client, set `server.host` to the Mac's Tailscale IP (or its
 MagicDNS name). Tailnet traffic is encrypted by WireGuard, but the server still
-does not implement TLS: **do not expose it to the Internet**. With auth enabled
-the token stays inside the tunnel; without an API key, any device on the
-tailnet can use STT and the LLM.
+does not implement TLS: **do not expose it to the Internet**. I like you, but
+not that much. With auth enabled the token stays inside the tunnel; without an
+API key, any device on the tailnet can use STT and the LLM.
 
 ## How to use
 
@@ -233,9 +273,10 @@ tailnet can use STT and the LLM.
 | Configuration | Open the configuration from the tray (`%APPDATA%\GangioKeet\client_config.yaml`) |
 | Pill | Bottom center; `ui.pill_position: cursor` puts it near the pointer |
 
-The text is **pasted**, not sent: no automatic Enter. The client does not read
-the clipboard and does not press Ctrl+C; if paste fails, the text stays
-recoverable for 600 seconds.
+The text is **pasted**, not sent: no automatic Enter. This is a feature, not a
+bug; I don't want my computer sending half-finished thoughts. The client does
+not read the clipboard and does not press Ctrl+C; if paste fails, the text
+stays recoverable for 600 seconds. That's 10 minutes of regret.
 
 ### Automatic profiles
 
@@ -310,7 +351,8 @@ glossary:
 - `routing.self_correction_triggers`: phrases that force post-processing.
 - `glossary.canonical_terms` and `glossary.phonetic_overrides` are injected into
   the system prompt frozen at boot; changing them requires a restart.
-- The file is validated with `extra="forbid"`: unknown keys are errors.
+- The file is validated with `extra="forbid"`: unknown keys are errors. The
+  config is stricter than my code reviews.
 - All `limits` and `timeouts` values must be positive; `max_audio_bytes` cannot
   exceed either `max_buffered_audio_bytes` or `max_http_body_bytes`.
 
@@ -381,7 +423,8 @@ not fail the dictation. There is no automatic cleanup: retention is manual.
 ## Privacy and security
 
 - **No cloud**: audio, transcripts, and models stay on your machines. No
-  accounts, telemetry, or external calls during normal use.
+  accounts, telemetry, or external calls during normal use. No "AI credits",
+  no "upgrade to Pro", no "your free trial has ended".
 - **Content-free logs**: logs contain codes, durations, bytes, queue depth, and
   drain state; never dictated text, prompts, window titles, or tokens.
 - **No on-disk history**: audio and transcripts live in RAM. The only exception
@@ -389,18 +432,20 @@ not fail the dictation. There is no automatic cleanup: retention is manual.
 - **LAN, not the Internet**: the server does not implement TLS, rate limiting,
   or multi-tenancy. By default tokens and audio travel in clear text over
   HTTP/WS; use a trusted network, Tailscale/VPN, or `server.scheme: https`
-  behind a TLS terminator. Do not expose the server to the Internet.
+  behind a TLS terminator. Do not expose the server to the Internet. I like
+  you, but not that much.
 - **Optional auth**: if other people share the LAN, enable
   `security.api_key_env` and set the same variable on the client. `/health`
-  stays public; every other route and the WebSocket are protected.
+  stays public; every other route and the WebSocket are protected. Or don't,
+  and let them use your Mac. I'm not your sysadmin, but I would enable it.
 - **Reports**: do not open a public issue for a vulnerability; see
   [`SECURITY.md`](SECURITY.md).
 
 ## Performance
 
 Real numbers, no marketing. The default stays **Parakeet** for latency; the
-public benchmark is a screening, not an automatic promotion of the model with
-the best WER.
+public benchmark is a screening, not a coronation. The numbers are real, which
+is more than I can say for the business case.
 
 | Benchmark | Result |
 |---|---|
@@ -413,7 +458,7 @@ the best WER.
 The `< 400 ms` latency targets are **not met** on an M1 MacBook Air with 8 GB:
 STT has a fixed cost of roughly 558–576 ms even on a 3.9 s clip. The fast path
 removes the LLM but is still dominated by STT. These are the real numbers,
-without changing the metric definitions.
+without changing the metric definitions. The Mac is doing its best.
 
 <details>
 <summary><strong>Full numbers and caveats</strong></summary>
@@ -458,6 +503,9 @@ local and gitignored. The `tests/fixtures/it_short.pcm` fixture is a synthetic
 sentence generated with `say -v Alice`, not my voice.
 
 ## Technical details
+
+You don't need this section to use the project. You need it if you want to
+build a client, debug the protocol, or argue with me about error codes.
 
 <details>
 <summary><strong>WebSocket protocol</strong></summary>
@@ -625,6 +673,8 @@ The body is always `{"detail": {"code": "...", "message": "...",
 
 ## Development and tests
 
+There are tests. Some of them even pass on the first try.
+
 **Server** (macOS/MLX):
 
 ```bash
@@ -645,6 +695,7 @@ dotnet test client-windows/GangioKeet.Client.sln --filter "Category=Integration"
 The default client suite uses fakes; `Integration` tests touch the clipboard,
 foreground window, microphone, registry, or a real server and are gated. The
 audio fixture is synthetic, so you can run tests without recording your voice.
+I value my voice too much to put it in a fixture.
 
 Repository layout:
 
@@ -657,19 +708,45 @@ tests/              server pytest suite
 assets/             icon
 ```
 
+## FAQ
+
+**Is this a product?** No.
+
+**Who uses it?** Me.
+
+**Will you maintain it?** I'll try. The Mac is doing its best.
+
+**Can I contribute?** Yes, but you'll be the second user. That's a lot of pressure.
+
+**Why is the README so long?** The user base is small, but the documentation budget is unlimited.
+
+**Why not use Wispr Flow?** €12/month.
+
+**Why Parakeet?** The name GangioKeet demanded it.
+
+**Does it work on Linux?** The server needs MLX, so no. The client is Windows. The README is cross-platform.
+
+**Is it production-ready?** It's production-ready for my desk.
+
+**Why is there no Docker?** Because the Mac is the Docker.
+
+**Why two machines?** Because one machine was unemployed.
+
 ## Limits
+
+Every project has limits. This one has a list.
 
 - The server is designed for the **local network**: no TLS, rate limiting, or
   multi-tenancy. Tokens and audio travel in clear text over HTTP/WS by default;
   use a trusted network, Tailscale/VPN, or a TLS terminator with
-  `server.scheme: https`.
+  `server.scheme: https`. It's a local tool, not a SaaS.
 - One process and one Metal lock: concurrent requests are serialized by a
   single-worker FIFO scheduler. Queue and audio budget are shared between
-  WebSocket and REST.
+  WebSocket and REST. The Mac is a single-threaded genius.
 - The scheduler surfaces timeouts and prevents overlap, but it cannot heal a
   kernel stuck forever: if the kernel never returns, the job hits
   `processing_timeout`, the service stays `busy`/`draining`, and `/health` keeps
-  responding; an operational restart is required.
+  responding; an operational restart is required. That's the on-call runbook.
 - Logs contain only codes, durations, bytes, queue depth, and drain state:
   dictated text, prompts, file names, window titles, and tokens are never
   logged.
@@ -680,7 +757,8 @@ assets/             icon
 - No partial result streaming: the client receives a single `result` after
   `stop` (or no result after `abort`).
 - Latency targets are experimental gates and depend on chip, RAM, model, and
-  dictation length; on my M1/8 GB the `< 400 ms` targets are not met.
+  dictation length; on my M1/8 GB the `< 400 ms` targets are not met. The Mac
+  is aware.
 
 ## Credits
 
@@ -689,20 +767,26 @@ assets/             icon
 - **Server**: FastAPI, uvicorn, Pydantic.
 - **Client**: WPF, NAudio, YamlDotNet, Hardcodet.NotifyIcon.Wpf.
 - **Corpus**: FLEURS (CC-BY-4.0).
-- **Icon**: wave-bird.
-- **Inspiration**: Wispr Flow.
+- **Icon**: wave-bird. The bird has no comment.
+- **Inspiration**: Wispr Flow (not affiliated; just cheap).
 
 ## License
 
 MIT — see [`LICENSE`](LICENSE). FLEURS transcriptions in the manifest remain
 under CC-BY-4.0; see [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md).
 
+Even a project with one user deserves a license. If you use it, please open an
+issue so I can tell my friends someone used it.
+
+No warranty. If it breaks, you get to keep both halves.
+
 Wispr Flow is a trademark of its respective owner. GangioKeet is an independent
-project, not affiliated with Wispr Flow.
+project, not affiliated with Wispr Flow. I am just cheap.
 
 ---
 
 <p align="center">
-  Built with ☕, a MacBook Air M1, and an unreasonable refusal to pay for a
-  subscription.
+  Built with ☕, a MacBook Air M1 that was previously unemployed, and an
+  unreasonable refusal to pay €12/month.<br/>
+  The Mac is now employed. It has no benefits.
 </p>
