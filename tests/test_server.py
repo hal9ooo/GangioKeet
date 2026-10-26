@@ -1,3 +1,4 @@
+import asyncio
 import io
 import json
 import struct
@@ -15,18 +16,32 @@ from dictation_server.admission import (
     AdmissionSnapshot,
 )
 from dictation_server.config import load_config
+from dictation_server.errors import DictationFailure
 from dictation_server.pipeline import Pipeline
 from dictation_server.protocol import MAX_AUDIO_BYTES
 from dictation_server.server import (
     AudioDecodeError,
     _DictationConnection,
     create_app,
-    ffmpeg_to_pcm,
 )
 from tests.fakes import FakeLLM, FakeSTT, SlowFakeLLM
 from tests.helpers import make_silence
 
 PROFILES = ["code", "terminal", "chat", "email", "document", "default"]
+
+
+def patch_ffmpeg(monkeypatch, convert):
+    monkeypatch.setattr(
+        "dictation_server.decode.shutil.which",
+        lambda _name: "/usr/bin/ffmpeg",
+    )
+    monkeypatch.setattr(
+        "dictation_server.decode._convert_with_ffmpeg", convert
+    )
+
+
+def forbid_ffmpeg(*_args, **_kwargs):
+    raise AssertionError("ffmpeg non necessario")
 
 
 class ShortFakeSTT(FakeSTT):
@@ -325,10 +340,12 @@ def test_rest_uncompressed_wav_avoids_ffmpeg(client, monkeypatch):
         wav.setframerate(16000)
         wav.writeframes(make_silence(0.5))
 
-    def forbid_ffmpeg(_):
-        raise AssertionError("ffmpeg non necessario")
-
-    monkeypatch.setattr("dictation_server.server.ffmpeg_to_pcm", forbid_ffmpeg)
+    monkeypatch.setattr(
+        "dictation_server.decode.shutil.which", forbid_ffmpeg
+    )
+    monkeypatch.setattr(
+        "dictation_server.decode._spawn_ffmpeg", forbid_ffmpeg
+    )
     r = client.post(
         "/v1/audio/transcriptions",
         files={"file": ("d.wav", output.getvalue(), "audio/wav")},
@@ -338,13 +355,12 @@ def test_rest_uncompressed_wav_avoids_ffmpeg(client, monkeypatch):
 
 def test_rest_non_pcm_calls_ffmpeg(client, monkeypatch):
     seen = {}
-    monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/ffmpeg")
 
-    def fake_ffmpeg(data: bytes) -> bytes:
+    async def fake_ffmpeg(data, lease, max_bytes):
         seen["data"] = data
         return make_silence(0.5)
 
-    monkeypatch.setattr("dictation_server.server.ffmpeg_to_pcm", fake_ffmpeg)
+    patch_ffmpeg(monkeypatch, fake_ffmpeg)
     r = client.post(
         "/v1/audio/transcriptions",
         files={"file": ("d.mp3", b"compressed-bytes", "audio/mpeg")},
@@ -355,12 +371,11 @@ def test_rest_non_pcm_calls_ffmpeg(client, monkeypatch):
 def test_rest_generic_content_type_is_not_raw_pcm(client, monkeypatch):
     seen = {}
 
-    def fake_ffmpeg(data: bytes) -> bytes:
+    async def fake_ffmpeg(data, lease, max_bytes):
         seen["data"] = data
         return make_silence(0.5)
 
-    monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/ffmpeg")
-    monkeypatch.setattr("dictation_server.server.ffmpeg_to_pcm", fake_ffmpeg)
+    patch_ffmpeg(monkeypatch, fake_ffmpeg)
 
     r = client.post(
         "/v1/audio/transcriptions",
@@ -372,25 +387,27 @@ def test_rest_generic_content_type_is_not_raw_pcm(client, monkeypatch):
 
 
 def test_rest_non_pcm_without_ffmpeg_503(client, monkeypatch):
-    monkeypatch.setattr("shutil.which", lambda x: None)
+    monkeypatch.setattr(
+        "dictation_server.decode.shutil.which", lambda _name: None
+    )
     r = client.post(
         "/v1/audio/transcriptions",
         files={"file": ("d.mp3", b"compressed", "audio/mpeg")},
     )
     assert r.status_code == 503
+    assert r.json()["detail"]["code"] == "decoder_unavailable"
 
 
 @pytest.mark.asyncio
-async def test_rest_ffmpeg_decode_runs_off_event_loop(cfg, monkeypatch):
+async def test_rest_ffmpeg_decode_runs_on_event_loop(cfg, monkeypatch):
     app = create_app(cfg, Pipeline(FakeSTT(), FakeLLM(), cfg))
-    monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/ffmpeg")
     seen = {}
 
-    def fake_ffmpeg(data: bytes) -> bytes:
-        seen["thread"] = threading.get_ident()
+    async def fake_ffmpeg(data, lease, max_bytes):
+        seen["loop"] = asyncio.get_running_loop()
         return make_silence(0.2)
 
-    monkeypatch.setattr("dictation_server.server.ffmpeg_to_pcm", fake_ffmpeg)
+    patch_ffmpeg(monkeypatch, fake_ffmpeg)
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(
         transport=transport, base_url="http://test"
@@ -401,8 +418,7 @@ async def test_rest_ffmpeg_decode_runs_off_event_loop(cfg, monkeypatch):
         )
 
     assert r.status_code == 200
-    assert "thread" in seen
-    assert seen["thread"] != threading.get_ident()
+    assert seen["loop"] is asyncio.get_running_loop()
 
 
 def test_rest_float_wav_falls_back_to_ffmpeg(client, monkeypatch):
@@ -414,13 +430,12 @@ def test_rest_float_wav_falls_back_to_ffmpeg(client, monkeypatch):
     wav_bytes = b"RIFF" + struct.pack("<I", len(body)) + body
 
     seen = {}
-    monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/ffmpeg")
 
-    def fake_ffmpeg(data: bytes) -> bytes:
+    async def fake_ffmpeg(data, lease, max_bytes):
         seen["data"] = data
         return make_silence(0.2)
 
-    monkeypatch.setattr("dictation_server.server.ffmpeg_to_pcm", fake_ffmpeg)
+    patch_ffmpeg(monkeypatch, fake_ffmpeg)
     r = client.post(
         "/v1/audio/transcriptions",
         files={"file": ("d.wav", wav_bytes, "audio/wav")},
@@ -431,26 +446,60 @@ def test_rest_float_wav_falls_back_to_ffmpeg(client, monkeypatch):
 
 
 def test_rest_non_decodable_audio_422(client, monkeypatch):
-    monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/ffmpeg")
-
-    def broken_ffmpeg(_):
+    async def broken_ffmpeg(data, lease, max_bytes):
         raise AudioDecodeError("not decodable")
 
-    monkeypatch.setattr("dictation_server.server.ffmpeg_to_pcm", broken_ffmpeg)
+    patch_ffmpeg(monkeypatch, broken_ffmpeg)
     r = client.post(
         "/v1/audio/transcriptions",
         files={"file": ("d.mp3", b"garbage", "audio/mpeg")},
     )
     assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "invalid_audio"
 
 
 def test_rest_malformed_wav_422(client, monkeypatch):
-    monkeypatch.setattr("shutil.which", lambda x: None)
+    monkeypatch.setattr(
+        "dictation_server.decode.shutil.which", lambda _name: None
+    )
     r = client.post(
         "/v1/audio/transcriptions",
         files={"file": ("d.wav", b"not-a-wave-file", "audio/wav")},
     )
     assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "invalid_audio"
+
+
+def test_rest_decode_timeout_504(client, monkeypatch):
+    async def timed_out(data, lease, max_bytes):
+        raise DictationFailure(
+            "decode_timeout", "audio decoding timed out", retryable=True
+        )
+
+    patch_ffmpeg(monkeypatch, timed_out)
+    r = client.post(
+        "/v1/audio/transcriptions",
+        files={"file": ("d.mp3", b"compressed", "audio/mpeg")},
+    )
+    assert r.status_code == 504
+    detail = r.json()["detail"]
+    assert detail["code"] == "decode_timeout"
+    assert detail["retryable"] is True
+
+
+def test_rest_invalid_audio_never_reaches_stt(cfg, monkeypatch):
+    client, stt, _ = build_client(cfg)
+    monkeypatch.setattr(
+        "dictation_server.decode.shutil.which", lambda _name: None
+    )
+
+    r = client.post(
+        "/v1/audio/transcriptions",
+        files={"file": ("d.wav", b"not-a-wave-file", "audio/wav")},
+    )
+
+    assert r.status_code == 422
+    assert stt.seen == []
 
 
 def test_rest_validates_model_alias(cfg):
@@ -506,35 +555,6 @@ def test_rest_json_shape(cfg):
     assert body["raw_text"] == "ciao"
     assert body["fast_path"] is True
     assert set(body["metrics"]) == {"stt_ms", "llm_ms", "total_ms"}
-
-
-def test_ffmpeg_pipe_args_no_disk_io(monkeypatch):
-    captured = {}
-
-    class R:
-        stdout = b"\x00\x00"
-        returncode = 0
-
-    def fake_run(cmd, input=None, **kw):
-        captured["cmd"] = cmd
-        captured["input"] = input
-        return R()
-
-    monkeypatch.setattr("dictation_server.server.subprocess.run", fake_run)
-    assert ffmpeg_to_pcm(b"raw") == b"\x00\x00"
-    assert captured["cmd"] == [
-        "ffmpeg",
-        "-i",
-        "pipe:0",
-        "-f",
-        "s16le",
-        "-ar",
-        "16000",
-        "-ac",
-        "1",
-        "pipe:1",
-    ]
-    assert captured["input"] == b"raw"
 
 
 def test_create_app_uses_one_admission_controller(cfg):

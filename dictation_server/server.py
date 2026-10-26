@@ -1,11 +1,6 @@
 import asyncio
-import io
 import json
 import logging
-import shutil
-import struct
-import subprocess
-import wave
 from typing import Literal
 
 from fastapi import (
@@ -24,6 +19,11 @@ from pydantic import ValidationError
 
 from .admission import AdmissionController, AudioLease
 from .config import AppConfig
+from .decode import (
+    AudioDecodeError,
+    FFmpegUnavailable,
+    decode_upload,
+)
 from .errors import DictationFailure, http_status
 from .http_limits import UploadLimitMiddleware
 from .pipeline import DictationResult, Pipeline
@@ -38,111 +38,8 @@ from .protocol import (
 
 logger = logging.getLogger(__name__)
 
-_FFMPEG_COMMAND = [
-    "ffmpeg",
-    "-i",
-    "pipe:0",
-    "-f",
-    "s16le",
-    "-ar",
-    "16000",
-    "-ac",
-    "1",
-    "pipe:1",
-]
-
-_WAV_SUFFIXES = (".wav", ".wave")
-_WAV_CONTENT_TYPES = {
-    "audio/wav",
-    "audio/x-wav",
-    "audio/wave",
-    "audio/vnd.wave",
-}
-
-
-class AudioDecodeError(RuntimeError):
-    """The uploaded audio could not be decoded to PCM16 mono 16 kHz."""
-
-
-class FFmpegUnavailable(RuntimeError):
-    """The uploaded format needs ffmpeg, but it is not installed."""
-
-
-def ffmpeg_to_pcm(data: bytes) -> bytes:
-    """Decode arbitrary audio bytes to PCM16 mono 16 kHz via a pipe."""
-    try:
-        process = subprocess.run(
-            _FFMPEG_COMMAND,
-            input=data,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-    except OSError as exc:
-        raise AudioDecodeError(f"could not run ffmpeg: {exc}") from exc
-
-    if getattr(process, "returncode", 0) != 0:
-        raise AudioDecodeError("ffmpeg could not decode the audio")
-    return process.stdout
-
-
-def _looks_like_wav(filename: str | None, content_type: str | None) -> bool:
-    if filename and filename.lower().endswith(_WAV_SUFFIXES):
-        return True
-    media_type = (content_type or "").split(";", 1)[0].strip().lower()
-    return media_type in _WAV_CONTENT_TYPES
-
-
-def _has_riff_wave_header(data: bytes) -> bool:
-    return (
-        len(data) >= 12
-        and data[0:4] == b"RIFF"
-        and data[8:12] == b"WAVE"
-    )
-
-
-def _wav_to_pcm(data: bytes) -> bytes | None:
-    """Return PCM frames for compliant WAV input, else None.
-
-    Compliant means PCM16, mono, 16 kHz. A valid RIFF/WAVE container with
-    another encoding is handed to ffmpeg; bytes without a RIFF/WAVE header
-    are rejected immediately as malformed.
-    """
-    if not _has_riff_wave_header(data):
-        raise AudioDecodeError("invalid WAV payload")
-
-    try:
-        with wave.open(io.BytesIO(data), "rb") as wav:
-            if (
-                wav.getnchannels(),
-                wav.getsampwidth(),
-                wav.getframerate(),
-            ) != (1, 2, 16000):
-                return None
-            return wav.readframes(wav.getnframes())
-    except (wave.Error, EOFError, struct.error):
-        # The container is WAV but the stdlib cannot parse this encoding
-        # (float32, 24-bit, WAVE_FORMAT_EXTENSIBLE, ...). ffmpeg may.
-        return None
-
-
-def _decode_upload(
-    data: bytes,
-    filename: str | None,
-    content_type: str | None,
-    raw_pcm: bool,
-) -> bytes:
-    if raw_pcm:
-        return data
-
-    if _looks_like_wav(filename, content_type):
-        pcm = _wav_to_pcm(data)
-        if pcm is not None:
-            return pcm
-
-    if shutil.which("ffmpeg") is None:
-        raise FFmpegUnavailable("ffmpeg is required to decode this format")
-    return ffmpeg_to_pcm(data)
-
+# AudioDecodeError and FFmpegUnavailable are re-exported for backwards
+# compatibility with callers that imported the decoder error types here.
 
 def _model_aliases(model: str) -> set[str]:
     return {model, model.rsplit("/", 1)[-1]}
@@ -540,20 +437,15 @@ def create_app(
             lease.reserve(file_size)
             data = await file.read()
 
-        try:
-            pcm = await asyncio.to_thread(
-                _decode_upload,
-                data,
-                file.filename,
-                file.content_type,
-                raw_pcm=format == "pcm",
-            )
-        except FFmpegUnavailable as exc:
-            raise HTTPException(status_code=503, detail=str(exc)) from exc
-        except AudioDecodeError as exc:
-            raise HTTPException(
-                status_code=422, detail="unable to decode audio"
-            ) from exc
+        pcm = await decode_upload(
+            data,
+            file.filename,
+            file.content_type,
+            raw_pcm=format == "pcm",
+            lease=lease,
+            limits=cfg.limits,
+            timeout=cfg.timeouts.decode_seconds,
+        )
 
         result = await pipeline.process(pcm, profile=profile)
         if response_format == "text":
