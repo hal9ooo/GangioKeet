@@ -258,7 +258,7 @@ Parametri supportati:
 | `format` | Estensione locale in query string. `format=pcm` dichiara PCM16 mono 16 kHz grezzo. |
 | `language` | Accettato solo assente o vuoto (anche solo spazi, no-op); un valore non vuoto restituisce `400 unsupported_parameter`. |
 | `prompt` | Accettato solo assente o vuoto (anche solo spazi, no-op); un valore non vuoto restituisce `400 unsupported_parameter`. |
-| `temperature` | Accettato assente/`null` o `0`; qualunque altro valore restituisce `400 unsupported_parameter`. |
+| `temperature` | Accettato solo assente/vuoto oppure un valore numerico uguale a `0`; il letterale `null` e ogni altro valore restituiscono `400 unsupported_parameter`. |
 | `stream` | Accettato assente oppure `false`, `0`, `no`, `off`; `true` restituisce `400 unsupported_parameter`. |
 | `timestamp_granularities`, `timestamp_granularities[]` | Accettati solo assenti o vuoti; valori non vuoti restituiscono `400 unsupported_parameter`. |
 
@@ -312,7 +312,7 @@ Il corpo è sempre `{"detail": {"code": "...", "message": "...",
 
 ## Configurazione
 
-`config.yaml` (estratto: il file completo contiene 20 termini canonici e 13
+`config.yaml` (estratto: il file completo contiene 21 termini canonici e 13
 override fonetici):
 
 ```yaml
@@ -493,9 +493,10 @@ in `llm_ms`. Il fast path elimina l'LLM ma resta dominato dallo STT. I numeri
 sopra sono quelli reali, senza escludere il prefill o cambiare la definizione
 della metrica.
 
-L'accettazione locale dell'affidabilità è **PASS**: suite default
-`387 passed, 7 skipped`, integrazione con modelli reali `7 passed`. Il report
-completo, inclusi blocker e procedura di rollback, è in
+L'accettazione locale dell'affidabilità è **PASS per il contratto e i test di
+breve durata**: suite default `387 passed, 7 skipped`, integrazione con modelli
+reali `7 passed`. Lo **smoke lungo con modelli caldi non è stato eseguito**.
+Il report completo, inclusi blocker e procedura di rollback, è in
 [`docs/superpowers/reports/2026-10-26-mac-server-acceptance.md`](docs/superpowers/reports/2026-10-26-mac-server-acceptance.md).
 Deploy e smoke Windows **non sono stati eseguiti**.
 
