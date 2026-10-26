@@ -38,6 +38,11 @@ public sealed class LowLevelInputHooks : IInputHooks
 
     public event EventHandler<RawKeyEvent>? RawEvent;
 
+    /// <summary>
+    /// Errore esplicito (installazione fallita o coda input in overflow). L'installazione avviene
+    /// sul thread degli hook e l'esito arriva qui in modo asincrono: sottoscrivere prima di
+    /// <see cref="Start"/> per non perdere il primo errore.
+    /// </summary>
     public event EventHandler<string>? Failed;
 
     public bool AbortActive
@@ -107,11 +112,17 @@ public sealed class LowLevelInputHooks : IInputHooks
             if (!_channel.Writer.TryWrite(item))
             {
                 _policy.Reset();
-                Failed?.Invoke(this, $"Input queue overflow ({_capacity} events): state reset and events dropped.");
+                // Il callback dell'hook non deve mai bloccare: gli errori escono dal pool.
+                RaiseFailure($"Input queue overflow ({_capacity} events): state reset and events dropped.");
             }
         }
 
         return decision.Suppress;
+    }
+
+    private void RaiseFailure(string message)
+    {
+        ThreadPool.QueueUserWorkItem(_ => Failed?.Invoke(this, message));
     }
 
     private void DispatchLoop()
