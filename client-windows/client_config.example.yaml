@@ -1,0 +1,79 @@
+# GangioKeet client configuration example.
+# Copy this file to %APPDATA%/GangioKeet/client_config.yaml, then edit.
+# Strict schema: unknown keys are rejected. Times are seconds (doubles), ms are integers.
+# The API token is never stored here: set the environment variable named by
+# server.api_key_env (recommended: GANGIOKEET_API_KEY); unset api_key_env means "no token".
+
+server:
+  host: "192.168.1.167"               # IP del Mac (verificato raggiungibile: /health OK)
+  port: 8000
+  transport: "websocket"              # websocket | rest
+  connect_timeout_seconds: 2.0        # guardrail 3.6: capire subito se il Mac è raggiungibile
+  response_timeout_seconds: 15.0      # guardrail 3.6: attesa tra stop e result
+  upload_timeout_seconds: 5.0         # timeout del POST REST dei chunk (fallback)
+  rest_response_timeout_seconds: 20.0 # attesa della risposta REST dopo l'upload
+  rest_fallback: true                 # WS fallita alla pressione -> buffer RAM + POST REST allo stop
+  health_check_interval_seconds: 30   # ping /health periodico per lo stato nel tray
+  api_key_env: null                   # es. "GANGIOKEET_API_KEY"; il token vive solo nell'ambiente
+
+hotkey:
+  mode: "push_to_talk"                # push_to_talk | toggle
+  key: "f8"                           # f1..f24, mouse_x1 (alt_r escluso: conflitto AltGr)
+  abort_key: "escape"                 # f1..f24, mouse_x1, escape
+  double_tap_max_ms: 250              # durata massima di un tap perché conti come tap
+  double_tap_gap_ms: 350              # intervallo massimo tra i due tap del double-tap
+
+audio:
+  input_device: null                  # null per il microfono predefinito di Windows
+  sample_rate: 16000                  # contratto wire PCM16 LE mono
+  channels: 1
+  chunk_duration_ms: 100
+  ready_timeout_seconds: 3.0          # quanto aspettare che il mic sia pronto prima di registrare
+
+paste:
+  default_combo: "ctrl+v"
+  terminal_combo: "ctrl+shift+v"      # guardrail 3.4
+  terminal_apps: ["wt.exe", "windowsterminal.exe", "powershell.exe",
+                  "pwsh.exe", "cmd.exe", "conhost.exe", "mintty.exe"]
+  clipboard_restore_delay_ms: 200     # guardrail 3.4
+  refocus_before_paste: true          # focus cambiato -> ripristina la finestra target originaria
+
+ui:
+  show_floating_pill: true
+  pill_position: "cursor"             # cursor | center_bottom
+  sound_feedback: true
+
+context_profiles:
+  code:
+    - "code.exe"
+    - "devenv.exe"
+    - "cursor.exe"
+    - "pycharm64.exe"
+  terminal:
+    - "windowsterminal.exe"
+    - "wt.exe"
+    - "cmd.exe"
+    - "powershell.exe"
+  chat:
+    - "slack.exe"
+    - "teams.exe"
+    - "discord.exe"
+    - "telegram.exe"
+  email:
+    - "outlook.exe"
+    - "thunderbird.exe"
+  document:
+    - "winword.exe"
+    - "obsidian.exe"
+    - "notion.exe"
+
+browser_profiles:                     # guardrail 3.5
+  browsers: ["chrome.exe", "msedge.exe", "firefox.exe", "brave.exe"]
+  rules:                              # priorità di match: email, chat, code, document
+    email: ["Gmail", "Outlook", "Proton Mail"]
+    chat: ["WhatsApp", "Telegram", "Slack", "Discord", "Teams"]
+    code: ["GitHub", "GitLab", "Stack Overflow"]
+    document: ["Google Docs", "Notion", "Overleaf"]
+
+recovery:
+  retention_seconds: 600              # quanto resta recuperabile l'ultimo fallimento
