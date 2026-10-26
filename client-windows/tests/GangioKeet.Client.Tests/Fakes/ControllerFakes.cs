@@ -19,6 +19,7 @@ internal sealed class FakeCapture : IAudioCapture
 
     public int StartCalls { get; private set; }
     public int StopCalls { get; private set; }
+    public string? LastDeviceId { get; private set; }
 
     public List<byte[]> EmittedChunks { get; } = [];
     public AudioSummary? StopResult { get; set; } = new(0, false, 0);
@@ -31,6 +32,7 @@ internal sealed class FakeCapture : IAudioCapture
     public Task StartAsync(string? deviceId, CancellationToken ct)
     {
         StartCalls++;
+        LastDeviceId = deviceId;
         return Task.CompletedTask;
     }
 

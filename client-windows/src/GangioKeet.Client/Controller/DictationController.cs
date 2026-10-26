@@ -31,6 +31,8 @@ public sealed class DictationController : IAsyncDisposable
 
     private readonly object _audioGate = new();
     private readonly List<byte[]> _pendingAudio = [];
+    private string? _inputDeviceOverride;
+    private bool _inputDeviceOverrideSet;
 
     private int _generation;
     private int _disposed;
@@ -75,6 +77,20 @@ public sealed class DictationController : IAsyncDisposable
 
     public ClientState State => _state;
     public DictationProfile CurrentProfile => _profile;
+
+    /// <summary>
+    /// Imposta il microfono per le dettature successive. <paramref name="deviceId"/> null
+    /// torna al valore della configurazione. La registrazione eventualmente in corso non
+    /// viene toccata.
+    /// </summary>
+    public void SetInputDevice(string? deviceId)
+    {
+        lock (_audioGate)
+        {
+            _inputDeviceOverride = deviceId;
+            _inputDeviceOverrideSet = true;
+        }
+    }
 
     public void Start()
     {
@@ -518,8 +534,14 @@ public sealed class DictationController : IAsyncDisposable
     {
         if (_captureStarted) return;
 
+        string? deviceId;
+        lock (_audioGate)
+        {
+            deviceId = _inputDeviceOverrideSet ? _inputDeviceOverride : _config.Audio.InputDevice;
+        }
+
         _captureStarted = true;
-        await _capture.StartAsync(_config.Audio.InputDevice, CancellationToken.None).ConfigureAwait(false);
+        await _capture.StartAsync(deviceId, CancellationToken.None).ConfigureAwait(false);
     }
 
     private async Task StopCaptureAsync(CancellationToken ct)

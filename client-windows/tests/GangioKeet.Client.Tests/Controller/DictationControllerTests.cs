@@ -252,6 +252,33 @@ public sealed class DictationControllerTests
         Assert.Equal(1, h.Pill.HideCalls);
     }
 
+    [Fact]
+    public async Task SetInputDevice_OverridesTheConfigForTheNextCapture()
+    {
+        Harness h = new(configInputDevice: "config-mic");
+        h.Sessions.Enqueue(new FakeSession());
+
+        h.Controller.SetInputDevice("selected-mic");
+        h.Controller.Start();
+        await WaitUntilAsync(() => h.Capture.StartCalls == 1);
+
+        Assert.Equal("selected-mic", h.Capture.LastDeviceId);
+    }
+
+    [Fact]
+    public async Task SetInputDeviceNull_SelectsTheWindowsDefault()
+    {
+        Harness h = new(configInputDevice: "config-mic");
+        h.Sessions.Enqueue(new FakeSession());
+
+        h.Controller.SetInputDevice("selected-mic");
+        h.Controller.SetInputDevice(null);
+        h.Controller.Start();
+        await WaitUntilAsync(() => h.Capture.StartCalls == 1);
+
+        Assert.Null(h.Capture.LastDeviceId);
+    }
+
     private static async Task WaitUntilAsync(Func<bool> condition, int timeoutMs = 5000)
     {
         using CancellationTokenSource cts = new(timeoutMs);
@@ -275,9 +302,17 @@ public sealed class DictationControllerTests
 
         public Harness(
             bool elevationBlocked = false,
-            bool elevationBlockedAfterFirstCheck = false)
+            bool elevationBlockedAfterFirstCheck = false,
+            string? configInputDevice = null)
         {
             Recovery = new RecoveryStore(Time, TimeSpan.FromSeconds(600));
+
+            ClientConfig config = configInputDevice is null
+                ? DefaultConfig
+                : new ClientConfig
+                {
+                    Audio = new AudioConfig { InputDevice = configInputDevice },
+                };
 
             PasteService paste = new(
                 Clipboard,
@@ -303,7 +338,7 @@ public sealed class DictationControllerTests
                 elevation,
                 Pill,
                 Sound,
-                DefaultConfig,
+                config,
                 Time);
         }
 
