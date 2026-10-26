@@ -11,7 +11,7 @@ public sealed class GestureDetectorTests
     public void Held250Ms_StopsOnRelease()
     {
         var time = new FakeTimeProvider();
-        var detector = new GestureDetector(new HotkeyConfig(), time);
+        var detector = new GestureDetector(new HotkeyConfig { Key = "f8" }, time);
 
         Assert.Equal([GestureKind.Start], detector.OnKeyDown());
         time.Advance(TimeSpan.FromMilliseconds(250));
@@ -25,7 +25,7 @@ public sealed class GestureDetectorTests
     public void Held249Ms_WaitsForSecondTap()
     {
         var time = new FakeTimeProvider();
-        var detector = new GestureDetector(new HotkeyConfig(), time);
+        var detector = new GestureDetector(new HotkeyConfig { Key = "f8" }, time);
 
         Assert.Equal([GestureKind.Start], detector.OnKeyDown());
         time.Advance(TimeSpan.FromMilliseconds(249));
@@ -41,7 +41,7 @@ public sealed class GestureDetectorTests
     public void ShortTap_Waits350MsThenStops()
     {
         var time = new FakeTimeProvider();
-        var detector = new GestureDetector(new HotkeyConfig(), time);
+        var detector = new GestureDetector(new HotkeyConfig { Key = "f8" }, time);
 
         Assert.Equal([GestureKind.Start], detector.OnKeyDown());
         time.Advance(TimeSpan.FromMilliseconds(100));
@@ -61,7 +61,7 @@ public sealed class GestureDetectorTests
     public void SecondDownWithinGap_EntersHandsFree()
     {
         var time = new FakeTimeProvider();
-        var detector = new GestureDetector(new HotkeyConfig(), time);
+        var detector = new GestureDetector(new HotkeyConfig { Key = "f8" }, time);
 
         Assert.Equal([GestureKind.Start], detector.OnKeyDown());
         time.Advance(TimeSpan.FromMilliseconds(100));
@@ -80,7 +80,7 @@ public sealed class GestureDetectorTests
     public void HandsFreeNextDown_StopsAndFollowingUpDoesNothing()
     {
         var time = new FakeTimeProvider();
-        var detector = new GestureDetector(new HotkeyConfig(), time);
+        var detector = new GestureDetector(new HotkeyConfig { Key = "f8" }, time);
 
         Assert.Equal([GestureKind.Start], detector.OnKeyDown());
         time.Advance(TimeSpan.FromMilliseconds(100));
@@ -100,7 +100,7 @@ public sealed class GestureDetectorTests
     public void RepeatedDownWhileHeld_IsIgnored()
     {
         var time = new FakeTimeProvider();
-        var detector = new GestureDetector(new HotkeyConfig(), time);
+        var detector = new GestureDetector(new HotkeyConfig { Key = "f8" }, time);
 
         Assert.Equal([GestureKind.Start], detector.OnKeyDown());
         Assert.Empty(detector.OnKeyDown());
@@ -114,7 +114,7 @@ public sealed class GestureDetectorTests
     public void GapSecondDown349Ms_EntersHandsFree()
     {
         var time = new FakeTimeProvider();
-        var detector = new GestureDetector(new HotkeyConfig(), time);
+        var detector = new GestureDetector(new HotkeyConfig { Key = "f8" }, time);
 
         Assert.Equal([GestureKind.Start], detector.OnKeyDown());
         time.Advance(TimeSpan.FromMilliseconds(100));
@@ -129,7 +129,7 @@ public sealed class GestureDetectorTests
     public void GapExpired350Ms_StoppedByTickAndSecondDownStartsOver()
     {
         var time = new FakeTimeProvider();
-        var detector = new GestureDetector(new HotkeyConfig(), time);
+        var detector = new GestureDetector(new HotkeyConfig { Key = "f8" }, time);
 
         Assert.Equal([GestureKind.Start], detector.OnKeyDown());
         time.Advance(TimeSpan.FromMilliseconds(100));
@@ -185,7 +185,7 @@ public sealed class GestureDetectorTests
     public void Reset_DiscardsPendingTimer()
     {
         var time = new FakeTimeProvider();
-        var detector = new GestureDetector(new HotkeyConfig(), time);
+        var detector = new GestureDetector(new HotkeyConfig { Key = "f8" }, time);
 
         Assert.Equal([GestureKind.Start], detector.OnKeyDown());
         time.Advance(TimeSpan.FromMilliseconds(50));
@@ -204,7 +204,7 @@ public sealed class GestureDetectorTests
     public void Reset_DuringHold_SwallowsLaterKeyUp()
     {
         var time = new FakeTimeProvider();
-        var detector = new GestureDetector(new HotkeyConfig(), time);
+        var detector = new GestureDetector(new HotkeyConfig { Key = "f8" }, time);
 
         Assert.Equal([GestureKind.Start], detector.OnKeyDown());
         detector.Reset();
@@ -212,5 +212,74 @@ public sealed class GestureDetectorTests
 
         Assert.Empty(detector.OnKeyUp());
         Assert.Equal([GestureKind.Start], detector.OnKeyDown());
+    }
+
+    [Fact]
+    public void CapsLock_ShortTap_AbortsAfterGap()
+    {
+        var time = new FakeTimeProvider();
+        var detector = new GestureDetector(new HotkeyConfig { Key = "capslock" }, time);
+
+        Assert.Equal([GestureKind.Start], detector.OnKeyDown());
+        time.Advance(TimeSpan.FromMilliseconds(100));
+        Assert.Empty(detector.OnKeyUp());
+        time.Advance(TimeSpan.FromMilliseconds(350));
+
+        Assert.Equal([GestureKind.Abort], detector.OnTick());
+        Assert.False(detector.AwaitingSecondTap);
+    }
+
+    [Fact]
+    public void CapsLock_Hold_StopsOnRelease()
+    {
+        var time = new FakeTimeProvider();
+        var detector = new GestureDetector(new HotkeyConfig { Key = "capslock" }, time);
+
+        Assert.Equal([GestureKind.Start], detector.OnKeyDown());
+        time.Advance(TimeSpan.FromMilliseconds(300));
+
+        Assert.Equal([GestureKind.StopAndTranscribe], detector.OnKeyUp());
+    }
+
+    [Fact]
+    public void CapsLock_DoubleTap_EntersHandsFree()
+    {
+        var time = new FakeTimeProvider();
+        var detector = new GestureDetector(new HotkeyConfig { Key = "capslock" }, time);
+
+        detector.OnKeyDown();
+        time.Advance(TimeSpan.FromMilliseconds(100));
+        detector.OnKeyUp();
+        time.Advance(TimeSpan.FromMilliseconds(100));
+
+        Assert.Equal([GestureKind.HandsFreeEntered], detector.OnKeyDown());
+    }
+
+    [Fact]
+    public void CapsLock_SecondDownAfterGap_AbortsAndStarts()
+    {
+        var time = new FakeTimeProvider();
+        var detector = new GestureDetector(new HotkeyConfig { Key = "capslock" }, time);
+
+        detector.OnKeyDown();
+        time.Advance(TimeSpan.FromMilliseconds(100));
+        detector.OnKeyUp();
+        time.Advance(TimeSpan.FromMilliseconds(350));
+
+        Assert.Equal([GestureKind.Abort, GestureKind.Start], detector.OnKeyDown());
+    }
+
+    [Fact]
+    public void F8_ShortTap_StillStopsAfterGap()
+    {
+        var time = new FakeTimeProvider();
+        var detector = new GestureDetector(new HotkeyConfig { Key = "f8" }, time);
+
+        detector.OnKeyDown();
+        time.Advance(TimeSpan.FromMilliseconds(100));
+        detector.OnKeyUp();
+        time.Advance(TimeSpan.FromMilliseconds(350));
+
+        Assert.Equal([GestureKind.StopAndTranscribe], detector.OnTick());
     }
 }

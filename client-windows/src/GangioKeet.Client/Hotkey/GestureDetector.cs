@@ -20,6 +20,7 @@ public sealed class GestureDetector
     private readonly HotkeyConfig _config;
     private readonly TimeProvider _time;
     private readonly bool _isToggleMode;
+    private readonly bool _isCapsLock;
 
     private State _state = State.Idle;
     private bool _physicallyDown;
@@ -31,6 +32,9 @@ public sealed class GestureDetector
         _config = config;
         _time = time;
         _isToggleMode = string.Equals(config.Mode?.Trim(), "toggle", StringComparison.OrdinalIgnoreCase);
+        string key = config.Key?.Trim() ?? "";
+        _isCapsLock = string.Equals(key, "capslock", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(key, "caps_lock", StringComparison.OrdinalIgnoreCase);
     }
 
     public bool AwaitingSecondTap => _state == State.AwaitingSecondTap;
@@ -84,7 +88,7 @@ public sealed class GestureDetector
             return NoGesture;
         }
 
-        return GapExpired() ? Stop() : NoGesture;
+        return GapExpired() ? (_isCapsLock ? Abort() : Stop()) : NoGesture;
     }
 
     public void Reset() => _state = State.Idle;
@@ -102,6 +106,12 @@ public sealed class GestureDetector
         return [GestureKind.StopAndTranscribe];
     }
 
+    private IReadOnlyList<GestureKind> Abort()
+    {
+        _state = State.Idle;
+        return [GestureKind.Abort];
+    }
+
     private IReadOnlyList<GestureKind> EnterGap()
     {
         _releaseTimestamp = _time.GetTimestamp();
@@ -111,11 +121,21 @@ public sealed class GestureDetector
 
     private IReadOnlyList<GestureKind> EnterHandsFree()
     {
-        // Gap window elapsed before this press was consumed. Falls back to stop.
+        // Il secondo down è arrivato dopo la finestra del double-tap.
         if (GapExpired())
         {
+            if (_isCapsLock)
+            {
+                // Il tap precedente era accidentale: scartalo e tratta questa pressione
+                // come un nuovo hold, senza perdere il keydown appena arrivato.
+                _state = State.Holding;
+                _downTimestamp = _time.GetTimestamp();
+                return [GestureKind.Abort, GestureKind.Start];
+            }
+
             return Stop();
         }
+
         _state = State.HandsFreeHolding;
         return [GestureKind.HandsFreeEntered];
     }
