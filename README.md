@@ -500,6 +500,81 @@ Il report completo, inclusi blocker e procedura di rollback, è in
 [`docs/superpowers/reports/2026-10-26-mac-server-acceptance.md`](docs/superpowers/reports/2026-10-26-mac-server-acceptance.md).
 Deploy e smoke Windows **non sono stati eseguiti**.
 
+## Benchmark pubblico italiano (STT + cleaner)
+
+Questa sezione è separata dal benchmark di produzione qui sopra. Serve a
+confrontare modelli STT e cleaner su **parlato pubblico italiano**, senza
+registrare clip dell'utente. È uno screening, non una promozione del modello:
+non copre termini tecnici, identificatori, path, numeri, autocorrezioni,
+silenzi o il dominio reale.
+
+Report completo:
+[`docs/superpowers/reports/2026-10-26-public-italian-stt-benchmark.md`](docs/superpowers/reports/2026-10-26-public-italian-stt-benchmark.md).
+
+### Setup isolato
+
+```bash
+uv venv .venv-stt-eval --python 3.12
+uv pip install --python .venv-stt-eval/bin/python \
+  -e . -r scripts/stt_eval_requirements.txt
+```
+
+`scripts/stt_eval_requirements.txt` è separato dal lock di produzione. Usa
+`datasets==3.6.0` perché `datasets` 5 richiede `torchcodec`; non modifica
+`pyproject.toml` né `uv.lock`.
+
+### Corpus FLEURS italiano
+
+```bash
+.venv-stt-eval/bin/python scripts/stt_eval_ingest_fleurs.py \
+  --output-dir tests/fixtures/stt_eval/public/fleurs_it \
+  --count 30 --seed 20261026 --split test \
+  --revision 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+```
+
+Il manifest e la provenienza sono committati; `audio/` è ignorata da git.
+Il campione è di 30 clip (15 corte + 15 medie), licenza FLEURS CC-BY-4.0.
+
+### Esecuzione
+
+Fermare il server live prima del run se tiene già i modelli in memoria.
+
+```bash
+# Phase A: STT raw
+.venv-stt-eval/bin/python scripts/stt_eval.py \
+  --manifest tests/fixtures/stt_eval/public/fleurs_it/manifest.jsonl \
+  --candidate <stt_id> --warmups 2 --repeats 3 \
+  --output .superpowers/stt-benchmark/raw/<stt_id>.json
+
+# Phase B: cleaner sui transcript raw
+.venv-stt-eval/bin/python scripts/stt_eval_cleaners.py \
+  --raw .superpowers/stt-benchmark/raw/<stt_id>.json \
+  --manifest tests/fixtures/stt_eval/public/fleurs_it/manifest.jsonl \
+  --cleaner <cleaner_id> \
+  --output .superpowers/stt-benchmark/cleaners/<cleaner_id>__<stt_id>.json
+```
+
+STT disponibili: `parakeet_baseline`, `qwen3_asr_1_7b_8bit`,
+`nemotron_3_5_asr_streaming_0_6b`, `whisper_large_v3_turbo`.
+Cleaner disponibili: `qwen3_1_7b_4bit`, `qwen2_5_1_5b_instruct_4bit`.
+`cohere_transcribe_03_2026` è gated su Hugging Face e `qwen3_5_0_8b_4bit` non
+è compatibile con il freeze attuale: entrambi sono `NOT RUN` nel report.
+
+### Risultati sintetici (30 clip FLEURS, M1/8 GB)
+
+| STT | WER raw | p50/p95 ms | Peak RSS/Metal MB |
+|---|---:|---:|---:|
+| Parakeet 0.6B | 3,88% | 849 / 1060 | 733 / 2128 |
+| Qwen3-ASR 1.7B 8bit | **2,01%** | 2251 / 3343 | 1803 / 3415 |
+| Nemotron 0.6B | 7,75% | 2867 / 4006 | 1375 / 1940 |
+| Whisper turbo fp16 | 2,81% | 1868 / 2077 | 1279 / 2043 |
+
+I cleaner peggiorano il parlato letto già pulito: Qwen3-1.7B porta Parakeet
+da 3,88% a 8,42% e Qwen3-ASR da 2,01% a 9,89%; Qwen2.5 è peggiore. Poiché
+tutte le clip FLEURS hanno 16–38 parole, la production non attiva mai il
+fast-path: production e forced-cleaner coincidono. Non cambiare il cleaner di
+produzione basandosi solo su questo corpus.
+
 ## Limiti di compatibilità
 
 - Il server è pensato per la rete locale: l'autenticazione Bearer è opzionale
