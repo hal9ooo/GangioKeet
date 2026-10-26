@@ -139,7 +139,7 @@ public sealed class WasapiAudioCapture : IAudioCapture
 
         lock (_gate)
         {
-            if (!_active || _ready || _stopping)
+            if (!_active || _ready || _stopping || _deviceLost)
             {
                 return;
             }
@@ -179,8 +179,10 @@ public sealed class WasapiAudioCapture : IAudioCapture
             {
                 await source.StopAsync(ct).ConfigureAwait(false);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (Exception)
             {
+                // Anche con ct annullato il drain e il flush devono completare: i byte già
+                // catturati non si perdono per una cancellazione del chiamante.
             }
 
             source.AudioArrived -= OnAudioArrived;
