@@ -94,6 +94,8 @@ public sealed class WasapiCaptureTests
 
         await capture.StartAsync(null, ct);
 
+        System.Diagnostics.Stopwatch wallClock = System.Diagnostics.Stopwatch.StartNew();
+
         Task completed = await Task.WhenAny(ready.Task, Task.Delay(TimeSpan.FromSeconds(10), ct));
         lock (gate)
         {
@@ -110,6 +112,7 @@ public sealed class WasapiCaptureTests
         await Task.Delay(TimeSpan.FromMilliseconds(600), ct);
 
         AudioSummary summary = await capture.StopAsync(ct);
+        wallClock.Stop();
 
         lock (gate)
         {
@@ -137,6 +140,15 @@ public sealed class WasapiCaptureTests
         }
 
         Assert.Equal(summary.SampleCount * 2, joined.Length);
+
+        // La durata PCM deve corrispondere al tempo reale di registrazione: un resampler
+        // che imbottisce silenzio produrrebbe molti più secondi dei campioni veri
+        // (bug osservato: 2,4 s di PCM per 0,6 s di registrazione).
+        double pcmSeconds = joined.Length / 32000.0;
+        Assert.InRange(
+            pcmSeconds,
+            wallClock.Elapsed.TotalSeconds * 0.5,
+            wallClock.Elapsed.TotalSeconds * 2.0);
 
         // La diagnosi segue esattamente i byte realmente consegnati al consumatore.
         AudioSignalTracker verifier = new();

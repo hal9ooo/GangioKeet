@@ -36,6 +36,7 @@ public sealed class WasapiMicrophoneSource : IMicrophoneSource
     private Task? _pump;
     private bool _started;
     private bool _disposed;
+    private long _outputBudget;
 
     public WasapiMicrophoneSource(MMDevice device)
     {
@@ -78,6 +79,7 @@ public sealed class WasapiMicrophoneSource : IMicrophoneSource
             _started = true;
         }
 
+        Interlocked.Exchange(ref _outputBudget, 0);
         _recorder.StartRecording();
         _pump = Task.Run(() => PumpAsync(_pumpCts.Token), CancellationToken.None);
         return Task.CompletedTask;
@@ -154,17 +156,16 @@ public sealed class WasapiMicrophoneSource : IMicrophoneSource
     private async Task PumpAsync(CancellationToken ct)
     {
         byte[] buffer = new byte[EmitBlockBytes];
-        int nativeRate = _nativeMono.WaveFormat.SampleRate;
         while (!ct.IsCancellationRequested)
         {
-            int available = _nativeMono.BufferedBytes;
-            int wanted = OutputBytesFor(available, nativeRate, buffer.Length);
-            if (wanted >= 2)
+            long budget = Interlocked.Read(ref _outputBudget);
+            int maxRead = (int)Math.Min(buffer.Length, budget);
+            if (maxRead >= 2)
             {
                 int read;
                 try
                 {
-                    read = _output.Read(buffer.AsSpan(0, wanted));
+                    read = _output.Read(buffer.AsSpan(0, maxRead));
                 }
                 catch (Exception)
                 {
@@ -173,6 +174,7 @@ public sealed class WasapiMicrophoneSource : IMicrophoneSource
 
                 if (read > 0)
                 {
+                    Interlocked.Add(ref _outputBudget, -read);
                     AudioArrived?.Invoke(this, buffer.AsMemory(0, read).ToArray());
                     continue;
                 }
@@ -192,12 +194,11 @@ public sealed class WasapiMicrophoneSource : IMicrophoneSource
     private void Drain()
     {
         byte[] buffer = new byte[EmitBlockBytes];
-        int nativeRate = _nativeMono.WaveFormat.SampleRate;
-        for (int guard = 0; guard < 64; guard++)
+        for (int guard = 0; guard < 256; guard++)
         {
-            int available = _nativeMono.BufferedBytes;
-            int wanted = OutputBytesFor(available, nativeRate, buffer.Length);
-            if (wanted < 2)
+            long budget = Interlocked.Read(ref _outputBudget);
+            int maxRead = (int)Math.Min(buffer.Length, budget);
+            if (maxRead < 2)
             {
                 return;
             }
@@ -205,7 +206,7 @@ public sealed class WasapiMicrophoneSource : IMicrophoneSource
             int read;
             try
             {
-                read = _output.Read(buffer.AsSpan(0, wanted));
+                read = _output.Read(buffer.AsSpan(0, maxRead));
             }
             catch (Exception)
             {
@@ -217,20 +218,9 @@ public sealed class WasapiMicrophoneSource : IMicrophoneSource
                 return;
             }
 
+            Interlocked.Add(ref _outputBudget, -read);
             AudioArrived?.Invoke(this, buffer.AsMemory(0, read).ToArray());
         }
-    }
-
-    private static int OutputBytesFor(int nativeBytes, int nativeRate, int limit)
-    {
-        if (nativeBytes < 2 || nativeRate <= 0)
-        {
-            return 0;
-        }
-
-        int wanted = nativeBytes * TargetSampleRate / nativeRate;
-        wanted -= wanted % 2;
-        return Math.Min(wanted, limit);
     }
 
     private void OnDataAvailable(
@@ -257,6 +247,15 @@ public sealed class WasapiMicrophoneSource : IMicrophoneSource
         if (mono.Length > 0)
         {
             _nativeMono.AddSamples(mono, 0, mono.Length);
+
+            // Budget di output proporzionale ai campioni reali: il resampler non deve
+            // inventare silenzio quando l'input è esaurito. 48k→16k produce 1/3 dei byte.
+            int nativeRate = _nativeMono.WaveFormat.SampleRate;
+            long produced = (long)mono.Length * TargetSampleRate / nativeRate;
+            if (produced > 0)
+            {
+                Interlocked.Add(ref _outputBudget, produced);
+            }
         }
     }
 
