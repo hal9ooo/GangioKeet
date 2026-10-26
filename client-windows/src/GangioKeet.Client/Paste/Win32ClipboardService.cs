@@ -118,12 +118,17 @@ public sealed class Win32ClipboardService : IClipboardService
         {
             EmptyClipboard();
             SetTextHandle(text);
-            return GetClipboardSequenceNumber();
         }
         finally
         {
             CloseClipboard();
         }
+
+        // Windows incrementa il sequence number alla chiusura della clipboard dopo una
+        // modifica: leggerlo qui (dopo CloseClipboard) è l'unico valore che TryRestore
+        // potrà osservare. Leggerlo prima del close restituisce il valore precedente e
+        // fa fallire ogni ripristino.
+        return GetClipboardSequenceNumber();
     }
 
     public bool TryRestore(ClipboardSnapshot snapshot, uint publishedSequence)

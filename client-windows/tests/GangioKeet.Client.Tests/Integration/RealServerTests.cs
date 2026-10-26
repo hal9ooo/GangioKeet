@@ -15,8 +15,17 @@ namespace GangioKeet.Client.Tests.Integration;
 [Trait("Category", "Integration")]
 public sealed class RealServerTests
 {
-    private static Uri BaseUri => new(
-        Environment.GetEnvironmentVariable("GANGIOKEET_HOST") ?? "192.168.1.167:8000");
+    private static Uri BaseUri
+    {
+        get
+        {
+            string raw = Environment.GetEnvironmentVariable("GANGIOKEET_HOST")
+                ?? "192.168.1.167:8000";
+            return raw.Contains("://", StringComparison.Ordinal)
+                ? new Uri(raw)
+                : new Uri($"http://{raw}");
+        }
+    }
 
     private static bool Enabled =>
         Environment.GetEnvironmentVariable("RUN_REAL_SERVER") == "1";
