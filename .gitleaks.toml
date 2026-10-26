@@ -6,6 +6,7 @@ description = "Fake credentials used by tests and examples"
 regexes = [
   '''sk-sentinel-secret-do-not-print''',
   '''test-token-123''',
+  '''test-token''',
   '''secret-token''',
   '''shared-secret-token''',
   '''token-that-must-never-be-logged-4f8a''',
