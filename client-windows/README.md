@@ -1,7 +1,8 @@
 # GangioKeet — Client Windows
 
 Client di dettatura vocale per Windows che invia audio al server GangioKeet su Mac
-(Apple Silicon) e incolla il testo nell'app in primo piano. Push-to-talk con F8,
+(Apple Silicon) e incolla il testo nell'app in primo piano. Push-to-talk con Caps Lock
+(come Wispr Flow) o F8,
 fallback REST trasparente, paste protetto dalla clipboard e recupero esplicito
 dell'ultima dettatura fallita.
 
@@ -25,7 +26,8 @@ dotnet build client-windows/GangioKeet.Client.sln
 dotnet run --project client-windows/src/GangioKeet.Client
 ```
 
-L'app parte in tray (nessuna finestra principale). F8 avvia/ferma la dettatura.
+L'app parte in tray (nessuna finestra principale). **Tieni premuto Caps Lock** per
+dettare e rilascia per trascrivere; doppio tap per hands-free.
 
 ## Configurazione
 
@@ -36,19 +38,22 @@ con `--config`. Tutti i default sono in `client_config.example.yaml`.
 | Sezione | Voci principali |
 |---|---|
 | `server` | host, port, transport (`websocket`/`rest`), timeout connect/response/upload, rest_fallback, health interval, api_key_env |
-| `hotkey` | mode (`push_to_talk`/`toggle`), key (f1–f24, mouse_x1), abort_key (escape), double_tap_max_ms 250, double_tap_gap_ms 350 |
+| `hotkey` | mode (`push_to_talk`/`toggle`), key (`capslock` default, f1–f24, mouse_x1), abort_key (escape), double_tap_max_ms 250, double_tap_gap_ms 350 |
 | `audio` | input_device (ID endpoint WASAPI o `null` per il default), sample_rate 16000, channels 1, chunk_duration_ms 100, ready_timeout_seconds 3 |
 | `paste` | default_combo `ctrl+v`, terminal_combo `ctrl+shift+v`, terminal_apps, clipboard_restore_delay_ms 200, refocus_before_paste |
-| `ui` | show_floating_pill, pill_position (`cursor`/`center_bottom`), sound_feedback |
+| `ui` | show_floating_pill, pill_position (`center_bottom` default / `cursor`), sound_feedback |
 | `context_profiles` | mappe exe → profilo (`code`, `terminal`, `chat`, `email`, `document`) |
 | `browser_profiles` | browser e regole per titolo, priorità email → chat → code → document |
 | `recovery` | retention_seconds 600 |
 
 ## Come funziona
 
-1. **Hotkey F8** (PTT): keydown avvia, keyup ferma e trascrive. Double-tap breve
-   entra in hands-free; un secondo keydown ferma. In modalità `toggle` il primo
-   keydown avvia e il secondo ferma (i keyup non fermano).
+1. **Hotkey Caps Lock** (PTT, stile Wispr Flow): tieni premuto e parla, rilascia per
+   trascrivere. Doppio tap rapido entra in hands-free; il tap successivo ferma. Un
+   tap singolo senza secondo tap **non produce nulla** (nessuna dettatura vuota).
+   Caps Lock resta disabilitato mentre l'app è aperta: non attiva il maiuscolo. F8
+   resta selezionabile con `hotkey.key: "f8"`. In modalità `toggle` il primo keydown
+   avvia e il secondo ferma (i keyup non fermano).
 2. **Audio**: WASAPI shared, conversione/resampling a PCM16 LE mono 16 kHz,
    chunk da 100 ms (3200 byte). L'audio è tenuto in RAM in un buffer bounded
    (massimo 67108864 byte per dettatura, ~70 minuti a 16 kHz mono).
@@ -102,6 +107,9 @@ dotnet test client-windows/GangioKeet.Client.sln --filter "Category=Integration"
 
 ## Microfono
 
+- La tray ha un sottomenu **Microfono**: «Predefinito di Windows» oppure uno dei
+  dispositivi di input attivi. La scelta vale dalla dettatura successiva, viene
+  salvata in `client_config.yaml` e sopravvive al riavvio.
 - `audio.input_device: null` usa il microfono predefinito di Windows, risolto a
   ogni registrazione.
 - Un ID esplicito che non esiste è un errore: nessun cambio mic silenzioso.
@@ -110,6 +118,14 @@ dotnet test client-windows/GangioKeet.Client.sln --filter "Category=Integration"
   (`ms-settings:privacy-microphone`).
 - Dispositivo scollegato a metà: la registrazione si interrompe, l'audio già
   catturato resta recuperabile, nessun passaggio automatico ad altro mic.
+
+## Pill
+
+- Compatta (136×28), non attivabile, in basso al centro del monitor sotto il
+  puntatore, 24 px sopra la work area (taskbar inclusa nel calcolo).
+- `ui.pill_position: "cursor"` la fa apparire vicino al puntatore.
+- Su monitor con DPI diversi o origini negative la posizione è clampata alla work
+  area del monitor corrente.
 
 ## Publishing
 
