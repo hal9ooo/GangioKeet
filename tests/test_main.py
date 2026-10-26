@@ -271,6 +271,76 @@ async def test_serve_configures_ws_max_size(monkeypatch):
     assert seen["served"] is True
 
 
+def test_configure_logging_enables_info_for_production_entrypoint(caplog):
+    logger = logging.getLogger("dictation_server")
+    old_level = logger.level
+    old_handlers = list(logger.handlers)
+    old_propagate = logger.propagate
+    old_disabled = logger.disabled
+
+    try:
+        logger.handlers[:] = []
+        logger.setLevel(logging.WARNING)
+        logger.propagate = True
+        logger.disabled = False
+
+        from dictation_server.main import configure_logging
+
+        configure_logging()
+
+        assert logger.getEffectiveLevel() == logging.INFO
+        assert any(
+            handler.level <= logging.INFO for handler in logger.handlers
+        )
+        handler_count = len(logger.handlers)
+
+        configure_logging()
+        assert len(logger.handlers) == handler_count
+
+        logging.getLogger("dictation_server.reliability").info(
+            "ready=true state=test"
+        )
+        assert "ready=true state=test" in caplog.text
+    finally:
+        for handler in list(logger.handlers):
+            if handler not in old_handlers:
+                logger.removeHandler(handler)
+                handler.close()
+        logger.handlers[:] = old_handlers
+        logger.setLevel(old_level)
+        logger.propagate = old_propagate
+        logger.disabled = old_disabled
+
+
+def test_main_configures_logging_before_startup(monkeypatch):
+    cfg = load_config("config.yaml")
+    events = []
+
+    monkeypatch.setattr(
+        "dictation_server.main.configure_logging",
+        lambda: events.append("logging"),
+    )
+    monkeypatch.setattr(
+        "dictation_server.main.load_config", lambda path: cfg
+    )
+
+    class FakeApp:
+        state = type("State", (), {"pipeline": "pipeline"})()
+
+    monkeypatch.setattr(
+        "dictation_server.main.build_app", lambda received: FakeApp()
+    )
+
+    async def fake_serve(received_cfg, received_app, pipeline):
+        events.append("serve")
+
+    monkeypatch.setattr("dictation_server.main.serve", fake_serve)
+
+    main([])
+
+    assert events == ["logging", "serve"]
+
+
 @pytest.mark.parametrize(
     "argv, expected_path",
     [([], "./config.yaml"), (["--config", "custom.yaml"], "custom.yaml")],
@@ -300,6 +370,9 @@ def test_main_loads_config_and_serves(monkeypatch, argv, expected_path):
     )
     monkeypatch.setattr("dictation_server.main.build_app", fake_build_app)
     monkeypatch.setattr("dictation_server.main.serve", fake_serve)
+    monkeypatch.setattr(
+        "dictation_server.main.configure_logging", lambda: None
+    )
 
     main(argv)
 

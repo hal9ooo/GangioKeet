@@ -16,6 +16,33 @@ from .stt import ParakeetSTT
 
 logger = logging.getLogger(__name__)
 
+_APP_LOG_HANDLER_ATTR = "_dictation_server_handler"
+
+
+def configure_logging(level: int = logging.INFO) -> None:
+    """Enable application logs for the shipped ``python -m`` entrypoint.
+
+    Uvicorn only configures its own ``uvicorn*`` loggers, so without this the
+    ``dictation_server`` namespace would inherit root's ``WARNING`` level and
+    suppress every INFO readiness/scheduler state transition. The helper is
+    idempotent: repeated calls never add a second handler.
+    """
+    app_logger = logging.getLogger("dictation_server")
+    app_logger.setLevel(level)
+    for handler in app_logger.handlers:
+        if getattr(handler, _APP_LOG_HANDLER_ATTR, False):
+            handler.setLevel(level)
+            return
+    handler = logging.StreamHandler()
+    handler.setLevel(level)
+    handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s %(levelname)s %(name)s: %(message)s"
+        )
+    )
+    setattr(handler, _APP_LOG_HANDLER_ATTR, True)
+    app_logger.addHandler(handler)
+
 
 def build_app(
     cfg: AppConfig,
@@ -75,6 +102,7 @@ async def serve(
 
 
 def main(argv: list[str] | None = None) -> None:
+    configure_logging()
     parser = argparse.ArgumentParser(
         description="On-device MLX dictation server"
     )
