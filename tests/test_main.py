@@ -1,3 +1,4 @@
+import logging
 import plistlib
 import stat
 import subprocess
@@ -182,6 +183,36 @@ async def test_serve_closes_scheduler_when_serving_fails():
         ("scheduler.close", False),
     ]
     assert app.state.ready is False
+
+
+@pytest.mark.asyncio
+async def test_serve_logs_readiness_transitions(caplog):
+    cfg = load_config("config.yaml")
+    app = build_app(cfg, stt=EagerFakeSTT(), llm=EagerFakeLLM())
+    pipeline = app.state.pipeline
+
+    async def fake_start():
+        pass
+
+    async def fake_close():
+        pass
+
+    async def fake_warm_up():
+        pass
+
+    pipeline.warm_up = fake_warm_up
+    app.state.scheduler.start = fake_start
+    app.state.scheduler.close = fake_close
+
+    class FakeServer:
+        async def serve(self):
+            pass
+
+    with caplog.at_level(logging.INFO, logger="dictation_server.main"):
+        await serve(cfg, app, pipeline, uvicorn_server=FakeServer())
+
+    assert "warm-up complete ready=true" in caplog.text
+    assert "shutdown ready=false" in caplog.text
 
 
 @pytest.mark.asyncio

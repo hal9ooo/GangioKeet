@@ -1,5 +1,6 @@
 import argparse
 import asyncio
+import logging
 import os
 
 import uvicorn
@@ -12,6 +13,8 @@ from .pipeline import Pipeline
 from .prompt import build_system_prompt
 from .server import create_app
 from .stt import ParakeetSTT
+
+logger = logging.getLogger(__name__)
 
 
 def build_app(
@@ -51,6 +54,7 @@ async def serve(
         await pipeline.warm_up()
         if state is not None:
             state.ready = True
+        logger.info("warm-up complete ready=true")
         if uvicorn_server is None:
             uvicorn_server = uvicorn.Server(
                 uvicorn.Config(
@@ -65,6 +69,7 @@ async def serve(
         # Flip readiness before draining so probes see 503 during shutdown.
         if state is not None:
             state.ready = False
+        logger.info("shutdown ready=false")
         if scheduler is not None:
             await scheduler.close()
 

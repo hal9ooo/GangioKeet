@@ -60,6 +60,7 @@ class _Job:
     accepted_at: float
     deadline: float
     state: str = "pending"
+    outcome: str = "cancelled"
     pipeline_task: asyncio.Task | None = None
     lease_closed: bool = False
     finalized: bool = False
@@ -108,6 +109,7 @@ class DictationScheduler:
             return
         self._bind_loop()
         self._ensure_services()
+        logger.info("scheduler start")
 
     async def submit(
         self,
@@ -118,8 +120,13 @@ class DictationScheduler:
     ) -> DictationResult:
         self._bind_loop()
         if self._closed:
+            logger.info("dictation job rejected outcome=busy reason=closed")
             raise _shutdown_failure()
         if self._inflight() >= self.max_pending_jobs + 1:
+            logger.info(
+                "dictation job rejected outcome=busy queue_depth=%d",
+                len(self._pending),
+            )
             raise DictationFailure(
                 "busy", "transcription queue is full", retryable=True
             )
@@ -152,10 +159,16 @@ class DictationScheduler:
         if self._closed and self._close_complete:
             return
 
+        logger.info("scheduler close")
         self._closed = True
         self._bind_loop()
-        if self._active is not None or self._pending:
+        had_work = self._active is not None or bool(self._pending)
+        if had_work:
             self._draining = True
+            logger.info(
+                "drain start reason=close queue_depth=%d",
+                len(self._pending),
+            )
         self._signal_pending_changed()
 
         while self._pending:
@@ -190,6 +203,9 @@ class DictationScheduler:
 
         self._draining = False
         self._close_complete = True
+        if had_work:
+            logger.info("drain end reason=close")
+        logger.info("scheduler closed")
 
     # -- loop/task machinery --------------------------------------------
 
@@ -298,7 +314,12 @@ class DictationScheduler:
         self, job: _Job, loop: asyncio.AbstractEventLoop
     ) -> None:
         queue_ms = max(0.0, (loop.time() - job.accepted_at) * 1000.0)
-        logger.debug("dictation job start queue_ms=%.1f", queue_ms)
+        logger.info(
+            "dictation job start queue_depth=%d queue_ms=%.1f bytes=%d",
+            len(self._pending),
+            queue_ms,
+            len(job.pcm),
+        )
 
         pipeline_task = asyncio.create_task(
             self.pipeline.process(
@@ -319,7 +340,16 @@ class DictationScheduler:
                 self._draining = True
                 job.state = "draining"
                 self._fail_job(job, _shutdown_failure())
+                logger.info(
+                    "drain start reason=close queue_depth=%d bytes=%d",
+                    len(self._pending),
+                    len(job.pcm),
+                )
                 await self._cancel_and_drain(pipeline_task)
+                logger.info(
+                    "drain end reason=close queue_depth=%d",
+                    len(self._pending),
+                )
                 raise
 
             if not pipeline_task.done():
@@ -329,7 +359,17 @@ class DictationScheduler:
                 logger.warning(
                     "dictation job processing timeout; draining engine"
                 )
+                logger.info(
+                    "drain start reason=processing_timeout "
+                    "queue_depth=%d bytes=%d",
+                    len(self._pending),
+                    len(job.pcm),
+                )
                 await self._cancel_and_drain(pipeline_task)
+                logger.info(
+                    "drain end reason=processing_timeout queue_depth=%d",
+                    len(self._pending),
+                )
                 return
 
             if pipeline_task.cancelled():
@@ -374,15 +414,35 @@ class DictationScheduler:
         if not job.done_future.done():
             job.done_future.set_result(None)
 
+        duration_ms = max(
+            0.0,
+            (asyncio.get_running_loop().time() - job.accepted_at) * 1000.0,
+        )
+        logger.info(
+            "dictation job end outcome=%s duration_ms=%.1f "
+            "queue_depth=%d bytes=%d",
+            job.outcome,
+            duration_ms,
+            len(self._pending),
+            len(job.pcm),
+        )
+
     @staticmethod
     def _fail_job(job: _Job, failure: BaseException) -> None:
-        if not job.future.done():
-            job.future.set_exception(failure)
+        if job.future.done():
+            return
+        if isinstance(failure, DictationFailure):
+            job.outcome = failure.code
+        else:
+            job.outcome = "internal"
+        job.future.set_exception(failure)
 
     @staticmethod
     def _resolve_job(job: _Job, result: DictationResult) -> None:
-        if not job.future.done():
-            job.future.set_result(result)
+        if job.future.done():
+            return
+        job.outcome = "ok"
+        job.future.set_result(result)
 
     # -- cancellation/drain ---------------------------------------------
 
@@ -403,7 +463,16 @@ class DictationScheduler:
             task = job.pipeline_task
             if task is not None and not task.done():
                 task.cancel()
+            logger.info(
+                "drain start reason=cancel queue_depth=%d bytes=%d",
+                len(self._pending),
+                len(job.pcm),
+            )
             await self._wait_for_done(job)
+            logger.info(
+                "drain end reason=cancel queue_depth=%d",
+                len(self._pending),
+            )
             return
 
         self._discard_future(job)

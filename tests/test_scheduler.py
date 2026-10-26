@@ -469,6 +469,47 @@ async def test_drain_error_is_logged_and_cleanup_is_preserved(caplog):
 
 
 @pytest.mark.asyncio
+async def test_scheduler_logs_lifecycle_job_and_drain_states(caplog):
+    admission = _admission()
+    stt = BlockingFakeSTT()
+    scheduler = _scheduler(
+        pipeline=Pipeline(
+            stt, FakeLLM(), load_config(CONFIG_PATH)
+        ),
+        queue_timeout=5.0,
+        processing_timeout=0.05,
+    )
+
+    lease = _lease(admission)
+    with caplog.at_level(
+        logging.INFO, logger="dictation_server.scheduler"
+    ):
+        await scheduler.start()
+        with pytest.raises(DictationFailure) as info:
+            await scheduler.submit(PCM, "default", True, lease)
+        await _wait_until(
+            lambda: scheduler.snapshot().draining is True
+        )
+        stt.release.set()
+        await _wait_until(
+            lambda: scheduler.snapshot()
+            == SchedulerSnapshot(active=False, pending=0, draining=False)
+        )
+        await scheduler.close()
+
+    assert info.value.code == "processing_timeout"
+    text = caplog.text
+    assert "scheduler start" in text
+    assert "dictation job start queue_depth=0" in text
+    assert "dictation job end outcome=processing_timeout" in text
+    assert "drain start reason=processing_timeout" in text
+    assert "drain end reason=processing_timeout" in text
+    assert "scheduler close" in text
+    assert "scheduler closed" in text
+    assert "ehm ciao fast a pi" not in text
+
+
+@pytest.mark.asyncio
 async def test_close_cancels_pending_and_awaits_active_drain():
     admission = _admission()
     stt = BlockingFakeSTT()
