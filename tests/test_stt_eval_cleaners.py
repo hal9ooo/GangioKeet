@@ -1,5 +1,6 @@
 import json
 import sys
+import time
 import types
 import wave
 from pathlib import Path
@@ -83,6 +84,7 @@ class FakeFinalizer:
 
     def finalize(self, raw_text, profile, *, force_cleaner=False):
         self.calls.append((raw_text, profile, force_cleaner))
+        time.sleep(0.001)
         if force_cleaner:
             return raw_text + " extra"
         return raw_text
@@ -127,6 +129,10 @@ def test_run_cleaner_applies_production_and_forced(tmp_path):
     assert len(clip["forced_latency_ms"]) == 3
     assert result["cleaner"]["id"] == "qwen3_1_7b_4bit"
     assert result["aggregate"]["production"]["wer"] == 0.0
+    assert result["peak_rss_mb"] > 0
+    assert result["peak_metal_mb"] is not None
+    assert result["measured_seconds"] > 0
+    assert result["load_seconds"] >= 0
     assert output.is_file()
 
 

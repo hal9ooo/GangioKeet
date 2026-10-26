@@ -55,9 +55,13 @@ def run_cleaner(
     clip_results: list[dict] = []
     production_per_clip: list[dict] = []
     forced_per_clip: list[dict] = []
+    measured_seconds = 0.0
+    load_started = time.perf_counter()
+    load_seconds = 0.0
 
     try:
         finalizer.load()
+        load_seconds = time.perf_counter() - load_started
         for raw_clip in raw_clips:
             clip_id = raw_clip.get("id")
             reference = manifest.get(clip_id)
@@ -101,6 +105,9 @@ def run_cleaner(
                 forced_texts.append(forced_text)
                 forced_warnings.append(list(finalizer.warnings))
 
+            measured_seconds += (
+                sum(production_latencies) + sum(forced_latencies)
+            ) / 1000.0
             production_score = stt_eval_metrics.score_transcripts(
                 reference["reference_final"], production_texts[0]
             )
@@ -174,6 +181,10 @@ def run_cleaner(
         },
         "source_raw": str(raw_path.resolve()),
         "manifest": str(manifest_path.resolve()),
+        "load_seconds": round(load_seconds, 3),
+        "measured_seconds": round(measured_seconds, 3),
+        "peak_rss_mb": round(stt_eval._peak_rss_mb(), 1),
+        "peak_metal_mb": stt_eval._peak_metal_mb(),
         "environment": stt_eval._environment(),
         "provenance": {
             "repo_commit": stt_eval._repo_commit(),

@@ -453,6 +453,7 @@ def test_runner_measures_only_repeats_and_separates_raw_final(tmp_path):
 
     assert result["load_seconds"] >= 0.0
     assert result["peak_rss_mb"] > 0.0
+    assert result["peak_metal_mb"] is not None
     assert result["clips"][0]["load_seconds"] == pytest.approx(
         result["load_seconds"]
     )

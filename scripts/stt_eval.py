@@ -344,6 +344,15 @@ def _peak_rss_mb() -> float:
     return peak / (1024 * 1024)
 
 
+def _peak_metal_mb() -> float | None:
+    try:
+        import mlx.core as mx
+
+        return round(float(mx.get_peak_memory()) / (1024 * 1024), 1)
+    except Exception:
+        return None
+
+
 def _percentile(values: list[float], percentile: int) -> float:
     ordered = sorted(values)
     index = math.ceil(percentile / 100 * len(ordered)) - 1
@@ -566,6 +575,7 @@ def run_candidate(
         "rtf_summary": _latency_summary(rtf_values),
         "nondeterministic_clips": nondeterministic_clips,
         "peak_rss_mb": round(peak_rss_mb, 1),
+        "peak_metal_mb": _peak_metal_mb(),
         "clips": clip_results,
         "aggregate": {
             "raw": aggregate_scores(raw_per_clip),
