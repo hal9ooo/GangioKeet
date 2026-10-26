@@ -297,6 +297,23 @@ public sealed class AudioCapturePolicyTests
     }
 
     [Fact]
+    public async Task BytesEmittedDuringSourceStop_AreChunkedAndCounted()
+    {
+        WasapiAudioCapture capture = BuildCapture();
+        _devices.SetDevices(DeviceA);
+        _factory.Prepare(DeviceA);
+        FakeSource source = _factory.SourceOf(DeviceA);
+        source.EmitOnStop = AudioBytes(700, 1024);
+
+        await capture.StartAsync(DeviceA.Id, CancellationToken.None);
+        AudioSummary summary = await capture.StopAsync(CancellationToken.None);
+
+        Assert.Single(_events.Chunks);
+        Assert.Equal(1400, _events.Chunks[0].Length);
+        Assert.Equal(700, summary.SampleCount);
+    }
+
+    [Fact]
     public async Task DisposeAsync_AfterStop_DoesNotDisposeSourceTwice()
     {
         WasapiAudioCapture capture = BuildCapture();
@@ -346,6 +363,8 @@ internal sealed class FakeSource : IMicrophoneSource
 
     public Exception? StartException { get; set; }
 
+    public byte[]? EmitOnStop { get; set; }
+
     public void Deliver(ReadOnlyMemory<byte> pcm) => AudioArrived?.Invoke(this, pcm);
 
     public void EmitDeviceLost() => DeviceLost?.Invoke(this, EventArgs.Empty);
@@ -364,6 +383,11 @@ internal sealed class FakeSource : IMicrophoneSource
     public Task StopAsync(CancellationToken ct)
     {
         StopCalls++;
+        if (EmitOnStop is { Length: > 0 } drained)
+        {
+            AudioArrived?.Invoke(this, drained);
+        }
+
         return Task.CompletedTask;
     }
 
