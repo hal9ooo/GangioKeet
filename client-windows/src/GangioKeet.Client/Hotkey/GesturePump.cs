@@ -2,8 +2,9 @@ namespace GangioKeet.Client.Hotkey;
 
 /// <summary>
 /// Serializza gesti grezzi e tick del double-tap. Il timer da 25 ms esiste solo mentre
-/// <see cref="GestureDetector.AwaitingSecondTap"/>; il lock interno garantisce che
-/// keydown, keyup e tick non entrino mai contemporaneamente nel detector.
+/// <see cref="GestureDetector.AwaitingSecondTap"/>. Il lock protegge il detector; il
+/// dispatch avviene fuori dal lock, così un handler lento non blocca <see cref="Dispose"/>
+/// (niente deadlock con il Dispatcher UI allo shutdown).
 /// </summary>
 public sealed class GesturePump : IDisposable
 {
@@ -26,6 +27,7 @@ public sealed class GesturePump : IDisposable
 
     public void OnRaw(RawKeyEvent raw)
     {
+        IReadOnlyList<GestureKind> kinds;
         lock (_gate)
         {
             if (_disposed)
@@ -33,12 +35,22 @@ public sealed class GesturePump : IDisposable
                 return;
             }
 
-            IReadOnlyList<GestureKind> kinds = raw.IsDown
+            kinds = raw.IsDown
                 ? _detector.OnKeyDown()
                 : _detector.OnKeyUp();
-
-            Dispatch(kinds);
             UpdateTimer();
+        }
+
+        Dispatch(kinds);
+    }
+
+    /// <summary>Riporta il detector in Idle (dopo Esc) e spegne il timer del double-tap.</summary>
+    public void Reset()
+    {
+        lock (_gate)
+        {
+            _detector.Reset();
+            DisposeTimer();
         }
     }
 
@@ -52,13 +64,13 @@ public sealed class GesturePump : IDisposable
             }
 
             _disposed = true;
-            _timer?.Dispose();
-            _timer = null;
+            DisposeTimer();
         }
     }
 
     private void Tick()
     {
+        IReadOnlyList<GestureKind> kinds;
         lock (_gate)
         {
             if (_disposed)
@@ -66,16 +78,25 @@ public sealed class GesturePump : IDisposable
                 return;
             }
 
-            Dispatch(_detector.OnTick());
+            kinds = _detector.OnTick();
             UpdateTimer();
         }
+
+        Dispatch(kinds);
     }
 
     private void Dispatch(IReadOnlyList<GestureKind> kinds)
     {
         foreach (GestureKind kind in kinds)
         {
-            _dispatch(kind);
+            // Un handler che lancia non deve uccidere il thread degli hook.
+            try
+            {
+                _dispatch(kind);
+            }
+            catch (Exception)
+            {
+            }
         }
     }
 
@@ -91,6 +112,11 @@ public sealed class GesturePump : IDisposable
             return;
         }
 
+        DisposeTimer();
+    }
+
+    private void DisposeTimer()
+    {
         _timer?.Dispose();
         _timer = null;
     }

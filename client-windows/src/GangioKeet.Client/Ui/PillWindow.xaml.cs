@@ -51,7 +51,7 @@ public sealed partial class PillWindow : Window, IPillView
 
     public void Show(PillState state, string? message, DictationProfile? profile)
     {
-        Dispatcher.Invoke(() =>
+        RunOnUi(() =>
         {
             PositionPill();
             Show();
@@ -65,11 +65,25 @@ public sealed partial class PillWindow : Window, IPillView
 
     public new void Hide()
     {
-        Dispatcher.Invoke(() =>
+        RunOnUi(() =>
         {
             _levelTimer.IsEnabled = false;
             base.Hide();
         });
+    }
+
+    private void RunOnUi(Action action)
+    {
+        if (Dispatcher.CheckAccess())
+        {
+            action();
+        }
+        else
+        {
+            // Mai Invoke bloccante dal thread degli hook: allo shutdown il Dispatcher UI
+            // è fermo e un Invoke causerebbe un deadlock.
+            Dispatcher.BeginInvoke(action);
+        }
     }
 
     public void SetLevel(double level)
@@ -113,23 +127,58 @@ public sealed partial class PillWindow : Window, IPillView
             return;
         }
 
-        DpiScale dpi = VisualTreeHelper.GetDpi(this);
-        double scaleX = dpi.DpiScaleX > 0 ? dpi.DpiScaleX : 1;
-        double scaleY = dpi.DpiScaleY > 0 ? dpi.DpiScaleY : 1;
+        // Il DPI rilevante è quello del monitor sotto il cursore, non quello della
+        // finestra (che al primo Show è ancora sul monitor primario). Con
+        // PerMonitorV2 GetDpiForMonitor restituisce il DPI effettivo del target.
+        uint dpiX = 96;
+        uint dpiY = 96;
+        if (GetDpiForMonitor(monitor, MdtEffectiveDpi, out uint monitorDpiX, out uint monitorDpiY) == 0)
+        {
+            dpiX = monitorDpiX > 0 ? monitorDpiX : 96;
+            dpiY = monitorDpiY > 0 ? monitorDpiY : 96;
+        }
+
+        double scaleX = dpiX / 96.0;
+        double scaleY = dpiY / 96.0;
 
         RECT work = info.Work;
         PillWorkArea area = new(
-            work.Left / scaleX,
-            work.Top / scaleY,
-            (work.Right - work.Left) / scaleX,
-            (work.Bottom - work.Top) / scaleY);
+            work.Left,
+            work.Top,
+            work.Right - work.Left,
+            work.Bottom - work.Top);
+
+        double widthPx = Width * scaleX;
+        double heightPx = Height * scaleY;
 
         (double left, double top) = string.Equals(PositionMode, "cursor", StringComparison.OrdinalIgnoreCase)
-            ? PillPlacement.NearCursor(area, cursor.X / scaleX, cursor.Y / scaleY, Width, Height)
-            : PillPlacement.CenterBottom(area, Width, Height);
+            ? PillPlacement.NearCursor(
+                area,
+                cursor.X,
+                cursor.Y,
+                widthPx,
+                heightPx,
+                PillPlacement.CursorOffset * scaleX)
+            : PillPlacement.CenterBottom(
+                area,
+                widthPx,
+                heightPx,
+                PillPlacement.BottomMargin * scaleY);
 
-        Left = left;
-        Top = top;
+        // SetWindowPos lavora in pixel fisici: evita la doppia conversione DIP/WPF
+        // quando la finestra cambia monitor con DPI diversi.
+        nint handle = new WindowInteropHelper(this).Handle;
+        if (handle != 0)
+        {
+            SetWindowPos(
+                handle,
+                IntPtr.Zero,
+                (int)Math.Round(left),
+                (int)Math.Round(top),
+                0,
+                0,
+                SwpNoSize | SwpNoZOrder | SwpNoActivate);
+        }
     }
 
     private static string StateToDefaultMessage(PillState state) => state switch
@@ -172,6 +221,25 @@ public sealed partial class PillWindow : Window, IPillView
     [DllImport("user32.dll", CharSet = CharSet.Unicode)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetMonitorInfo(nint monitor, ref MonitorInfo info);
+
+    [DllImport("Shcore.dll")]
+    private static extern int GetDpiForMonitor(nint monitor, int dpiType, out uint dpiX, out uint dpiY);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetWindowPos(
+        nint hWnd,
+        nint insertAfter,
+        int x,
+        int y,
+        int width,
+        int height,
+        uint flags);
+
+    private const int MdtEffectiveDpi = 0;
+    private const uint SwpNoSize = 0x0001;
+    private const uint SwpNoZOrder = 0x0004;
+    private const uint SwpNoActivate = 0x0010;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct Point

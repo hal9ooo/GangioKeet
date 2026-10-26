@@ -66,6 +66,29 @@ server:
         Assert.False(ConfigWriter.SetAudioInputDevice(path, "mic-123"));
     }
 
+    [Fact]
+    public void InsertsTheKey_UsingTheExistingFourSpaceIndentation()
+    {
+        string path = TempFile("audio:\n    sample_rate: 16000\n    channels: 1\n");
+
+        Assert.True(ConfigWriter.SetAudioInputDevice(path, "mic-123"));
+
+        string text = File.ReadAllText(path);
+        Assert.Contains("    input_device: \"mic-123\"", text);
+    }
+
+    [Fact]
+    public void AudioSectionWithInlineComment_IsStillRecognized()
+    {
+        string path = TempFile("audio:   # sezione audio\n  input_device: null\n");
+
+        Assert.True(ConfigWriter.SetAudioInputDevice(path, "mic-123"));
+
+        string text = File.ReadAllText(path);
+        Assert.Contains("audio:   # sezione audio", text);
+        Assert.Contains("input_device: \"mic-123\"", text);
+    }
+
     private static string TempFile(string content)
     {
         string path = Path.Combine(Path.GetTempPath(), $"gangio-{Guid.NewGuid():N}.yaml");

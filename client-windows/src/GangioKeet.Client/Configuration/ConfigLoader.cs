@@ -153,8 +153,9 @@ public static class ConfigLoader
 
         Fail(
             sourcePath,
-            $"hotkey key '{value}' is not valid: expected f1-f24, capslock or mouse_x1"
-            + (allowEscape ? ", or 'escape' for hotkey.abort_key" : ""));
+            allowEscape
+                ? $"hotkey key '{value}' is not valid: expected f1-f24, mouse_x1 or 'escape' for hotkey.abort_key"
+                : $"hotkey key '{value}' is not valid: expected f1-f24, capslock or mouse_x1");
     }
 
     private static void ValidateAudio(AudioConfig audio, string? sourcePath)

@@ -34,6 +34,7 @@ public partial class App : Application
     private WasapiAudioCapture? _capture;
     private LowLevelInputHooks? _hooks;
     private GesturePump? _gestures;
+    private GestureRouter? _gestureRouter;
     private StaPasteDispatcher? _pasteDispatcher;
     private SynthSoundPlayer? _soundPlayer;
     private HttpClient? _healthHttp;
@@ -134,7 +135,7 @@ public partial class App : Application
 
         _gestures = new GesturePump(
             new GestureDetector(config.Hotkey, time),
-            DispatchGesture,
+            CreateGestureRouter().OnGesture,
             time);
         _hooks.RawEvent += (_, raw) => HandleRawEvent(raw, config);
 
@@ -167,14 +168,8 @@ public partial class App : Application
 
     private static System.Windows.Media.ImageSource CreateTrayIcon()
     {
-        // Icona sintetica: cerchio verde su sfondo trasparente (nessun asset esterno).
-        var group = new System.Windows.Media.DrawingGroup();
-        var geometry = new System.Windows.Media.EllipseGeometry(new System.Windows.Point(16, 16), 14, 14);
-        var drawing = new System.Windows.Media.GeometryDrawing(
-            System.Windows.Media.Brushes.MediumSeaGreen, null, geometry);
-        group.Children.Add(drawing);
-
-        var image = new System.Windows.Media.DrawingImage(group);
+        var image = new System.Windows.Media.Imaging.BitmapImage(
+            new Uri("pack://application:,,,/Assets/gangio.ico", UriKind.Absolute));
         image.Freeze();
         return image;
     }
@@ -190,6 +185,7 @@ public partial class App : Application
         }
         finally
         {
+            _gestures?.Reset();
             if (_hooks is not null)
             {
                 _hooks.AbortActive = false;
@@ -197,22 +193,21 @@ public partial class App : Application
         }
     }
 
-    private async Task StopAndClearAsync()
+    private GestureRouter CreateGestureRouter()
     {
-        try
-        {
-            if (_controller is not null)
+        _gestureRouter = new GestureRouter(
+            () => _controller?.Start(),
+            () => _controller?.StopAsync(CancellationToken.None) ?? Task.CompletedTask,
+            AbortAndClearAsync,
+            active =>
             {
-                await _controller.StopAsync(CancellationToken.None);
-            }
-        }
-        finally
-        {
-            if (_hooks is not null)
-            {
-                _hooks.AbortActive = false;
-            }
-        }
+                if (_hooks is not null)
+                {
+                    _hooks.AbortActive = active;
+                }
+            });
+
+        return _gestureRouter;
     }
 
     private DictationSession CreateSession()
@@ -232,36 +227,13 @@ public partial class App : Application
         {
             if (raw.IsDown)
             {
-                _ = AbortAndClearAsync();
+                _gestureRouter?.OnGesture(GestureKind.Abort);
             }
 
             return;
         }
 
         _gestures?.OnRaw(raw);
-    }
-
-    private void DispatchGesture(GestureKind kind)
-    {
-        switch (kind)
-        {
-            case GestureKind.Start:
-                if (_hooks is not null)
-                {
-                    _hooks.AbortActive = true;
-                }
-
-                _controller?.Start();
-                break;
-            case GestureKind.StopAndTranscribe:
-                _ = StopAndClearAsync();
-                break;
-            case GestureKind.Abort:
-                _ = AbortAndClearAsync();
-                break;
-            case GestureKind.HandsFreeEntered:
-                break;
-        }
     }
 
     protected override void OnExit(ExitEventArgs e)

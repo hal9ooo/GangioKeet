@@ -6,10 +6,12 @@ namespace GangioKeet.Client.Configuration;
 /// <summary>
 /// Scrittura puntuale della configurazione: modifica solo la riga
 /// <c>audio.input_device</c> preservando commenti, ordine e indentazione.
-/// Un errore di I/O restituisce false e lascia il file com'era.
+/// La scrittura è atomica (file temporaneo + replace): un errore non tronca il file.
 /// </summary>
 public static class ConfigWriter
 {
+    private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
+
     public static bool SetAudioInputDevice(string path, string? deviceId)
     {
         try
@@ -22,7 +24,7 @@ public static class ConfigWriter
                 ? "input_device: null"
                 : $"input_device: \"{deviceId}\"";
 
-            int audioIndex = lines.FindIndex(line => line.TrimEnd() == "audio:");
+            int audioIndex = lines.FindIndex(IsAudioSectionStart);
             if (audioIndex < 0)
             {
                 if (lines.Count > 0 && lines[^1].Length > 0)
@@ -35,6 +37,7 @@ public static class ConfigWriter
             }
             else
             {
+                string indent = DetectIndent(lines, audioIndex) ?? "  ";
                 int insertAt = audioIndex + 1;
                 int keyIndex = -1;
 
@@ -67,11 +70,11 @@ public static class ConfigWriter
                 }
                 else
                 {
-                    lines.Insert(insertAt, "  " + rendered);
+                    lines.Insert(insertAt, indent + rendered);
                 }
             }
 
-            File.WriteAllLines(path, lines, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+            WriteAtomic(path, lines);
             return true;
         }
         catch (IOException)
@@ -85,6 +88,58 @@ public static class ConfigWriter
         catch (ArgumentException)
         {
             return false;
+        }
+    }
+
+    private static bool IsAudioSectionStart(string line)
+    {
+        string trimmed = line.TrimStart();
+        if (!trimmed.StartsWith("audio:", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        string rest = trimmed["audio:".Length..].Trim();
+        return rest.Length == 0 || rest.StartsWith('#');
+    }
+
+    private static string? DetectIndent(List<string> lines, int audioIndex)
+    {
+        for (int i = audioIndex + 1; i < lines.Count; i++)
+        {
+            string line = lines[i];
+            if (line.Length == 0 || line.TrimStart().StartsWith('#'))
+            {
+                continue;
+            }
+
+            if (!char.IsWhiteSpace(line[0]))
+            {
+                return null;
+            }
+
+            return line[..(line.Length - line.TrimStart().Length)];
+        }
+
+        return null;
+    }
+
+    private static void WriteAtomic(string path, List<string> lines)
+    {
+        string directory = Path.GetDirectoryName(path) ?? ".";
+        string temp = Path.Combine(directory, $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
+
+        try
+        {
+            File.WriteAllLines(temp, lines, Utf8NoBom);
+            File.Move(temp, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temp))
+            {
+                File.Delete(temp);
+            }
         }
     }
 
