@@ -1,9 +1,11 @@
 import argparse
 import asyncio
+import os
 
 import uvicorn
 from fastapi import FastAPI
 
+from .auth import ApiKeyPolicy
 from .config import AppConfig, load_config
 from .llm import LLMCleaner
 from .pipeline import Pipeline
@@ -17,6 +19,12 @@ def build_app(
     stt: ParakeetSTT | None = None,
     llm: LLMCleaner | None = None,
 ) -> FastAPI:
+    # Resolve auth before constructing or loading any model: a configured
+    # but unavailable API key must fail startup without touching engines.
+    auth = ApiKeyPolicy.from_environment(
+        cfg.security.api_key_env, os.environ
+    )
+
     if stt is None:
         stt = ParakeetSTT(cfg.server.stt_model)
     if llm is None:
@@ -26,7 +34,7 @@ def build_app(
     llm.load()
     llm.freeze(build_system_prompt(cfg.glossary))
 
-    return create_app(cfg, Pipeline(stt, llm, cfg))
+    return create_app(cfg, Pipeline(stt, llm, cfg), auth=auth)
 
 
 async def serve(

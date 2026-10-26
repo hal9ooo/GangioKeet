@@ -15,6 +15,7 @@ from dictation_server.admission import (
     AdmissionController,
     AdmissionSnapshot,
 )
+from dictation_server.auth import ApiKeyPolicy
 from dictation_server.config import load_config
 from dictation_server.errors import DictationFailure
 from dictation_server.pipeline import Pipeline
@@ -563,6 +564,61 @@ def test_create_app_uses_one_admission_controller(cfg):
 
     assert client.app.state.admission is admission
     assert admission.snapshot() == AdmissionSnapshot(0, 0)
+
+
+@pytest.mark.asyncio
+async def test_ws_auth_failure_closes_before_reading_or_admitting(cfg):
+    class StubSocket:
+        headers = {"authorization": "Bearer wrong-token"}
+
+        def __init__(self):
+            self.accepted = False
+            self.sent = []
+            self.close_code = None
+
+        async def accept(self):
+            self.accepted = True
+
+        async def receive(self):
+            raise AssertionError(
+                "auth failure must not read a client message"
+            )
+
+        async def send_text(self, text):
+            self.sent.append(json.loads(text))
+
+        async def close(self, code=1000):
+            self.close_code = code
+
+    admission = AdmissionController(max_sessions=1, max_bytes=1000)
+    stt, llm = FakeSTT(), FakeLLM()
+    websocket = StubSocket()
+    policy = ApiKeyPolicy.from_environment(
+        "TEST_API_KEY", {"TEST_API_KEY": "right-token"}
+    )
+    connection = _DictationConnection(
+        websocket,
+        Pipeline(stt, llm, cfg),
+        admission,
+        max_audio_bytes=cfg.limits.max_audio_bytes,
+        auth=policy,
+    )
+
+    await connection.run()
+
+    assert websocket.accepted is True
+    assert websocket.sent == [
+        {
+            "type": "error",
+            "code": "unauthorized",
+            "message": "unauthorized",
+            "retryable": False,
+        }
+    ]
+    assert websocket.close_code == 1008
+    assert admission.snapshot() == AdmissionSnapshot(0, 0)
+    assert stt.seen == []
+    assert llm.calls == []
 
 
 def test_ws_start_holds_lease_and_stop_releases_it(cfg):

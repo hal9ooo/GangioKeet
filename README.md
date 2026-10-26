@@ -50,6 +50,54 @@ curl -s http://127.0.0.1:8000/health
 # {"status":"ok"}
 ```
 
+## Autenticazione opzionale
+
+L'autenticazione è disattivata finché `security.api_key_env` resta `null`.
+Per attivarla, indicare il nome della variabile d'ambiente in `config.yaml`:
+
+```yaml
+security:
+  api_key_env: "GANGIOKEET_API_KEY"
+```
+
+e avviare il server con la variabile valorizzata:
+
+```bash
+export GANGIOKEET_API_KEY="$(openssl rand -hex 32)"
+uv run python -m dictation_server.main
+```
+
+Se il nome è configurato ma la variabile è assente o vuota, l'avvio fallisce
+prima di caricare o bindare i modelli. La chiave non viene mai scritta nei log.
+
+Con auth attiva `/health` resta pubblico; tutte le altre rotte HTTP e il
+WebSocket richiedono l'header:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/v1/audio/transcriptions \
+  -H "Authorization: Bearer $GANGIOKEET_API_KEY" \
+  -F file=@audio.wav
+```
+
+```python
+async with websockets.connect(
+    "ws://127.0.0.1:8000/ws/dictate",
+    additional_headers={
+        "Authorization": f"Bearer {api_key}",
+    },
+) as ws:
+    ...
+```
+
+L'ambiente di una shell non viene ereditato da launchd. Per il LaunchAgent,
+esportare `GANGIOKEET_API_KEY` nella shell da cui si lancia l'installer:
+`deploy/install_launchd.sh` legge il valore dall'ambiente e, solo se non è
+vuoto, lo aggiunge al plist locale generato
+(`~/Library/LaunchAgents/com.gangio.mlx-dictation.plist`, permessi `0600`).
+Senza la variabile il campo è omesso. Il valore non viene mai stampato,
+passato in argv o scritto nel template versionato; dopo l'installazione si
+può fare `unset GANGIOKEET_API_KEY`.
+
 ## LaunchAgent
 
 ```bash
@@ -196,6 +244,9 @@ server:
   stt_model: "mlx-community/parakeet-tdt-0.6b-v3"
   llm_model: "mlx-community/Qwen3-1.7B-4bit"
 
+security:
+  api_key_env: null  # oppure "GANGIOKEET_API_KEY"
+
 routing:
   fast_path_max_words: 5
   self_correction_triggers: ["anzi", "scusa", "aspetta", "cioè", "o meglio", "volevo dire"]
@@ -316,8 +367,9 @@ della metrica.
 
 ## Limiti di compatibilità
 
-- Il server è pensato per la rete locale: non implementa autenticazione,
-  TLS, rate limiting o multi-tenancy.
+- Il server è pensato per la rete locale: l'autenticazione Bearer è opzionale
+  e, se attiva, il token viaggia in chiaro su HTTP. Non implementa TLS, rate
+  limiting o multi-tenancy; usare una rete fidata o un reverse proxy TLS.
 - Un solo processo e un solo lock Metal: le richieste concorrenti vengono
   serializzate.
 - L'audio di input deve essere PCM16 mono 16 kHz; il REST converte solo se

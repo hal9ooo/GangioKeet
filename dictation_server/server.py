@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from pydantic import ValidationError
 
 from .admission import AdmissionController, AudioLease
+from .auth import ApiKeyPolicy, BearerAuthMiddleware
 from .config import AppConfig
 from .decode import (
     AudioDecodeError,
@@ -54,11 +55,13 @@ class _DictationConnection:
         pipeline: Pipeline,
         admission: AdmissionController,
         max_audio_bytes: int,
+        auth: ApiKeyPolicy | None = None,
     ):
         self.websocket = websocket
         self.pipeline = pipeline
         self.admission = admission
         self.max_audio_bytes = max_audio_bytes
+        self.auth = auth if auth is not None else ApiKeyPolicy()
         self.state = "idle"
         self.audio = bytearray()
         self.profile: Profile = "default"
@@ -69,6 +72,8 @@ class _DictationConnection:
 
     async def run(self) -> None:
         await self.websocket.accept()
+        if not await self._authorized():
+            return
         try:
             while True:
                 if self.process_task is None:
@@ -82,6 +87,19 @@ class _DictationConnection:
                     break
         finally:
             await self._cancel_processing()
+
+    async def _authorized(self) -> bool:
+        try:
+            self.auth.authorize(
+                self.websocket.headers.get("authorization")
+            )
+        except DictationFailure as exc:
+            await self._send_error(
+                exc.code, exc.message, retryable=exc.retryable
+            )
+            await self._close(1008)
+            return False
+        return True
 
     async def _wait_for_input_or_result(self) -> bool:
         process_task = self.process_task
@@ -337,23 +355,30 @@ def create_app(
     cfg: AppConfig,
     pipeline: Pipeline,
     admission: AdmissionController | None = None,
+    auth: ApiKeyPolicy | None = None,
 ) -> FastAPI:
     if admission is None:
         admission = AdmissionController(
             max_sessions=cfg.limits.max_sessions,
             max_bytes=cfg.limits.max_buffered_audio_bytes,
         )
+    if auth is None:
+        auth = ApiKeyPolicy()
 
     app = FastAPI(title="MLX Dictation Server")
     app.state.config = cfg
     app.state.pipeline = pipeline
     app.state.admission = admission
+    app.state.auth = auth
     app.add_middleware(
         UploadLimitMiddleware,
         admission=admission,
         max_body_bytes=cfg.limits.max_http_body_bytes,
         upload_timeout=cfg.timeouts.upload_seconds,
     )
+    # Added after the upload limiter so Starlette places this middleware
+    # outermost: unauthorized requests never acquire a lease or read a body.
+    app.add_middleware(BearerAuthMiddleware, policy=auth)
 
     @app.exception_handler(DictationFailure)
     async def _handle_dictation_failure(
@@ -385,6 +410,7 @@ def create_app(
             pipeline,
             admission,
             cfg.limits.max_audio_bytes,
+            auth=auth,
         ).run()
 
     @app.post("/v1/audio/transcriptions")
