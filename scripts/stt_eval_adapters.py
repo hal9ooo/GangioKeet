@@ -3,15 +3,10 @@
 Only the standard library is imported at module import time.  Optional
 runtimes (``mlx``, ``mlx_audio``, ``parakeet_mlx``, ...) are imported lazily
 inside ``load()`` so the default test-suite never touches them.
-
-The four Task 9 candidates are registered with metadata but are intentionally
-marked ``not_verified``: this task must not guess an unverified ``mlx-audio``
-API.  Task 9 will implement and verify those adapters on real models.
 """
 
 from __future__ import annotations
 
-import importlib
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
@@ -48,35 +43,35 @@ CANDIDATES: dict[str, CandidateSpec] = {
         runtime="mlx_audio",
         revision=None,
         precision="8bit",
-        status="not_verified",
-        notes="Task 9 must implement and verify the mlx-audio API.",
+        status="verified",
+        notes="mlx-audio 0.6.2 Qwen3ASRModel.generate",
     ),
     "cohere_transcribe_03_2026": CandidateSpec(
         id="cohere_transcribe_03_2026",
-        model_id="mlx-community/cohere-transcribe-03-2026",
+        model_id="CohereLabs/cohere-transcribe-03-2026",
         runtime="mlx_audio",
         revision=None,
         precision=None,
-        status="not_verified",
-        notes="Task 9 must implement and verify the mlx-audio API.",
+        status="verified",
+        notes="mlx-audio 0.6.2 Cohere ASR generate",
     ),
     "nemotron_3_5_asr_streaming_0_6b": CandidateSpec(
         id="nemotron_3_5_asr_streaming_0_6b",
         model_id="mlx-community/nemotron-3.5-asr-streaming-0.6b",
         runtime="mlx_audio",
         revision=None,
-        precision=None,
-        status="not_verified",
-        notes="Task 9 must implement and verify the mlx-audio API.",
+        precision="bf16",
+        status="verified",
+        notes="mlx-audio 0.6.2 Nemotron batch/final generate",
     ),
     "whisper_large_v3_turbo": CandidateSpec(
         id="whisper_large_v3_turbo",
-        model_id="mlx-community/whisper-large-v3-turbo",
+        model_id="mlx-community/whisper-large-v3-turbo-asr-fp16",
         runtime="mlx_audio",
         revision=None,
-        precision=None,
-        status="not_verified",
-        notes="Task 9 must implement and verify the mlx-audio API.",
+        precision="fp16",
+        status="verified",
+        notes="mlx-audio 0.6.2 Whisper generate",
     ),
 }
 
@@ -84,6 +79,20 @@ CANDIDATE_IDS: tuple[str, ...] = (
     "parakeet_baseline",
     *CANDIDATES.keys(),
 )
+
+_LANGUAGE_KWARGS = {
+    "qwen3_asr_1_7b_8bit": {
+        "language": "Italian",
+        "temperature": 0.0,
+    },
+    "cohere_transcribe_03_2026": {"language": "it"},
+    "nemotron_3_5_asr_streaming_0_6b": {"language": "it-IT"},
+    "whisper_large_v3_turbo": {
+        "language": "it",
+        "temperature": 0.0,
+        "return_timestamps": False,
+    },
+}
 
 
 @runtime_checkable
@@ -138,10 +147,8 @@ class ParakeetBaselineAdapter:
         return self._stt.transcribe(self._to_array(pcm))
 
 
-class UnverifiedCandidateAdapter:
-    """Registry placeholder that fails explicitly until Task 9 verifies it."""
-
-    revision: str | None = None
+class MlxAudioAdapter:
+    """Adapter for mlx-audio STT models verified against 0.6.2."""
 
     def __init__(self, spec: CandidateSpec):
         self.spec = spec
@@ -151,29 +158,55 @@ class UnverifiedCandidateAdapter:
         self.precision = spec.precision
         self.status = spec.status
         self.has_finalizer = False
+        self._model = None
+        self._kwargs = dict(_LANGUAGE_KWARGS[spec.id])
 
     def load(self) -> None:
         try:
-            importlib.import_module(self.spec.runtime)
-        except ModuleNotFoundError as exc:
+            from mlx_audio.stt import load
+        except ImportError as exc:
             raise AdapterUnavailable(
-                f"runtime '{self.spec.runtime}' unavailable for candidate "
+                f"runtime 'mlx_audio' unavailable for candidate "
                 f"'{self.candidate_id}' (model {self.model_id}): {exc}. "
                 "Install it only in an isolated eval environment; the harness "
                 "never installs packages or downloads models implicitly."
             ) from exc
-
-        raise AdapterUnavailable(
-            f"adapter not yet verified for candidate '{self.candidate_id}' "
-            f"(model {self.model_id}): Task 9 must implement and verify the "
-            f"{self.spec.runtime} API. No unverified API is guessed by this "
-            "harness."
-        )
+        try:
+            self._model = load(self.model_id)
+        except Exception as exc:
+            raise AdapterUnavailable(
+                f"model load failed for candidate '{self.candidate_id}' "
+                f"({self.model_id}): {exc}"
+            ) from exc
 
     def transcribe(self, pcm: bytes) -> str:
-        raise AdapterUnavailable(
-            f"adapter not yet verified for candidate '{self.candidate_id}'"
-        )
+        if self._model is None:
+            raise AdapterUnavailable(
+                f"adapter '{self.candidate_id}' must be loaded before "
+                "transcribing"
+            )
+        from dictation_server.audio import pcm_bytes_to_mlx_array
+
+        audio = pcm_bytes_to_mlx_array(pcm)
+        try:
+            result = self._model.generate(audio, **self._kwargs)
+        except Exception as exc:
+            raise AdapterUnavailable(
+                f"transcription failed for candidate '{self.candidate_id}' "
+                f"({self.model_id}): {exc}"
+            ) from exc
+
+        if isinstance(result, list):
+            text = " ".join(
+                getattr(item, "text", "") or "" for item in result
+            )
+        else:
+            text = getattr(result, "text", None)
+        if not isinstance(text, str):
+            raise AdapterUnavailable(
+                f"candidate '{self.candidate_id}' returned no text"
+            )
+        return text
 
 
 def create_adapter(
@@ -195,4 +228,4 @@ def create_adapter(
             f"unknown candidate '{candidate_id}'; available candidates: "
             f"{available}"
         )
-    return UnverifiedCandidateAdapter(spec)
+    return MlxAudioAdapter(spec)

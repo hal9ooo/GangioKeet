@@ -4,6 +4,7 @@ import subprocess
 import sys
 import textwrap
 import time
+import types
 import wave
 from pathlib import Path
 
@@ -601,31 +602,68 @@ def test_unknown_candidate_is_rejected_with_clear_list():
         assert candidate_id in message
 
 
-def test_unverified_candidate_reports_missing_runtime(monkeypatch):
-    def missing_runtime(name):
-        raise ModuleNotFoundError(name)
+def test_mlx_audio_adapter_reports_missing_runtime(monkeypatch):
+    import builtins
 
-    monkeypatch.setattr(
-        stt_eval_adapters.importlib, "import_module", missing_runtime
-    )
+    real_import = builtins.__import__
+
+    def missing_mlx(name, *args, **kwargs):
+        if name.startswith("mlx_audio"):
+            raise ImportError(name)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", missing_mlx)
     adapter = create_adapter("qwen3_asr_1_7b_8bit")
 
-    with pytest.raises(
-        AdapterUnavailable, match="runtime 'mlx_audio' unavailable"
-    ):
+    with pytest.raises(AdapterUnavailable, match="mlx_audio"):
         adapter.load()
 
 
-def test_unverified_candidate_reports_not_yet_verified(monkeypatch):
-    monkeypatch.setattr(
-        stt_eval_adapters.importlib,
-        "import_module",
-        lambda name: object(),
-    )
-    adapter = create_adapter("qwen3_asr_1_7b_8bit")
+@pytest.mark.parametrize(
+    "candidate_id, language, temperature",
+    [
+        ("qwen3_asr_1_7b_8bit", "Italian", 0.0),
+        ("cohere_transcribe_03_2026", "it", None),
+        ("nemotron_3_5_asr_streaming_0_6b", "it-IT", None),
+        ("whisper_large_v3_turbo", "it", 0.0),
+    ],
+)
+def test_mlx_audio_adapter_uses_generate(
+    monkeypatch, candidate_id, language, temperature
+):
+    class FakeModel:
+        def __init__(self, model_id):
+            self.model_id = model_id
+            self.kwargs = None
 
-    with pytest.raises(AdapterUnavailable, match="not yet verified"):
-        adapter.load()
+        def generate(self, audio, **kwargs):
+            self.kwargs = kwargs
+            return types.SimpleNamespace(text="ciao")
+
+    loaded = {}
+
+    def fake_load(model_id):
+        loaded["model"] = FakeModel(model_id)
+        return loaded["model"]
+
+    fake_stt = types.ModuleType("mlx_audio.stt")
+    fake_stt.load = fake_load
+    fake_pkg = types.ModuleType("mlx_audio")
+    fake_pkg.stt = fake_stt
+    monkeypatch.setitem(sys.modules, "mlx_audio", fake_pkg)
+    monkeypatch.setitem(sys.modules, "mlx_audio.stt", fake_stt)
+
+    adapter = create_adapter(candidate_id)
+    adapter.load()
+    text = adapter.transcribe(b"\x00\x00")
+
+    assert text == "ciao"
+    assert loaded["model"].model_id == adapter.model_id
+    assert loaded["model"].kwargs["language"] == language
+    if temperature is not None:
+        assert loaded["model"].kwargs["temperature"] == temperature
+    if candidate_id == "whisper_large_v3_turbo":
+        assert loaded["model"].kwargs["return_timestamps"] is False
 
 
 def test_eval_modules_do_not_import_optional_runtimes_by_default():
@@ -716,12 +754,16 @@ def test_cli_rejects_unknown_candidate(tmp_path, capsys):
 def test_cli_rejects_unavailable_runtime(tmp_path, capsys, monkeypatch):
     base, manifest = _corpus(tmp_path)
     output = tmp_path / "report.json"
+    import builtins
 
-    def missing_runtime(name):
-        raise ModuleNotFoundError(name)
+    real_import = builtins.__import__
 
-    monkeypatch.setattr(stt_eval_adapters.importlib, "import_module",
-                        missing_runtime)
+    def missing_runtime(name, *args, **kwargs):
+        if name.startswith("mlx_audio"):
+            raise ModuleNotFoundError(name)
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", missing_runtime)
 
     code = main(
         [
