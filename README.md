@@ -31,6 +31,10 @@ nella cache Hugging Face (`~/.cache/huggingface`). Il default è:
 - STT: `mlx-community/parakeet-tdt-0.6b-v3`
 - LLM: `mlx-community/Qwen3-1.7B-4bit`
 
+Questi restano i modelli selezionati anche dopo il confronto STT locale del
+26 ottobre 2026: quel confronto è **BLOCKED** (nessun corpus reale) e non ha
+prodotto un vincitore, quindi non c'è stata alcuna promozione di backend.
+
 ## Avvio manuale
 
 ```bash
@@ -165,8 +169,11 @@ Dopo `abort` il server cancella e drena il worker prima di accettare un nuovo
 nel prompt del post-processore.
 
 Audio: frame binari PCM16 signed little-endian, mono, 16 kHz. I chunk vengono
-accodati in RAM; il limite complessivo è `64 MiB`. Oltre il limite il server
-invia `{"type":"error","code":"payload_too_large"}` e chiude con codice 1009.
+accodati in RAM; il limite per sessione è `limits.max_audio_bytes` (default
+`64 MiB`). Un singolo frame oltre `ws_max_size` (lo stesso valore, passato a
+uvicorn) viene chiuso dal layer WebSocket con codice 1009. Se è il buffer
+cumulativo a superare il limite, il server invia
+`{"type":"error","code":"payload_too_large"}` e chiude con codice 1009.
 
 ```json
 {"type": "stop"}
@@ -249,10 +256,10 @@ Parametri supportati:
 | `response_format` | `json` (default) o `text`. `srt`, `vtt` e `verbose_json` non sono supportati. |
 | `profile` | Estensione locale; default `default`. |
 | `format` | Estensione locale in query string. `format=pcm` dichiara PCM16 mono 16 kHz grezzo. |
-| `language` | Accettato solo assente o vuoto (no-op); un valore non vuoto restituisce `400 unsupported_parameter`. |
-| `prompt` | Accettato solo assente o vuoto (no-op); un valore non vuoto restituisce `400 unsupported_parameter`. |
+| `language` | Accettato solo assente o vuoto (anche solo spazi, no-op); un valore non vuoto restituisce `400 unsupported_parameter`. |
+| `prompt` | Accettato solo assente o vuoto (anche solo spazi, no-op); un valore non vuoto restituisce `400 unsupported_parameter`. |
 | `temperature` | Accettato assente/`null` o `0`; qualunque altro valore restituisce `400 unsupported_parameter`. |
-| `stream` | Accettato assente/`false`; `true` restituisce `400 unsupported_parameter`. |
+| `stream` | Accettato assente oppure `false`, `0`, `no`, `off`; `true` restituisce `400 unsupported_parameter`. |
 | `timestamp_granularities`, `timestamp_granularities[]` | Accettati solo assenti o vuoti; valori non vuoti restituiscono `400 unsupported_parameter`. |
 
 I campi multipart sconosciuti restituiscono `400 unsupported_parameter`. I
@@ -315,6 +322,20 @@ server:
   stt_model: "mlx-community/parakeet-tdt-0.6b-v3"
   llm_model: "mlx-community/Qwen3-1.7B-4bit"
 
+limits:
+  max_audio_bytes: 67108864
+  max_http_body_bytes: 68157440
+  max_buffered_audio_bytes: 201326592
+  max_sessions: 4
+  max_pending_jobs: 2
+
+timeouts:
+  upload_seconds: 10.0
+  decode_seconds: 5.0
+  queue_seconds: 2.0
+  processing_seconds: 10.0
+  llm_seconds: 5.0
+
 security:
   api_key_env: null  # oppure "GANGIOKEET_API_KEY"
 
@@ -335,6 +356,32 @@ glossary:
 - `glossary.canonical_terms` e `glossary.phonetic_overrides` vengono iniettati
   nel system prompt congelato a boot; cambiarli richiede un riavvio.
 - Il file è validato con `extra="forbid"`: chiavi sconosciute sono errori.
+- Tutti i valori numerici di `limits` e `timeouts` devono essere positivi;
+  `max_audio_bytes` non può superare né `max_buffered_audio_bytes` né
+  `max_http_body_bytes`.
+
+### Limiti e timeout
+
+I default di `config.yaml` sono:
+
+| Impostazione | Default | Effetto |
+|---|---:|---|
+| `limits.max_audio_bytes` | 67.108.864 (64 MiB) | PCM massimo trattenuto per sessione WS e audio massimo accettato dal REST, incluso `format=pcm`. |
+| `limits.max_http_body_bytes` | 68.157.440 (65 MiB) | Corpo HTTP massimo per `POST /v1/audio/transcriptions`. Controllato prima del multipart e, per richieste chunked, contando i byte ricevuti. |
+| `limits.max_buffered_audio_bytes` | 201.326.592 (192 MiB) | Budget di audio trattenuto condiviso fra WebSocket e REST. Esaurito il budget, la richiesta fallisce con `busy`. |
+| `limits.max_sessions` | 4 | Sessioni audio contemporanee (WS + REST). Oltre il limite: `busy`. |
+| `limits.max_pending_jobs` | 2 | Job in coda oltre a quello attivo. Coda piena: `busy` immediato. |
+| `timeouts.upload_seconds` | 10,0 | Tempo per ricevere il corpo REST. Allo scadere: `upload_timeout` (408). |
+| `timeouts.decode_seconds` | 5,0 | Decodifica WAV/ffmpeg. Allo scadere: `decode_timeout` (504). |
+| `timeouts.queue_seconds` | 2,0 | Attesa in coda prima dello start. Allo scadere: `queue_timeout` (503). |
+| `timeouts.processing_seconds` | 10,0 | Limite rigido del job attivo, STT + LLM. Allo scadere: `processing_timeout` (504 lato REST, 1013 lato WS) e drain. |
+| `timeouts.llm_seconds` | 5,0 | Deadline cooperativa del cleaner LLM. Allo scadere il server usa il testo normalizzato con warning `llm_timeout`, entro il limite di processing. |
+
+Il limite del corpo HTTP è più alto di quello audio perché comprende
+l'overhead multipart. Il PCM grezzo dichiarato con `format=pcm` resta comunque
+soggetto a `max_audio_bytes`. `max_audio_bytes` è anche il `ws_max_size`
+passato a uvicorn, quindi un frame oltre il limite viene rifiutato prima di
+essere accodato.
 
 ## Test
 
@@ -387,54 +434,70 @@ in-process è il modo corretto per i gate.
 
 ### Risultati misurati
 
-Run del 25 ottobre 2026, server in-process dopo warm-up, 30 campioni per
+Run del **26 ottobre 2026**, server in-process dopo warm-up, 30 campioni per
 modalità e 2 warm-up per modalità:
 
-- MacBook Air Apple M1, 8 GB, macOS 27.0.1, Python 3.12.15
+- MacBook Air Apple M1, 8 GB, macOS 27.0.1 (26A434), Python 3.12.15
 - mlx 0.32.4, mlx-lm 0.32.2, parakeet-mlx 0.5.3
+- commit di accettazione `568ad49`
 - STT `mlx-community/parakeet-tdt-0.6b-v3`, LLM
   `mlx-community/Qwen3-1.7B-4bit`
 - audio `tests/fixtures/it_short.pcm`: 3,90 s (124.848 byte), chunk da
   3200 byte
-- caricamento modelli + freeze: 7,34 s; warm-up: 1,60 s
+- caricamento modelli + freeze: 6,83 s; warm-up: 1,08 s
+
+Questo è uno **smoke benchmark** su un singolo audio sintetico di 3,9 s: non è
+il confronto sul corpus da 60 clip (che resta **BLOCKED**) e non misura
+qualità, WER o RTF. I vecchi target di latenza restano **non raggiunti**.
 
 | Metrica (ms) | p50 | p95 | max |
 |---|---:|---:|---:|
-| WebSocket `stop` → `result` (LLM) | 1122,4 | 1166,2 | 1247,0 |
-| WebSocket `stop` → `result` (fast path) | 625,0 | 637,0 | 644,6 |
-| Pipeline `total_ms` (LLM) | 1120,6 | 1156,7 | 1237,9 |
-| STT `stt_ms` (modalità LLM) | 595,5 | 614,8 | 670,6 |
-| LLM `llm_ms` (modalità LLM) | 518,9 | 541,5 | 566,7 |
-| LLM TTFT (`generate_step` → primo token) | 247,8 | 262,4 | 265,7 |
-| Pipeline `total_ms` (fast path) | 621,7 | 634,0 | 640,9 |
-| STT `stt_ms` (fast path) | 602,3 | 615,5 | 636,1 |
+| WebSocket `stop` → `result` (LLM) | 1041,4 | 1053,6 | 1059,8 |
+| WebSocket `stop` → `result` (fast path) | 570,1 | 577,7 | 577,7 |
+| Pipeline `total_ms` (LLM) | 1039,1 | 1051,0 | 1057,7 |
+| STT `stt_ms` (modalità LLM) | 558,9 | 566,4 | 575,8 |
+| LLM `llm_ms` (modalità LLM) | 479,3 | 489,0 | 499,0 |
+| LLM TTFT (`generate_step` → primo token) | 228,5 | 233,2 | 235,0 |
+| Pipeline `total_ms` (fast path) | 567,5 | 574,9 | 575,4 |
+| STT `stt_ms` (fast path) | 558,3 | 563,2 | 565,5 |
 
 Memoria:
 
-- RSS misurata con `ps`: 204 MB dopo il warm-up, 50 MB dopo le richieste
-  brevi, 52 MB dopo la richiesta lunga, picco 699 MB.
+- RSS misurata con `ps`: 297 MB dopo il warm-up, 74 MB dopo le richieste
+  brevi, 76 MB dopo la richiesta lunga, picco 944 MB.
 - Metal: picco 2986 MB dopo il warm-up, 3113 MB durante il benchmark,
   2234 MB attivi al termine. Su memoria unificata la RSS di `ps` non
   rappresenta la memoria realmente impegnata da MLX; il dato Metal è quello
-  significativo.
+  significativo. **RSS e Metal non vanno sommati.**
+- Vecchio gate RSS `< 2,8 GB`: **PASS** con 944 MB.
+- Il criterio proposto per un Mac dedicato (8 GiB − 2 GiB per l'OS = 6 GiB)
+  resta **non verificato** come gate di footprint: i due picchi osservati
+  separatamente sono sotto 6 GiB (RSS ~0,92 GiB, Metal ~3,04 GiB), ma non
+  sono stati misurati footprint del processo, memory pressure o delta swap.
 
 Gate della run:
 
 | Gate | Esito | Valore |
 |---|---|---|
-| WebSocket p95 LLM < 400 ms | **FAIL** | 1166,2 ms |
-| WebSocket p95 fast path < 400 ms | **FAIL** | 637,0 ms |
-| RSS < 2,8 GB | **PASS** | 699 MB |
-| LLM TTFT p95 < 25 ms | **FAIL** | 262,4 ms |
+| WebSocket p95 LLM < 400 ms | **FAIL** | 1053,6 ms |
+| WebSocket p95 fast path < 400 ms | **FAIL** | 577,7 ms |
+| RSS < 2,8 GB | **PASS** | 944 MB |
+| LLM TTFT p95 < 25 ms | **FAIL** | 233,2 ms |
 
-Il benchmark esce con codice 1. I target di latenza **non sono raggiunti su
+Il benchmark esce con **codice 1**. I target di latenza **non sono raggiunti su
 questo hardware**: anche con un audio di 3,9 s lo STT ha un costo fisso di
-circa 600–615 ms, e il TTFT misurato include il prefill del suffisso utente
+circa 558–576 ms, e il TTFT misurato include il prefill del suffisso utente
 (circa 77 token), non solo il riuso della KV cache del system prompt. Il
 valore esclude il clone della cache e il rendering del template, conteggiati
 in `llm_ms`. Il fast path elimina l'LLM ma resta dominato dallo STT. I numeri
 sopra sono quelli reali, senza escludere il prefill o cambiare la definizione
 della metrica.
+
+L'accettazione locale dell'affidabilità è **PASS**: suite default
+`387 passed, 7 skipped`, integrazione con modelli reali `7 passed`. Il report
+completo, inclusi blocker e procedura di rollback, è in
+[`docs/superpowers/reports/2026-10-26-mac-server-acceptance.md`](docs/superpowers/reports/2026-10-26-mac-server-acceptance.md).
+Deploy e smoke Windows **non sono stati eseguiti**.
 
 ## Limiti di compatibilità
 
@@ -445,6 +508,10 @@ della metrica.
   serializzate da uno scheduler FIFO a worker singolo. La coda e il budget
   audio in byte sono condivisi fra WebSocket e REST; `limits` e `timeouts`
   nel file di configurazione limitano sessioni, coda e durate.
+- Lo scheduler rende visibile il timeout e impedisce l'overlap, ma non
+  guarisce un kernel bloccato per sempre: se il kernel non ritorna, il job va
+  in `processing_timeout`, il servizio resta `busy`/`draining` e `/health`
+  continua a rispondere; serve un riavvio operativo.
 - I log contengono solo codici, durate, byte, profondità di coda e stato di
   drain: testo dettato, prompt, nomi file, titoli delle finestre e token non
   vengono mai registrati.
