@@ -447,6 +447,14 @@ def run_candidate(
             hypothesis == raw_hypothesis
             for hypothesis in raw_hypotheses
         )
+        average_latency_s = (
+            sum(latencies_ms) / len(latencies_ms)
+        ) / 1000.0
+        rtf = (
+            average_latency_s / duration_seconds
+            if duration_seconds > 0
+            else None
+        )
         raw_score = score_transcripts(
             clip["reference_raw"], raw_hypothesis
         )
@@ -491,13 +499,28 @@ def run_candidate(
                 },
                 "final": final_result,
                 "deterministic": deterministic,
+                "nondeterministic": not deterministic,
                 "text_changed": not deterministic,
                 "latency_ms": [round(value, 3) for value in latencies_ms],
                 "latency": _latency_summary(latencies_ms),
+                "rtf": round(rtf, 6) if rtf is not None else None,
                 "load_seconds": round(load_seconds, 3),
             }
         )
 
+    pooled_latencies = [
+        value
+        for clip in clip_results
+        for value in clip["latency_ms"]
+    ]
+    rtf_values = [
+        clip["rtf"]
+        for clip in clip_results
+        if clip["rtf"] is not None
+    ]
+    nondeterministic_clips = [
+        clip["id"] for clip in clip_results if not clip["deterministic"]
+    ]
     peak_rss_mb = _peak_rss_mb()
 
     raw_per_clip = [
@@ -539,6 +562,9 @@ def run_candidate(
         },
         "load_seconds": round(load_seconds, 3),
         "measured_seconds": round(measured_seconds, 3),
+        "pooled_latency": _latency_summary(pooled_latencies),
+        "rtf_summary": _latency_summary(rtf_values),
+        "nondeterministic_clips": nondeterministic_clips,
         "peak_rss_mb": round(peak_rss_mb, 1),
         "clips": clip_results,
         "aggregate": {

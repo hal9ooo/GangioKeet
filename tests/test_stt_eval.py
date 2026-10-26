@@ -483,6 +483,33 @@ def test_runner_reports_non_deterministic_text(tmp_path):
     ]
 
 
+def test_runner_adds_pooled_latency_rtf_and_nondeterministic(tmp_path):
+    result, _, _ = _run_fake(
+        tmp_path, SleepyAdapter(), warmups=0, repeats=1
+    )
+
+    assert result["pooled_latency"]["count"] == 3
+    assert result["rtf_summary"]["count"] == 3
+    for clip in result["clips"]:
+        assert clip["rtf"] > 0
+        assert clip["rtf"] == pytest.approx(
+            (sum(clip["latency_ms"]) / len(clip["latency_ms"]) / 1000)
+            / clip["duration_seconds"],
+            abs=1e-5,
+        )
+
+    drifting, _, _ = _run_fake(
+        tmp_path,
+        DriftingAdapter(),
+        warmups=0,
+        repeats=2,
+        name="drift.json",
+    )
+    assert drifting["clips"][0]["nondeterministic"] is True
+    assert drifting["clips"][0]["text_changed"] is True
+    assert len(drifting["nondeterministic_clips"]) == 3
+
+
 def test_runner_measured_seconds_excludes_warmups_loading_and_io(tmp_path):
     result, _, _ = _run_fake(
         tmp_path, SleepyAdapter(), warmups=2, repeats=1
