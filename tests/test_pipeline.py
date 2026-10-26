@@ -276,6 +276,48 @@ async def test_llm_deadline_falls_back_to_normalized_raw():
     assert len(llm.calls) == 1
 
 
+@pytest.mark.parametrize(
+    ("exc_type", "marker", "expected_warning"),
+    [
+        pytest.param(
+            LLMDeadlineExceeded, "timed out", "llm_timeout", id="timeout"
+        ),
+        pytest.param(RuntimeError, "failed", "llm_failed", id="failure"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_llm_fallback_logs_one_warning_without_dictation(
+        caplog, exc_type, marker, expected_warning):
+    raw_text = "fast a pi su docker riservato"
+
+    class RaisingLLM(FakeLLM):
+        def clean(self, raw_text, profile, *, deadline=None):
+            self.calls.append((raw_text, profile))
+            raise exc_type(f"cleaner exploded while processing {raw_text}")
+
+    llm = RaisingLLM()
+    p = Pipeline(ScriptedSTT(raw_text), llm, load_config(CONFIG_PATH))
+
+    with caplog.at_level(logging.WARNING, logger="dictation_server.pipeline"):
+        r = await p.process(make_silence(0.5), profile="code")
+
+    fallback_logs = [
+        record
+        for record in caplog.records
+        if record.name == "dictation_server.pipeline"
+        and record.levelno == logging.WARNING
+    ]
+    assert len(fallback_logs) == 1
+    message = fallback_logs[0].getMessage()
+    assert marker in message
+    assert raw_text not in caplog.text
+    assert raw_text not in message
+    assert "exploded while processing" not in caplog.text
+    assert r.warnings == [expected_warning]
+    assert r.raw_text == raw_text
+    assert r.final_text == "fast a pi su Docker riservato"
+
+
 @pytest.mark.asyncio
 async def test_think_guardrail_failure_never_returns_think_or_regenerates():
     class ThinkingLLM(FakeLLM):

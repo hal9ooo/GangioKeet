@@ -132,12 +132,24 @@ class Pipeline:
                                     + self.cfg.timeouts.llm_seconds
                                 ),
                             )
-                        except LLMDeadlineExceeded:
+                        except LLMDeadlineExceeded as exc:
+                            logger.warning(
+                                "LLM cleanup timed out; using normalized "
+                                "raw text (type=%s, budget=%.1fs)",
+                                type(exc).__name__,
+                                self.cfg.timeouts.llm_seconds,
+                            )
                             final_text = normalize_canonical_terms(
                                 raw_text, self.cfg.glossary.canonical_terms
                             )
                             warnings.append("llm_timeout")
-                        except Exception:
+                        except Exception as exc:
+                            logger.warning(
+                                "LLM cleanup failed; using normalized "
+                                "raw text (type=%s, budget=%.1fs)",
+                                type(exc).__name__,
+                                self.cfg.timeouts.llm_seconds,
+                            )
                             final_text = normalize_canonical_terms(
                                 raw_text, self.cfg.glossary.canonical_terms
                             )
