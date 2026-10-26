@@ -4,3 +4,13 @@ __pycache__/
 .pytest_cache/
 .DS_Store
 .superpowers/
+
+# STT evaluation: local corpus/audio, raw reports, experimental eval venvs
+tests/fixtures/stt_eval/audio/
+tests/fixtures/stt_eval/*.wav
+tests/fixtures/stt_eval/*.pcm
+tests/fixtures/stt_eval/manifest.jsonl
+tests/fixtures/stt_eval/manifest.local.jsonl
+reports/stt_eval/
+.stt-eval-venv/
+.venv-stt-eval/
