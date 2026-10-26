@@ -97,6 +97,27 @@ def test_ingest_accepts_injected_dataset_loader(tmp_path):
     assert len(load_manifest(output, require_audio=True)) == 4
 
 
+def test_integer_gender_metadata_is_normalized(tmp_path):
+    rows = _fake_rows(2)
+    rows[0]["gender"] = 0
+    rows[1]["gender"] = 1
+
+    output = write_fleurs_corpus(rows, tmp_path, count=2, seed=1)
+    genders = {clip["gender"] for clip in load_manifest(output)}
+
+    assert genders == {"male", "female"}
+
+
+def test_duplicate_source_ids_get_unique_clip_ids(tmp_path):
+    rows = _fake_rows(2)
+    rows[1]["id"] = rows[0]["id"]
+
+    output = write_fleurs_corpus(rows, tmp_path, count=2, seed=1)
+    clips = load_manifest(output, require_audio=True)
+
+    assert len({clip["id"] for clip in clips}) == 2
+
+
 def test_odd_count_is_rejected(tmp_path):
     with pytest.raises(ValueError, match="even"):
         write_fleurs_corpus(_fake_rows(6), tmp_path, count=3)

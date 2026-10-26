@@ -27,6 +27,9 @@ GENDER_ORDER = ("female", "male", "other", "unknown")
 
 
 def _normalize_gender(value) -> str:
+    # FLEURS exposes a ClassLabel whose rows decode to 0/1/2.
+    if isinstance(value, int) and not isinstance(value, bool):
+        return {0: "male", 1: "female", 2: "other"}.get(value, "unknown")
     if not isinstance(value, str):
         return "unknown"
     value = value.strip().lower()
@@ -156,8 +159,10 @@ def write_fleurs_corpus(
 
     selected = select_fleurs_clips(rows, count=count, seed=seed)
     entries = []
-    for row in selected:
-        clip_id = _clip_id(row["id"])
+    for position, row in enumerate(selected):
+        # FLEURS sentence ids are not unique (multiple recordings per
+        # sentence), so the selected position makes the clip id unique.
+        clip_id = _clip_id(f"{row['id']}_{position}")
         audio = row["audio"]
         sample_rate = int(audio.get("sampling_rate", SAMPLE_RATE))
         audio_path = audio_dir / f"{clip_id}.wav"
@@ -173,7 +178,7 @@ def write_fleurs_corpus(
                 "profile": "default",
                 "technical_terms": [],
                 "is_silence": False,
-                "gender": row.get("gender"),
+                "gender": _normalize_gender(row.get("gender")),
                 "duration_bucket": row["duration_bucket"],
             }
         )

@@ -1,0 +1,56 @@
+{
+  "stt": {
+    "parakeet_baseline": {
+      "model_id": "mlx-community/parakeet-tdt-0.6b-v3",
+      "revision": "ed2b7e8c15f9aaa0b5772e2efb986255eaef7e15",
+      "precision": "bfloat16",
+      "status": "verified"
+    },
+    "qwen3_asr_1_7b_8bit": {
+      "model_id": "mlx-community/Qwen3-ASR-1.7B-8bit",
+      "revision": "a8379a2e2f9e313c9292cdf1af4055ab56d50d55",
+      "precision": "8bit",
+      "status": "verified"
+    },
+    "cohere_transcribe_03_2026": {
+      "model_id": "CohereLabs/cohere-transcribe-03-2026",
+      "revision": "d552dadc2922ba6f6c1f994f8db904d52dcaf942",
+      "precision": null,
+      "status": "not_run",
+      "reason": "gated Hugging Face repo; no token/access in the benchmark environment"
+    },
+    "nemotron_3_5_asr_streaming_0_6b": {
+      "model_id": "mlx-community/nemotron-3.5-asr-streaming-0.6b",
+      "revision": "e550040c0478027ed679b2b6b0d055502c103663",
+      "precision": "bf16",
+      "status": "verified"
+    },
+    "whisper_large_v3_turbo": {
+      "model_id": "mlx-community/whisper-large-v3-turbo-asr-fp16",
+      "revision": "624c19c9af5603fa73b83bce14d4aeea96156d18",
+      "precision": "fp16",
+      "status": "verified"
+    }
+  },
+  "cleaners": {
+    "qwen3_1_7b_4bit": {
+      "model_id": "mlx-community/Qwen3-1.7B-4bit",
+      "revision": "3b1b1768f8f8cf8351c712464f906e86c2b8269e",
+      "precision": "4bit",
+      "status": "verified"
+    },
+    "qwen3_5_0_8b_4bit": {
+      "model_id": "mlx-community/Qwen3.5-0.8B-4bit",
+      "revision": "da28692b5f139cb0ec58a356b437486b7dac7462",
+      "precision": "4bit",
+      "status": "not_run",
+      "reason": "LLMCleaner.freeze failed: No user query found in messages"
+    },
+    "qwen2_5_1_5b_instruct_4bit": {
+      "model_id": "mlx-community/Qwen2.5-1.5B-Instruct-4bit",
+      "revision": "8b403126fc14f14cfc99bb4cfa72ecbc129ea677",
+      "precision": "4bit",
+      "status": "verified"
+    }
+  }
+}

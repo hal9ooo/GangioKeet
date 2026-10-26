@@ -1,0 +1,11 @@
+{
+  "dataset": "google/fleurs",
+  "config": "it_it",
+  "split": "test",
+  "revision": "70bb2e84b976b7e960aa89f1c648e09c59f894dd",
+  "license": "CC-BY-4.0",
+  "seed": 20261026,
+  "count": 30,
+  "selection": "15 short + 15 medium, gender-balanced where available",
+  "manifest_sha256": "769a6fcbe278d11c7c858ebe0e86767ff4dd0644a3b1dc26e89d1126d533bd58"
+}
