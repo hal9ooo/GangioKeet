@@ -15,3 +15,6 @@ tests/fixtures/stt_eval/manifest.local.jsonl
 reports/stt_eval/
 .stt-eval-venv/
 .venv-stt-eval/
+
+# Local opt-in dictation recordings: audio and transcripts never get committed
+recordings/

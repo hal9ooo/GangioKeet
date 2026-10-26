@@ -38,6 +38,7 @@ from .protocol import (
     StartMsg,
     StopMsg,
 )
+from .recording import RecordingStore
 from .scheduler import DictationScheduler
 
 logger = logging.getLogger(__name__)
@@ -139,6 +140,7 @@ class _DictationConnection:
         max_audio_bytes: int,
         auth: ApiKeyPolicy | None = None,
         scheduler: DictationScheduler | None = None,
+        recorder: RecordingStore | None = None,
     ):
         self.websocket = websocket
         self.pipeline = pipeline
@@ -146,6 +148,7 @@ class _DictationConnection:
         self.max_audio_bytes = max_audio_bytes
         self.auth = auth if auth is not None else ApiKeyPolicy()
         self.scheduler = scheduler
+        self.recorder = recorder
         self.state = "idle"
         self.audio = bytearray()
         self.profile: Profile = "default"
@@ -368,12 +371,22 @@ class _DictationConnection:
                 "internal", "audio admission lease is missing"
             )
         try:
-            return await self._dictation_scheduler().submit(
+            result = await self._dictation_scheduler().submit(
                 pcm,
                 profile=profile,
                 bypass_llm=bypass_llm,
                 lease=lease,
             )
+            if self.recorder is not None:
+                await self.recorder.record(
+                    pcm,
+                    result,
+                    transport="websocket",
+                    profile=profile,
+                    bypass_llm=bypass_llm,
+                    context=self.metadata,
+                )
+            return result
         finally:
             if not lease.transferred:
                 lease.close()
@@ -549,6 +562,7 @@ def create_app(
     pipeline: Pipeline,
     admission: AdmissionController | None = None,
     auth: ApiKeyPolicy | None = None,
+    recorder: RecordingStore | None = None,
 ) -> FastAPI:
     if admission is None:
         admission = AdmissionController(
@@ -557,12 +571,23 @@ def create_app(
         )
     if auth is None:
         auth = ApiKeyPolicy()
+    if recorder is None:
+        recorder = RecordingStore(
+            cfg.recording, cfg.server.stt_model, cfg.server.llm_model
+        )
+    if recorder.enabled:
+        logger.info(
+            "recording enabled directory=%s store_context=%s",
+            recorder.directory,
+            recorder.store_context,
+        )
 
     app = FastAPI(title="MLX Dictation Server")
     app.state.config = cfg
     app.state.pipeline = pipeline
     app.state.admission = admission
     app.state.auth = auth
+    app.state.recorder = recorder
     # Readiness is owned by ``serve``: false until warm-up completes and
     # false again as soon as shutdown starts.
     app.state.ready = False
@@ -631,6 +656,7 @@ def create_app(
             cfg.limits.max_audio_bytes,
             auth=auth,
             scheduler=scheduler,
+            recorder=recorder,
         ).run()
 
     async def _validate_parameters(request: Request) -> None:
@@ -699,15 +725,16 @@ def create_app(
                 limits=cfg.limits,
                 timeout=cfg.timeouts.decode_seconds,
             )
-            return await scheduler.submit(
+            result = await scheduler.submit(
                 pcm,
                 profile=profile,
                 bypass_llm=False,
                 lease=lease,
             )
+            return pcm, result
 
         try:
-            result = await _run_until_disconnect(
+            pcm, result = await _run_until_disconnect(
                 request, _decode_and_transcribe()
             )
         except HTTPException:
@@ -723,6 +750,14 @@ def create_app(
             raise DictationFailure(
                 "internal", "transcription failed"
             ) from exc
+
+        await recorder.record(
+            pcm,
+            result,
+            transport="rest",
+            profile=profile,
+            bypass_llm=False,
+        )
 
         if response_format == "text":
             headers = None

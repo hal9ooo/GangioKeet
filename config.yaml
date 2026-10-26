@@ -21,6 +21,11 @@ timeouts:
 security:
   api_key_env: null
 
+recording:
+  enabled: false
+  directory: "recordings"
+  store_context: false
+
 routing:
   fast_path_max_words: 5
   self_correction_triggers:
