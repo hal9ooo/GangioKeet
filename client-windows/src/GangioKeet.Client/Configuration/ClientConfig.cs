@@ -131,7 +131,7 @@ public sealed class UiConfig
     public bool ShowFloatingPill { get; set; } = true;
 
     [YamlMember(Alias = "pill_position")]
-    public string PillPosition { get; set; } = "cursor";
+    public string PillPosition { get; set; } = "center_bottom";
 
     [YamlMember(Alias = "sound_feedback")]
     public bool SoundFeedback { get; set; } = true;

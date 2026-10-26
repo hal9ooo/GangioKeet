@@ -68,7 +68,7 @@ public sealed class ConfigLoaderTests
         Assert.True(config.Paste.RefocusBeforePaste);
 
         Assert.True(config.Ui.ShowFloatingPill);
-        Assert.Equal("cursor", config.Ui.PillPosition);
+        Assert.Equal("center_bottom", config.Ui.PillPosition);
         Assert.True(config.Ui.SoundFeedback);
 
         Assert.Equal(600.0, config.Recovery.RetentionSeconds);

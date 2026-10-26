@@ -36,6 +36,8 @@ public sealed partial class PillWindow : Window, IPillView
         InitializeComponent();
 
         SourceInitialized += OnSourceInitialized;
+        _ = new WindowInteropHelper(this).EnsureHandle();
+        PositionPill();
 
         _levelTimer = new System.Windows.Threading.DispatcherTimer(
             TimeSpan.FromMilliseconds(50),
@@ -44,10 +46,14 @@ public sealed partial class PillWindow : Window, IPillView
             Dispatcher);
     }
 
+    /// <summary>Modalità di posizionamento: <c>center_bottom</c> (default) o <c>cursor</c>.</summary>
+    public string PositionMode { get; set; } = "center_bottom";
+
     public void Show(PillState state, string? message, DictationProfile? profile)
     {
         Dispatcher.Invoke(() =>
         {
+            PositionPill();
             Show();
             ActivateStyles();
 
@@ -93,6 +99,39 @@ public sealed partial class PillWindow : Window, IPillView
         StatusDot.Height = size;
     }
 
+    private void PositionPill()
+    {
+        if (!GetCursorPos(out Point cursor))
+        {
+            return;
+        }
+
+        nint monitor = MonitorFromPoint(cursor, MonitorDefaultToNearest);
+        MonitorInfo info = new() { Size = Marshal.SizeOf<MonitorInfo>() };
+        if (!GetMonitorInfo(monitor, ref info))
+        {
+            return;
+        }
+
+        DpiScale dpi = VisualTreeHelper.GetDpi(this);
+        double scaleX = dpi.DpiScaleX > 0 ? dpi.DpiScaleX : 1;
+        double scaleY = dpi.DpiScaleY > 0 ? dpi.DpiScaleY : 1;
+
+        RECT work = info.Work;
+        PillWorkArea area = new(
+            work.Left / scaleX,
+            work.Top / scaleY,
+            (work.Right - work.Left) / scaleX,
+            (work.Bottom - work.Top) / scaleY);
+
+        (double left, double top) = string.Equals(PositionMode, "cursor", StringComparison.OrdinalIgnoreCase)
+            ? PillPlacement.NearCursor(area, cursor.X / scaleX, cursor.Y / scaleY, Width, Height)
+            : PillPlacement.CenterBottom(area, Width, Height);
+
+        Left = left;
+        Top = top;
+    }
+
     private static string StateToDefaultMessage(PillState state) => state switch
     {
         PillState.Arming => "Connessione…",
@@ -120,4 +159,42 @@ public sealed partial class PillWindow : Window, IPillView
 
     [DllImport("user32.dll", SetLastError = true)]
     private static extern int SetWindowLong(nint hWnd, int nIndex, int dwNewLong);
+
+    private const uint MonitorDefaultToNearest = 2;
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetCursorPos(out Point point);
+
+    [DllImport("user32.dll")]
+    private static extern nint MonitorFromPoint(Point point, uint flags);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetMonitorInfo(nint monitor, ref MonitorInfo info);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct Point
+    {
+        public int X;
+        public int Y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct RECT
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MonitorInfo
+    {
+        public int Size;
+        public RECT Monitor;
+        public RECT Work;
+        public uint Flags;
+    }
 }

@@ -40,7 +40,7 @@ paste:
 
 ui:
   show_floating_pill: true
-  pill_position: "cursor"             # cursor | center_bottom
+  pill_position: "center_bottom"             # cursor | center_bottom
   sound_feedback: true
 
 context_profiles:

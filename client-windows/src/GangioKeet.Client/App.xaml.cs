@@ -110,6 +110,7 @@ public partial class App : Application
             time);
 
         _pill = new PillWindow();
+        _pill.PositionMode = config.Ui.PillPosition;
         SynthSoundPlayer sound = new() { Enabled = config.Ui.SoundFeedback };
         _soundPlayer = sound;
 

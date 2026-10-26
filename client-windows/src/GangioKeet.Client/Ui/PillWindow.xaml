@@ -9,14 +9,14 @@
         WindowStyle="None"
         Background="Transparent"
         AllowsTransparency="True"
-        Width="200"
-        Height="36"
+        Width="136"
+        Height="28"
         WindowStartupLocation="Manual">
-    <Border CornerRadius="18"
+    <Border CornerRadius="14"
             Background="#2D2D2D"
             BorderBrush="#555555"
             BorderThickness="1"
-            Padding="12,4">
+            Padding="8,2">
         <Grid>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
@@ -24,16 +24,16 @@
             </Grid.ColumnDefinitions>
             <Ellipse Grid.Column="0"
                      x:Name="StatusDot"
-                     Width="10"
-                     Height="10"
+                     Width="8"
+                     Height="8"
                      Fill="#4CAF50"
-                     Margin="0,0,8,0"
+                     Margin="0,0,6,0"
                      VerticalAlignment="Center" />
             <TextBlock Grid.Column="1"
                        x:Name="StatusText"
                        Text="Pronto"
                        Foreground="White"
-                       FontSize="13"
+                       FontSize="11"
                        FontFamily="Segoe UI"
                        VerticalAlignment="Center"
                        TextTrimming="CharacterEllipsis" />
