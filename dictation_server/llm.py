@@ -7,6 +7,10 @@ from .prompt import Profile, build_user_prompt
 from .routing import TEMPERATURE, compute_max_tokens
 
 
+class LLMDeadlineExceeded(Exception):
+    """The cooperative LLM deadline expired before generation completed."""
+
+
 class LLMCleaner:
     """mlx-lm cleaner with a frozen system-prompt KV cache."""
 
@@ -21,6 +25,7 @@ class LLMCleaner:
         self._frozen_cache = None
         self._system_prompt = ""
         self._sys_tokens: list[int] = []
+        self._deadline: float | None = None
 
     def load(self) -> None:
         from mlx_lm import load
@@ -90,6 +95,10 @@ class LLMCleaner:
             raise RuntimeError("chat template produced an empty user suffix")
         return suffix
 
+    def _check_deadline(self) -> None:
+        if self._deadline is not None and time.monotonic() >= self._deadline:
+            raise LLMDeadlineExceeded("LLM generation deadline exceeded")
+
     def _generate(self, user_prompt: str, max_tokens: int) -> str:
         from mlx_lm.generate import generate_step
         from mlx_lm.sample_utils import make_sampler
@@ -106,6 +115,7 @@ class LLMCleaner:
         # Diagnostic TTFT: excludes the per-request cache clone and chat
         # template rendering above, which remain counted in llm_ms.
         started = time.perf_counter()
+        self._check_deadline()
         for token, _logprobs in generate_step(
             mx.array(suffix),
             self.model,
@@ -113,6 +123,7 @@ class LLMCleaner:
             sampler=sampler,
             prompt_cache=cache,
         ):
+            self._check_deadline()
             if self.last_ttft_ms == 0.0:
                 self.last_ttft_ms = (
                     time.perf_counter() - started
@@ -124,15 +135,26 @@ class LLMCleaner:
             generated.append(token)
         return self.tokenizer.decode(generated)
 
-    def clean(self, raw_text: str, profile: Profile) -> str:
+    def clean(
+        self,
+        raw_text: str,
+        profile: Profile,
+        *,
+        deadline: float | None = None,
+    ) -> str:
         if not self.frozen:
             raise RuntimeError("freeze() must be called before clean()")
 
-        user_prompt = build_user_prompt(raw_text, profile)
-        n_input_tokens = len(self._encode(raw_text))
-        output = self._generate(
-            user_prompt, compute_max_tokens(n_input_tokens)
-        ).strip()
+        self._deadline = deadline
+        try:
+            self._check_deadline()
+            user_prompt = build_user_prompt(raw_text, profile)
+            n_input_tokens = len(self._encode(raw_text))
+            output = self._generate(
+                user_prompt, compute_max_tokens(n_input_tokens)
+            ).strip()
+        finally:
+            self._deadline = None
 
         if "<think>" in output or "</think>" in output:
             raise RuntimeError("LLM output contains thinking tags")

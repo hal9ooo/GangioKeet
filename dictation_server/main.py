@@ -1,16 +1,47 @@
 import argparse
 import asyncio
+import logging
+import os
 
 import uvicorn
 from fastapi import FastAPI
 
+from .auth import ApiKeyPolicy
 from .config import AppConfig, load_config
 from .llm import LLMCleaner
 from .pipeline import Pipeline
 from .prompt import build_system_prompt
-from .protocol import MAX_AUDIO_BYTES
 from .server import create_app
 from .stt import ParakeetSTT
+
+logger = logging.getLogger(__name__)
+
+_APP_LOG_HANDLER_ATTR = "_dictation_server_handler"
+
+
+def configure_logging(level: int = logging.INFO) -> None:
+    """Enable application logs for the shipped ``python -m`` entrypoint.
+
+    Uvicorn only configures its own ``uvicorn*`` loggers, so without this the
+    ``dictation_server`` namespace would inherit root's ``WARNING`` level and
+    suppress every INFO readiness/scheduler state transition. The helper is
+    idempotent: repeated calls never add a second handler.
+    """
+    app_logger = logging.getLogger("dictation_server")
+    app_logger.setLevel(level)
+    for handler in app_logger.handlers:
+        if getattr(handler, _APP_LOG_HANDLER_ATTR, False):
+            handler.setLevel(level)
+            return
+    handler = logging.StreamHandler()
+    handler.setLevel(level)
+    handler.setFormatter(
+        logging.Formatter(
+            "%(asctime)s %(levelname)s %(name)s: %(message)s"
+        )
+    )
+    setattr(handler, _APP_LOG_HANDLER_ATTR, True)
+    app_logger.addHandler(handler)
 
 
 def build_app(
@@ -18,6 +49,12 @@ def build_app(
     stt: ParakeetSTT | None = None,
     llm: LLMCleaner | None = None,
 ) -> FastAPI:
+    # Resolve auth before constructing or loading any model: a configured
+    # but unavailable API key must fail startup without touching engines.
+    auth = ApiKeyPolicy.from_environment(
+        cfg.security.api_key_env, os.environ
+    )
+
     if stt is None:
         stt = ParakeetSTT(cfg.server.stt_model)
     if llm is None:
@@ -27,7 +64,7 @@ def build_app(
     llm.load()
     llm.freeze(build_system_prompt(cfg.glossary))
 
-    return create_app(cfg, Pipeline(stt, llm, cfg))
+    return create_app(cfg, Pipeline(stt, llm, cfg), auth=auth)
 
 
 async def serve(
@@ -36,20 +73,36 @@ async def serve(
     pipeline: Pipeline,
     uvicorn_server: uvicorn.Server | None = None,
 ) -> None:
-    await pipeline.warm_up()
-    if uvicorn_server is None:
-        uvicorn_server = uvicorn.Server(
-            uvicorn.Config(
-                app,
-                host=cfg.server.host,
-                port=cfg.server.port,
-                ws_max_size=MAX_AUDIO_BYTES,
+    state = getattr(app, "state", None)
+    scheduler = getattr(state, "scheduler", None)
+    try:
+        if scheduler is not None:
+            await scheduler.start()
+        await pipeline.warm_up()
+        if state is not None:
+            state.ready = True
+        logger.info("warm-up complete ready=true")
+        if uvicorn_server is None:
+            uvicorn_server = uvicorn.Server(
+                uvicorn.Config(
+                    app,
+                    host=cfg.server.host,
+                    port=cfg.server.port,
+                    ws_max_size=cfg.limits.max_audio_bytes,
+                )
             )
-        )
-    await uvicorn_server.serve()
+        await uvicorn_server.serve()
+    finally:
+        # Flip readiness before draining so probes see 503 during shutdown.
+        if state is not None:
+            state.ready = False
+        logger.info("shutdown ready=false")
+        if scheduler is not None:
+            await scheduler.close()
 
 
 def main(argv: list[str] | None = None) -> None:
+    configure_logging()
     parser = argparse.ArgumentParser(
         description="On-device MLX dictation server"
     )

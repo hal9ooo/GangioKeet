@@ -3,11 +3,12 @@ import logging
 import time
 from typing import Callable
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .audio import SAMPLE_RATE, pcm_bytes_to_mlx_array
 from .config import AppConfig
-from .llm import LLMCleaner
+from .glossary import normalize_canonical_terms
+from .llm import LLMCleaner, LLMDeadlineExceeded
 from .routing import should_run_llm
 from .stt import ParakeetSTT
 
@@ -27,6 +28,7 @@ class DictationResult(BaseModel):
     final_text: str
     fast_path: bool
     metrics: Metrics
+    warnings: list[str] = Field(default_factory=list)
 
 
 def _clear_metal_cache() -> None:
@@ -65,12 +67,13 @@ class Pipeline:
                 error = None
             if error is not None:
                 logger.warning(
-                    "engine worker failed during cancellation drain: %s",
-                    error,
+                    "engine worker failed during cancellation drain "
+                    "type=%s",
+                    type(error).__name__,
                 )
 
-    async def _run_blocking(self, fn, *args):
-        worker = asyncio.create_task(asyncio.to_thread(fn, *args))
+    async def _run_blocking(self, fn, *args, **kwargs):
+        worker = asyncio.create_task(asyncio.to_thread(fn, *args, **kwargs))
         try:
             return await asyncio.shield(worker)
         except asyncio.CancelledError:
@@ -89,14 +92,15 @@ class Pipeline:
         stt_ms = 0.0
         llm_ms = 0.0
         fast_path = True
-
-        if pcm:
-            audio = pcm_bytes_to_mlx_array(pcm)
-        else:
-            audio = None
+        warnings: list[str] = []
 
         async with self._metal:
             try:
+                if pcm:
+                    audio = pcm_bytes_to_mlx_array(pcm)
+                else:
+                    audio = None
+
                 if audio is not None:
                     stt_start = time.perf_counter()
                     raw_text = await self._run_blocking(
@@ -104,20 +108,57 @@ class Pipeline:
                     )
                     stt_ms = (time.perf_counter() - stt_start) * 1000.0
 
-                    if bypass_llm or not should_run_llm(
+                    if bypass_llm:
+                        final_text = raw_text
+                        fast_path = True
+                    elif not should_run_llm(
                         raw_text,
                         self.cfg.routing,
                         self.cfg.glossary.phonetic_overrides,
                     ):
-                        final_text = raw_text
+                        final_text = normalize_canonical_terms(
+                            raw_text, self.cfg.glossary.canonical_terms
+                        )
                         fast_path = True
                     else:
                         fast_path = False
                         llm_start = time.perf_counter()
-                        final_text = await self._run_blocking(
-                            self.llm.clean, raw_text, profile
-                        )
-                        llm_ms = (time.perf_counter() - llm_start) * 1000.0
+                        try:
+                            final_text = await self._run_blocking(
+                                self.llm.clean,
+                                raw_text,
+                                profile,
+                                deadline=(
+                                    time.monotonic()
+                                    + self.cfg.timeouts.llm_seconds
+                                ),
+                            )
+                        except LLMDeadlineExceeded as exc:
+                            logger.warning(
+                                "LLM cleanup timed out; using normalized "
+                                "raw text (type=%s, budget=%.1fs)",
+                                type(exc).__name__,
+                                self.cfg.timeouts.llm_seconds,
+                            )
+                            final_text = normalize_canonical_terms(
+                                raw_text, self.cfg.glossary.canonical_terms
+                            )
+                            warnings.append("llm_timeout")
+                        except Exception as exc:
+                            logger.warning(
+                                "LLM cleanup failed; using normalized "
+                                "raw text (type=%s, budget=%.1fs)",
+                                type(exc).__name__,
+                                self.cfg.timeouts.llm_seconds,
+                            )
+                            final_text = normalize_canonical_terms(
+                                raw_text, self.cfg.glossary.canonical_terms
+                            )
+                            warnings.append("llm_failed")
+                        finally:
+                            llm_ms = (
+                                time.perf_counter() - llm_start
+                            ) * 1000.0
             finally:
                 self._clear_metal()
 
@@ -130,6 +171,7 @@ class Pipeline:
                 llm_ms=llm_ms,
                 total_ms=(time.perf_counter() - total_start) * 1000.0,
             ),
+            warnings=warnings,
         )
 
     async def warm_up(self) -> Metrics:

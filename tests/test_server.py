@@ -1,4 +1,6 @@
+import asyncio
 import io
+import json
 import struct
 import threading
 import time
@@ -6,21 +8,49 @@ import wave
 
 import httpx
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
+from starlette.datastructures import UploadFile
 from starlette.websockets import WebSocketDisconnect
 
+from dictation_server.admission import (
+    AdmissionController,
+    AdmissionSnapshot,
+)
+from dictation_server.auth import ApiKeyPolicy
 from dictation_server.config import load_config
+from dictation_server.errors import DictationFailure
 from dictation_server.pipeline import Pipeline
 from dictation_server.protocol import MAX_AUDIO_BYTES
+from dictation_server.scheduler import DictationScheduler, SchedulerSnapshot
 from dictation_server.server import (
     AudioDecodeError,
+    _DictationConnection,
     create_app,
-    ffmpeg_to_pcm,
 )
-from tests.fakes import FakeLLM, FakeSTT, SlowFakeLLM
+from tests.fakes import (
+    BlockingFakeSTT,
+    FakeLLM,
+    FakeSTT,
+    SlowFakeLLM,
+)
 from tests.helpers import make_silence
 
 PROFILES = ["code", "terminal", "chat", "email", "document", "default"]
+
+
+def patch_ffmpeg(monkeypatch, convert):
+    monkeypatch.setattr(
+        "dictation_server.decode.shutil.which",
+        lambda _name: "/usr/bin/ffmpeg",
+    )
+    monkeypatch.setattr(
+        "dictation_server.decode._convert_with_ffmpeg", convert
+    )
+
+
+def forbid_ffmpeg(*_args, **_kwargs):
+    raise AssertionError("ffmpeg non necessario")
 
 
 class ShortFakeSTT(FakeSTT):
@@ -34,7 +64,7 @@ class CountingSlowLLM(SlowFakeLLM):
         super().__init__(delay)
         self.completed = 0
 
-    def clean(self, raw_text, profile):
+    def clean(self, raw_text, profile, *, deadline=None):
         super().clean(raw_text, profile)
         self.completed += 1
         return f"[{profile}] {raw_text}"
@@ -45,10 +75,12 @@ def cfg():
     return load_config("config.yaml")
 
 
-def build_client(cfg, stt=None, llm=None):
+def build_client(cfg, stt=None, llm=None, admission=None):
     stt = stt if stt is not None else FakeSTT()
     llm = llm if llm is not None else FakeLLM()
-    app = create_app(cfg, Pipeline(stt, llm, cfg))
+    app = create_app(
+        cfg, Pipeline(stt, llm, cfg), admission=admission
+    )
     return TestClient(app), stt, llm
 
 
@@ -70,6 +102,43 @@ def wait_for(predicate, timeout: float = 3.0) -> bool:
             return True
         time.sleep(0.01)
     return predicate()
+
+
+def test_result_defaults_warnings_to_empty(client):
+    with client.websocket_connect("/ws/dictate") as ws:
+        send_start(ws)
+        ws.send_json({"type": "stop"})
+        d = ws.receive_json()
+    assert d["type"] == "result"
+    assert d["warnings"] == []
+
+
+def test_error_envelope_defaults_retryable_to_false(client):
+    with client.websocket_connect("/ws/dictate") as ws:
+        ws.send_json({"type": "unexpected"})
+        d = ws.receive_json()
+    assert d["type"] == "error"
+    assert d["retryable"] is False
+
+
+def test_result_and_error_dto_defaults():
+    from dictation_server.pipeline import DictationResult, Metrics
+    from dictation_server.protocol import ErrorMsg, ResultEnvelope
+
+    result = DictationResult(
+        raw_text="", final_text="", fast_path=True,
+        metrics=Metrics(stt_ms=1.0, llm_ms=1.0, total_ms=2.0),
+    )
+    assert result.warnings == []
+
+    envelope = ResultEnvelope(
+        raw_text="", final_text="", fast_path=True,
+        metrics=Metrics(stt_ms=1.0, llm_ms=1.0, total_ms=2.0),
+    )
+    assert envelope.warnings == []
+
+    err = ErrorMsg(code="protocol", message="bad")
+    assert err.retryable is False
 
 
 def test_health(client):
@@ -280,10 +349,12 @@ def test_rest_uncompressed_wav_avoids_ffmpeg(client, monkeypatch):
         wav.setframerate(16000)
         wav.writeframes(make_silence(0.5))
 
-    def forbid_ffmpeg(_):
-        raise AssertionError("ffmpeg non necessario")
-
-    monkeypatch.setattr("dictation_server.server.ffmpeg_to_pcm", forbid_ffmpeg)
+    monkeypatch.setattr(
+        "dictation_server.decode.shutil.which", forbid_ffmpeg
+    )
+    monkeypatch.setattr(
+        "dictation_server.decode._spawn_ffmpeg", forbid_ffmpeg
+    )
     r = client.post(
         "/v1/audio/transcriptions",
         files={"file": ("d.wav", output.getvalue(), "audio/wav")},
@@ -293,13 +364,12 @@ def test_rest_uncompressed_wav_avoids_ffmpeg(client, monkeypatch):
 
 def test_rest_non_pcm_calls_ffmpeg(client, monkeypatch):
     seen = {}
-    monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/ffmpeg")
 
-    def fake_ffmpeg(data: bytes) -> bytes:
+    async def fake_ffmpeg(data, lease, max_bytes):
         seen["data"] = data
         return make_silence(0.5)
 
-    monkeypatch.setattr("dictation_server.server.ffmpeg_to_pcm", fake_ffmpeg)
+    patch_ffmpeg(monkeypatch, fake_ffmpeg)
     r = client.post(
         "/v1/audio/transcriptions",
         files={"file": ("d.mp3", b"compressed-bytes", "audio/mpeg")},
@@ -310,12 +380,11 @@ def test_rest_non_pcm_calls_ffmpeg(client, monkeypatch):
 def test_rest_generic_content_type_is_not_raw_pcm(client, monkeypatch):
     seen = {}
 
-    def fake_ffmpeg(data: bytes) -> bytes:
+    async def fake_ffmpeg(data, lease, max_bytes):
         seen["data"] = data
         return make_silence(0.5)
 
-    monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/ffmpeg")
-    monkeypatch.setattr("dictation_server.server.ffmpeg_to_pcm", fake_ffmpeg)
+    patch_ffmpeg(monkeypatch, fake_ffmpeg)
 
     r = client.post(
         "/v1/audio/transcriptions",
@@ -327,25 +396,27 @@ def test_rest_generic_content_type_is_not_raw_pcm(client, monkeypatch):
 
 
 def test_rest_non_pcm_without_ffmpeg_503(client, monkeypatch):
-    monkeypatch.setattr("shutil.which", lambda x: None)
+    monkeypatch.setattr(
+        "dictation_server.decode.shutil.which", lambda _name: None
+    )
     r = client.post(
         "/v1/audio/transcriptions",
         files={"file": ("d.mp3", b"compressed", "audio/mpeg")},
     )
     assert r.status_code == 503
+    assert r.json()["detail"]["code"] == "decoder_unavailable"
 
 
 @pytest.mark.asyncio
-async def test_rest_ffmpeg_decode_runs_off_event_loop(cfg, monkeypatch):
+async def test_rest_ffmpeg_decode_runs_on_event_loop(cfg, monkeypatch):
     app = create_app(cfg, Pipeline(FakeSTT(), FakeLLM(), cfg))
-    monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/ffmpeg")
     seen = {}
 
-    def fake_ffmpeg(data: bytes) -> bytes:
-        seen["thread"] = threading.get_ident()
+    async def fake_ffmpeg(data, lease, max_bytes):
+        seen["loop"] = asyncio.get_running_loop()
         return make_silence(0.2)
 
-    monkeypatch.setattr("dictation_server.server.ffmpeg_to_pcm", fake_ffmpeg)
+    patch_ffmpeg(monkeypatch, fake_ffmpeg)
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(
         transport=transport, base_url="http://test"
@@ -356,8 +427,7 @@ async def test_rest_ffmpeg_decode_runs_off_event_loop(cfg, monkeypatch):
         )
 
     assert r.status_code == 200
-    assert "thread" in seen
-    assert seen["thread"] != threading.get_ident()
+    assert seen["loop"] is asyncio.get_running_loop()
 
 
 def test_rest_float_wav_falls_back_to_ffmpeg(client, monkeypatch):
@@ -369,13 +439,12 @@ def test_rest_float_wav_falls_back_to_ffmpeg(client, monkeypatch):
     wav_bytes = b"RIFF" + struct.pack("<I", len(body)) + body
 
     seen = {}
-    monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/ffmpeg")
 
-    def fake_ffmpeg(data: bytes) -> bytes:
+    async def fake_ffmpeg(data, lease, max_bytes):
         seen["data"] = data
         return make_silence(0.2)
 
-    monkeypatch.setattr("dictation_server.server.ffmpeg_to_pcm", fake_ffmpeg)
+    patch_ffmpeg(monkeypatch, fake_ffmpeg)
     r = client.post(
         "/v1/audio/transcriptions",
         files={"file": ("d.wav", wav_bytes, "audio/wav")},
@@ -386,26 +455,60 @@ def test_rest_float_wav_falls_back_to_ffmpeg(client, monkeypatch):
 
 
 def test_rest_non_decodable_audio_422(client, monkeypatch):
-    monkeypatch.setattr("shutil.which", lambda x: "/usr/bin/ffmpeg")
-
-    def broken_ffmpeg(_):
+    async def broken_ffmpeg(data, lease, max_bytes):
         raise AudioDecodeError("not decodable")
 
-    monkeypatch.setattr("dictation_server.server.ffmpeg_to_pcm", broken_ffmpeg)
+    patch_ffmpeg(monkeypatch, broken_ffmpeg)
     r = client.post(
         "/v1/audio/transcriptions",
         files={"file": ("d.mp3", b"garbage", "audio/mpeg")},
     )
     assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "invalid_audio"
 
 
 def test_rest_malformed_wav_422(client, monkeypatch):
-    monkeypatch.setattr("shutil.which", lambda x: None)
+    monkeypatch.setattr(
+        "dictation_server.decode.shutil.which", lambda _name: None
+    )
     r = client.post(
         "/v1/audio/transcriptions",
         files={"file": ("d.wav", b"not-a-wave-file", "audio/wav")},
     )
     assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "invalid_audio"
+
+
+def test_rest_decode_timeout_504(client, monkeypatch):
+    async def timed_out(data, lease, max_bytes):
+        raise DictationFailure(
+            "decode_timeout", "audio decoding timed out", retryable=True
+        )
+
+    patch_ffmpeg(monkeypatch, timed_out)
+    r = client.post(
+        "/v1/audio/transcriptions",
+        files={"file": ("d.mp3", b"compressed", "audio/mpeg")},
+    )
+    assert r.status_code == 504
+    detail = r.json()["detail"]
+    assert detail["code"] == "decode_timeout"
+    assert detail["retryable"] is True
+
+
+def test_rest_invalid_audio_never_reaches_stt(cfg, monkeypatch):
+    client, stt, _ = build_client(cfg)
+    monkeypatch.setattr(
+        "dictation_server.decode.shutil.which", lambda _name: None
+    )
+
+    r = client.post(
+        "/v1/audio/transcriptions",
+        files={"file": ("d.wav", b"not-a-wave-file", "audio/wav")},
+    )
+
+    assert r.status_code == 422
+    assert stt.seen == []
 
 
 def test_rest_validates_model_alias(cfg):
@@ -463,30 +566,831 @@ def test_rest_json_shape(cfg):
     assert set(body["metrics"]) == {"stt_ms", "llm_ms", "total_ms"}
 
 
-def test_ffmpeg_pipe_args_no_disk_io(monkeypatch):
-    captured = {}
+def test_create_app_uses_one_admission_controller(cfg):
+    admission = AdmissionController(max_sessions=2, max_bytes=1000)
+    client, _, _ = build_client(cfg, admission=admission)
 
-    class R:
-        stdout = b"\x00\x00"
-        returncode = 0
+    assert client.app.state.admission is admission
+    assert admission.snapshot() == AdmissionSnapshot(0, 0)
 
-    def fake_run(cmd, input=None, **kw):
-        captured["cmd"] = cmd
-        captured["input"] = input
-        return R()
 
-    monkeypatch.setattr("dictation_server.server.subprocess.run", fake_run)
-    assert ffmpeg_to_pcm(b"raw") == b"\x00\x00"
-    assert captured["cmd"] == [
-        "ffmpeg",
-        "-i",
-        "pipe:0",
-        "-f",
-        "s16le",
-        "-ar",
-        "16000",
-        "-ac",
-        "1",
-        "pipe:1",
+@pytest.mark.asyncio
+async def test_ws_auth_failure_closes_before_reading_or_admitting(cfg):
+    class StubSocket:
+        headers = {"authorization": "Bearer wrong-token"}
+
+        def __init__(self):
+            self.accepted = False
+            self.sent = []
+            self.close_code = None
+
+        async def accept(self):
+            self.accepted = True
+
+        async def receive(self):
+            raise AssertionError(
+                "auth failure must not read a client message"
+            )
+
+        async def send_text(self, text):
+            self.sent.append(json.loads(text))
+
+        async def close(self, code=1000):
+            self.close_code = code
+
+    admission = AdmissionController(max_sessions=1, max_bytes=1000)
+    stt, llm = FakeSTT(), FakeLLM()
+    websocket = StubSocket()
+    policy = ApiKeyPolicy.from_environment(
+        "TEST_API_KEY", {"TEST_API_KEY": "right-token"}
+    )
+    connection = _DictationConnection(
+        websocket,
+        Pipeline(stt, llm, cfg),
+        admission,
+        max_audio_bytes=cfg.limits.max_audio_bytes,
+        auth=policy,
+    )
+
+    await connection.run()
+
+    assert websocket.accepted is True
+    assert websocket.sent == [
+        {
+            "type": "error",
+            "code": "unauthorized",
+            "message": "unauthorized",
+            "retryable": False,
+        }
     ]
-    assert captured["input"] == b"raw"
+    assert websocket.close_code == 1008
+    assert admission.snapshot() == AdmissionSnapshot(0, 0)
+    assert stt.seen == []
+    assert llm.calls == []
+
+
+def test_ws_start_holds_lease_and_stop_releases_it(cfg):
+    client, _, _ = build_client(cfg)
+    admission = client.app.state.admission
+    audio = make_silence(0.2)
+
+    with client:
+        with client.websocket_connect("/ws/dictate") as ws:
+            assert admission.snapshot() == AdmissionSnapshot(0, 0)
+            send_start(ws)
+            assert wait_for(
+                lambda: admission.snapshot().sessions == 1
+            )
+            assert (
+                admission.snapshot().retained_audio_bytes == 0
+            )
+
+            ws.send_bytes(audio)
+            assert wait_for(
+                lambda: (
+                    admission.snapshot().retained_audio_bytes
+                    == len(audio)
+                )
+            )
+
+            ws.send_json({"type": "stop"})
+            assert ws.receive_json()["type"] == "result"
+
+        assert wait_for(
+            lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+        )
+
+
+def test_ws_idle_connection_holds_no_lease(cfg):
+    client, _, _ = build_client(cfg)
+    admission = client.app.state.admission
+
+    with client:
+        with client.websocket_connect("/ws/dictate"):
+            assert admission.snapshot() == AdmissionSnapshot(0, 0)
+
+    assert admission.snapshot() == AdmissionSnapshot(0, 0)
+
+
+def test_ws_processing_keeps_transferred_lease_until_job_finishes(cfg):
+    llm = CountingSlowLLM(delay=0.3)
+    client, _, _ = build_client(cfg, llm=llm)
+    admission = client.app.state.admission
+    audio = make_silence(0.2)
+
+    with client:
+        with client.websocket_connect("/ws/dictate") as ws:
+            send_start(ws)
+            ws.send_bytes(audio)
+            ws.send_json({"type": "stop"})
+            assert wait_for(lambda: bool(llm.calls))
+
+            snapshot = admission.snapshot()
+            assert snapshot.sessions == 1
+            assert snapshot.retained_audio_bytes == len(audio)
+
+            assert ws.receive_json()["type"] == "result"
+
+        assert wait_for(
+            lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+        )
+
+
+def test_ws_busy_start_sends_error_and_closes_1013(cfg):
+    admission = AdmissionController(max_sessions=1, max_bytes=1000)
+    client, _, _ = build_client(cfg, admission=admission)
+
+    with client:
+        with client.websocket_connect("/ws/dictate") as first:
+            send_start(first)
+            assert wait_for(
+                lambda: admission.snapshot().sessions == 1
+            )
+
+            with client.websocket_connect("/ws/dictate") as second:
+                send_start(second)
+                error = second.receive_json()
+                assert error["type"] == "error"
+                assert error["code"] == "busy"
+                assert error["retryable"] is True
+                with pytest.raises(
+                    WebSocketDisconnect
+                ) as excinfo:
+                    second.receive_json()
+                assert excinfo.value.code == 1013
+
+            first.send_json({"type": "stop"})
+            assert first.receive_json()["type"] == "result"
+
+    assert admission.snapshot() == AdmissionSnapshot(0, 0)
+
+
+def test_ws_payload_over_configured_session_cap_closes_1009(cfg):
+    cfg.limits.max_audio_bytes = 1024
+    client, _, _ = build_client(cfg)
+    admission = client.app.state.admission
+
+    with client:
+        with client.websocket_connect("/ws/dictate") as ws:
+            send_start(ws)
+            ws.send_bytes(b"\x00" * 1025)
+            error = ws.receive_json()
+            assert error["type"] == "error"
+            assert error["code"] == "payload_too_large"
+            assert error["retryable"] is False
+            with pytest.raises(WebSocketDisconnect) as excinfo:
+                ws.receive_json()
+            assert excinfo.value.code == 1009
+
+    assert wait_for(
+        lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+    )
+
+
+def test_ws_budget_exhaustion_is_busy_and_releases_lease(cfg):
+    admission = AdmissionController(max_sessions=4, max_bytes=10)
+    client, _, _ = build_client(cfg, admission=admission)
+
+    with client:
+        with client.websocket_connect("/ws/dictate") as ws:
+            send_start(ws)
+            ws.send_bytes(b"x" * 8)
+            assert wait_for(
+                lambda: (
+                    admission.snapshot().retained_audio_bytes == 8
+                )
+            )
+
+            ws.send_bytes(b"x" * 4)
+            error = ws.receive_json()
+            assert error["type"] == "error"
+            assert error["code"] == "busy"
+            assert error["retryable"] is True
+            with pytest.raises(WebSocketDisconnect) as excinfo:
+                ws.receive_json()
+            assert excinfo.value.code == 1013
+
+    assert wait_for(
+        lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+    )
+
+
+@pytest.mark.asyncio
+async def test_ws_reserves_before_extending_audio_buffer(cfg):
+    class StubSocket:
+        def __init__(self):
+            self.sent = []
+            self.close_code = None
+
+        async def send_text(self, text):
+            self.sent.append(json.loads(text))
+
+        async def close(self, code=1000):
+            self.close_code = code
+
+    admission = AdmissionController(max_sessions=1, max_bytes=4)
+    websocket = StubSocket()
+    connection = _DictationConnection(
+        websocket, object(), admission, max_audio_bytes=1024
+    )
+    connection.lease = admission.acquire()
+    connection.state = "recording"
+
+    accepted = await connection._handle_audio(b"123456")
+
+    assert accepted is False
+    assert connection.audio == bytearray()
+    assert connection.lease is None
+    assert websocket.sent[-1]["code"] == "busy"
+    assert websocket.sent[-1]["retryable"] is True
+    assert websocket.close_code == 1013
+    assert admission.snapshot() == AdmissionSnapshot(0, 0)
+
+
+def test_ws_disconnect_while_recording_releases_lease(cfg):
+    client, _, _ = build_client(cfg)
+    admission = client.app.state.admission
+    audio = make_silence(0.2)
+
+    with client:
+        with client.websocket_connect("/ws/dictate") as ws:
+            send_start(ws)
+            ws.send_bytes(audio)
+            assert wait_for(
+                lambda: (
+                    admission.snapshot().retained_audio_bytes
+                    == len(audio)
+                )
+            )
+
+    assert wait_for(
+        lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+    )
+
+
+def test_ws_abort_during_processing_releases_lease_after_drain(cfg):
+    llm = CountingSlowLLM(delay=0.3)
+    client, _, _ = build_client(cfg, llm=llm)
+    admission = client.app.state.admission
+
+    with client:
+        with client.websocket_connect("/ws/dictate") as ws:
+            send_start(ws)
+            ws.send_bytes(make_silence(0.2))
+            ws.send_json({"type": "stop"})
+            assert wait_for(lambda: bool(llm.calls))
+            assert admission.snapshot().sessions == 1
+
+            ws.send_json({"type": "abort"})
+            assert wait_for(
+                lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+            )
+
+
+def test_rest_file_over_configured_audio_cap_413(cfg):
+    cfg.limits.max_audio_bytes = 10
+    client, _, _ = build_client(cfg)
+
+    response = client.post(
+        "/v1/audio/transcriptions?format=pcm",
+        files={
+            "file": (
+                "d.pcm",
+                b"\x00" * 11,
+                "application/octet-stream",
+            )
+        },
+    )
+
+    assert response.status_code == 413
+    detail = response.json()["detail"]
+    assert detail["code"] == "payload_too_large"
+    assert detail["retryable"] is False
+    assert client.app.state.admission.snapshot() == AdmissionSnapshot(
+        0, 0
+    )
+
+
+def test_rest_budget_exhaustion_returns_503_busy(cfg):
+    admission = AdmissionController(max_sessions=4, max_bytes=5)
+    client, _, _ = build_client(cfg, admission=admission)
+
+    response = client.post(
+        "/v1/audio/transcriptions?format=pcm",
+        files={
+            "file": (
+                "d.pcm",
+                b"\x00" * 6,
+                "application/octet-stream",
+            )
+        },
+    )
+
+    assert response.status_code == 503
+    assert response.headers["retry-after"] == "1"
+    detail = response.json()["detail"]
+    assert detail["code"] == "busy"
+    assert detail["retryable"] is True
+    assert admission.snapshot() == AdmissionSnapshot(0, 0)
+
+
+def test_rest_and_ws_share_the_same_audio_budget(cfg):
+    llm = CountingSlowLLM(delay=0.3)
+    client, _, _ = build_client(cfg, llm=llm)
+    admission = client.app.state.admission
+    audio = make_silence(0.2)
+    results = []
+
+    with client:
+        with client.websocket_connect("/ws/dictate") as ws:
+            send_start(ws)
+            ws.send_bytes(audio)
+            assert wait_for(
+                lambda: (
+                    admission.snapshot().retained_audio_bytes
+                    == len(audio)
+                )
+            )
+
+            def upload():
+                results.append(
+                    client.post(
+                        "/v1/audio/transcriptions?format=pcm",
+                        files={
+                            "file": (
+                                "d.pcm",
+                                audio,
+                                "application/octet-stream",
+                            )
+                        },
+                    )
+                )
+
+            threads = [
+                threading.Thread(target=upload) for _ in range(2)
+            ]
+            for thread in threads:
+                thread.start()
+            try:
+                assert wait_for(
+                    lambda: admission.snapshot().sessions == 3
+                )
+                shared = admission.snapshot()
+                assert shared.retained_audio_bytes == 3 * len(audio)
+            finally:
+                for thread in threads:
+                    thread.join(timeout=5)
+
+            assert all(not thread.is_alive() for thread in threads)
+            assert [r.status_code for r in results] == [200, 200]
+            rest_done = admission.snapshot()
+            assert rest_done.sessions == 1
+            assert rest_done.retained_audio_bytes == len(audio)
+
+            ws.send_json({"type": "stop"})
+            assert ws.receive_json()["type"] == "result"
+
+        assert wait_for(
+            lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+        )
+
+
+async def _wait_until_async(predicate, timeout: float = 3.0) -> None:
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while loop.time() < deadline:
+        if predicate():
+            return
+        await asyncio.sleep(0.01)
+    assert predicate()
+
+
+async def _wait_thread_event(event, timeout: float = 3.0) -> None:
+    await asyncio.wait_for(asyncio.to_thread(event.wait), timeout)
+
+
+def _route_endpoint(app, path: str):
+    for route in app.routes:
+        if getattr(route, "path", None) == path:
+            return route.endpoint
+    raise AssertionError(f"route {path} not found")
+
+
+class _FakeRESTRequest:
+    def __init__(self, lease, disconnected):
+        self.state = type("State", (), {"audio_lease": lease})()
+        self._disconnected = disconnected
+
+    async def is_disconnected(self) -> bool:
+        return self._disconnected.is_set()
+
+
+@pytest.mark.asyncio
+async def test_rest_disconnect_cancels_submit_and_releases_lease(cfg):
+    cfg.timeouts.queue_seconds = 5.0
+    cfg.timeouts.processing_seconds = 5.0
+    stt = BlockingFakeSTT()
+    app = create_app(cfg, Pipeline(stt, FakeLLM(), cfg))
+    admission = app.state.admission
+    scheduler = app.state.scheduler
+    pcm = make_silence(0.1)
+
+    blocker_lease = admission.acquire()
+    blocker_lease.reserve(len(pcm))
+    blocker = asyncio.create_task(
+        scheduler.submit(pcm, "default", True, blocker_lease)
+    )
+    await _wait_thread_event(stt.started)
+
+    lease = admission.acquire()
+    lease.reserve(len(pcm))
+    disconnected = asyncio.Event()
+    request = _FakeRESTRequest(lease, disconnected)
+    endpoint = _route_endpoint(app, "/v1/audio/transcriptions")
+    upload = UploadFile(
+        file=io.BytesIO(pcm), size=len(pcm), filename="d.pcm"
+    )
+    route_task = asyncio.create_task(
+        endpoint(
+            request=request,
+            file=upload,
+            model=None,
+            response_format="json",
+            profile="default",
+            format="pcm",
+        )
+    )
+    await _wait_until_async(lambda: scheduler.snapshot().pending == 1)
+
+    disconnected.set()
+    with pytest.raises(HTTPException) as info:
+        await asyncio.wait_for(route_task, timeout=3.0)
+    assert info.value.status_code == 499
+    assert scheduler.snapshot().pending == 0
+    assert lease.closed is True
+
+    stt.release.set()
+    await blocker
+    await _wait_until_async(
+        lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+    )
+    await scheduler.close()
+
+
+@pytest.mark.asyncio
+async def test_rest_disconnect_cancels_decoder_before_submit(cfg, monkeypatch):
+    cfg.timeouts.queue_seconds = 5.0
+    cfg.timeouts.processing_seconds = 5.0
+    cfg.timeouts.decode_seconds = 5.0
+    app = create_app(cfg, Pipeline(FakeSTT(), FakeLLM(), cfg))
+    admission = app.state.admission
+    scheduler = app.state.scheduler
+
+    decode_started = asyncio.Event()
+    decode_cancelled = asyncio.Event()
+
+    async def blocking_decode(*_args, **_kwargs):
+        decode_started.set()
+        try:
+            await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            decode_cancelled.set()
+            raise
+
+    monkeypatch.setattr(
+        "dictation_server.server.decode_upload", blocking_decode
+    )
+
+    lease = admission.acquire()
+    lease.reserve(4)
+    disconnected = asyncio.Event()
+    request = _FakeRESTRequest(lease, disconnected)
+    endpoint = _route_endpoint(app, "/v1/audio/transcriptions")
+    upload = UploadFile(
+        file=io.BytesIO(b"\x00\x00\x00\x00"), size=4, filename="d.wav"
+    )
+    route_task = asyncio.create_task(
+        endpoint(
+            request=request,
+            file=upload,
+            model=None,
+            response_format="json",
+            profile="default",
+            format=None,
+        )
+    )
+    await asyncio.wait_for(decode_started.wait(), timeout=2.0)
+
+    disconnected.set()
+    with pytest.raises(HTTPException) as info:
+        await asyncio.wait_for(route_task, timeout=3.0)
+    assert info.value.status_code == 499
+    assert decode_cancelled.is_set()
+    assert scheduler.snapshot() == SchedulerSnapshot(
+        active=False, pending=0, draining=False
+    )
+    assert lease.transferred is False
+    lease.close()
+    await scheduler.close()
+
+
+@pytest.mark.asyncio
+async def test_rest_scheduler_busy_keeps_lease_caller_owned(cfg):
+    cfg.timeouts.queue_seconds = 5.0
+    cfg.timeouts.processing_seconds = 5.0
+    stt = BlockingFakeSTT()
+    app = create_app(cfg, Pipeline(stt, FakeLLM(), cfg))
+    admission = app.state.admission
+    scheduler = app.state.scheduler
+    pcm = make_silence(0.1)
+
+    jobs = []
+    for index in range(3):
+        lease = admission.acquire()
+        lease.reserve(len(pcm))
+        jobs.append(
+            asyncio.create_task(
+                scheduler.submit(pcm, "default", True, lease)
+            )
+        )
+        if index == 0:
+            await _wait_thread_event(stt.started)
+    await _wait_until_async(lambda: scheduler.snapshot().pending == 2)
+
+    lease = admission.acquire()
+    lease.reserve(len(pcm))
+    request = _FakeRESTRequest(lease, asyncio.Event())
+    endpoint = _route_endpoint(app, "/v1/audio/transcriptions")
+    upload = UploadFile(
+        file=io.BytesIO(pcm), size=len(pcm), filename="d.pcm"
+    )
+
+    with pytest.raises(DictationFailure) as info:
+        await endpoint(
+            request=request,
+            file=upload,
+            model=None,
+            response_format="json",
+            profile="default",
+            format="pcm",
+        )
+    assert info.value.code == "busy"
+    assert lease.transferred is False
+    assert lease.closed is False
+
+    lease.close()
+    stt.release.set()
+    await asyncio.gather(*jobs)
+    await _wait_until_async(
+        lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+    )
+    await scheduler.close()
+
+
+def test_rest_processing_timeout_returns_504_and_drains(cfg):
+    cfg.timeouts.queue_seconds = 5.0
+    cfg.timeouts.processing_seconds = 0.15
+    stt = BlockingFakeSTT()
+    client, _, _ = build_client(cfg, stt=stt)
+    admission = client.app.state.admission
+    scheduler = client.app.state.scheduler
+
+    with client:
+        response = client.post(
+            "/v1/audio/transcriptions?format=pcm",
+            files={
+                "file": (
+                    "d.pcm",
+                    make_silence(0.2),
+                    "application/octet-stream",
+                )
+            },
+        )
+        assert response.status_code == 504
+        detail = response.json()["detail"]
+        assert detail["code"] == "processing_timeout"
+        assert detail["retryable"] is True
+        assert scheduler.snapshot().draining is True
+
+        stt.release.set()
+        assert wait_for(
+            lambda: scheduler.snapshot()
+            == SchedulerSnapshot(active=False, pending=0, draining=False)
+        )
+        assert wait_for(
+            lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+        )
+
+
+@pytest.mark.asyncio
+async def test_health_responds_while_engine_thread_is_blocked(cfg):
+    cfg.timeouts.queue_seconds = 5.0
+    cfg.timeouts.processing_seconds = 5.0
+    stt = BlockingFakeSTT()
+    app = create_app(cfg, Pipeline(stt, FakeLLM(), cfg))
+    admission = app.state.admission
+    scheduler = app.state.scheduler
+    pcm = make_silence(0.1)
+
+    lease = admission.acquire()
+    lease.reserve(len(pcm))
+    job = asyncio.create_task(
+        scheduler.submit(pcm, "default", True, lease)
+    )
+    await _wait_thread_event(stt.started)
+
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(
+        transport=transport, base_url="http://test"
+    ) as async_client:
+        response = await asyncio.wait_for(
+            async_client.get("/health"), timeout=2.0
+        )
+    assert response.status_code == 200
+    assert response.json() == {"status": "ok"}
+    assert scheduler.snapshot() == SchedulerSnapshot(
+        active=True, pending=0, draining=False
+    )
+
+    stt.release.set()
+    await job
+    await _wait_until_async(
+        lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+    )
+    await scheduler.close()
+
+
+def test_ws_queue_timeout_returns_idle_and_connection_is_reusable(cfg):
+    cfg.timeouts.queue_seconds = 0.15
+    cfg.timeouts.processing_seconds = 5.0
+    stt = BlockingFakeSTT()
+    client, _, _ = build_client(cfg, stt=stt)
+    admission = client.app.state.admission
+    scheduler = client.app.state.scheduler
+
+    with client:
+        with client.websocket_connect("/ws/dictate") as first:
+            send_start(first)
+            first.send_bytes(make_silence(0.2))
+            first.send_json({"type": "stop"})
+            assert wait_for(lambda: stt.started.is_set())
+
+            with client.websocket_connect("/ws/dictate") as second:
+                send_start(second)
+                second.send_bytes(make_silence(0.2))
+                second.send_json({"type": "stop"})
+                error = second.receive_json()
+                assert error["type"] == "error"
+                assert error["code"] == "queue_timeout"
+                assert error["retryable"] is True
+                assert scheduler.snapshot().pending == 0
+                assert stt.starts == 1
+
+                stt.release.set()
+                assert first.receive_json()["type"] == "result"
+
+                send_start(second)
+                second.send_bytes(make_silence(0.2))
+                second.send_json({"type": "stop"})
+                assert second.receive_json()["type"] == "result"
+
+        assert wait_for(
+            lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+        )
+
+
+def test_ws_processing_timeout_sends_error_and_closes_1013(cfg):
+    cfg.timeouts.queue_seconds = 5.0
+    cfg.timeouts.processing_seconds = 0.15
+    stt = BlockingFakeSTT()
+    client, _, _ = build_client(cfg, stt=stt)
+    admission = client.app.state.admission
+    scheduler = client.app.state.scheduler
+
+    with client:
+        with client.websocket_connect("/ws/dictate") as ws:
+            send_start(ws)
+            ws.send_bytes(make_silence(0.2))
+            ws.send_json({"type": "stop"})
+            assert wait_for(lambda: stt.started.is_set())
+
+            error = ws.receive_json()
+            assert error["type"] == "error"
+            assert error["code"] == "processing_timeout"
+            assert error["retryable"] is True
+            assert scheduler.snapshot().draining is True
+
+            with pytest.raises(WebSocketDisconnect) as excinfo:
+                ws.receive_json()
+            assert excinfo.value.code == 1013
+
+        stt.release.set()
+        assert wait_for(
+            lambda: scheduler.snapshot()
+            == SchedulerSnapshot(active=False, pending=0, draining=False)
+        )
+        assert wait_for(
+            lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+        )
+
+
+def test_ws_abort_while_queued_leaves_connection_reusable(cfg):
+    cfg.timeouts.queue_seconds = 5.0
+    cfg.timeouts.processing_seconds = 5.0
+    stt = BlockingFakeSTT()
+    client, _, _ = build_client(cfg, stt=stt)
+    admission = client.app.state.admission
+    scheduler = client.app.state.scheduler
+
+    with client:
+        with client.websocket_connect("/ws/dictate") as first:
+            send_start(first)
+            first.send_bytes(make_silence(0.2))
+            first.send_json({"type": "stop"})
+            assert wait_for(lambda: stt.started.is_set())
+
+            with client.websocket_connect("/ws/dictate") as second:
+                send_start(second)
+                second.send_bytes(make_silence(0.2))
+                second.send_json({"type": "stop"})
+                assert wait_for(
+                    lambda: scheduler.snapshot().pending == 1
+                )
+
+                second.send_json({"type": "abort"})
+                assert wait_for(
+                    lambda: scheduler.snapshot().pending == 0
+                )
+                assert stt.starts == 1
+
+                stt.release.set()
+                assert first.receive_json()["type"] == "result"
+
+                send_start(second)
+                second.send_bytes(make_silence(0.2))
+                second.send_json({"type": "stop"})
+                result = second.receive_json()
+                assert result["type"] == "result"
+
+        assert wait_for(
+            lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+        )
+
+
+def test_ws_busy_stop_releases_lease_and_closes_1013(cfg):
+    cfg.timeouts.queue_seconds = 5.0
+    cfg.timeouts.processing_seconds = 5.0
+    stt = BlockingFakeSTT()
+    client, _, _ = build_client(cfg, stt=stt)
+    admission = client.app.state.admission
+    scheduler = client.app.state.scheduler
+    audio = make_silence(0.2)
+
+    with client:
+        with client.websocket_connect("/ws/dictate") as first:
+            send_start(first)
+            first.send_bytes(audio)
+            first.send_json({"type": "stop"})
+            assert wait_for(lambda: stt.started.is_set())
+
+            with client.websocket_connect("/ws/dictate") as second:
+                send_start(second)
+                second.send_bytes(audio)
+                second.send_json({"type": "stop"})
+                assert wait_for(
+                    lambda: scheduler.snapshot().pending == 1
+                )
+
+                with client.websocket_connect("/ws/dictate") as third:
+                    send_start(third)
+                    third.send_bytes(audio)
+                    third.send_json({"type": "stop"})
+                    assert wait_for(
+                        lambda: scheduler.snapshot().pending == 2
+                    )
+
+                    with client.websocket_connect(
+                        "/ws/dictate"
+                    ) as fourth:
+                        send_start(fourth)
+                        fourth.send_bytes(audio)
+                        fourth.send_json({"type": "stop"})
+                        error = fourth.receive_json()
+                        assert error["type"] == "error"
+                        assert error["code"] == "busy"
+                        assert error["retryable"] is True
+                        with pytest.raises(
+                            WebSocketDisconnect
+                        ) as excinfo:
+                            fourth.receive_json()
+                        assert excinfo.value.code == 1013
+
+                        stt.release.set()
+
+                    assert third.receive_json()["type"] == "result"
+                assert second.receive_json()["type"] == "result"
+            assert first.receive_json()["type"] == "result"
+
+        assert wait_for(
+            lambda: admission.snapshot() == AdmissionSnapshot(0, 0)
+        )

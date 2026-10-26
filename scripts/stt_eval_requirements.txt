@@ -1,0 +1,11 @@
+# Isolated benchmark environment (not the production lock).
+# Install with:
+#   uv venv .venv-stt-eval --python 3.12
+#   uv pip install --python .venv-stt-eval/bin/python -r scripts/stt_eval_requirements.txt
+mlx==0.32.4
+mlx-lm==0.32.2
+mlx-audio==0.6.2
+datasets==3.6.0
+soundfile==0.14.0
+huggingface-hub==2.3.0
+numpy==2.5.4

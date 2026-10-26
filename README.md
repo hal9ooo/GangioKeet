@@ -31,6 +31,10 @@ nella cache Hugging Face (`~/.cache/huggingface`). Il default è:
 - STT: `mlx-community/parakeet-tdt-0.6b-v3`
 - LLM: `mlx-community/Qwen3-1.7B-4bit`
 
+Questi restano i modelli selezionati anche dopo il confronto STT locale del
+26 ottobre 2026: quel confronto è **BLOCKED** (nessun corpus reale) e non ha
+prodotto un vincitore, quindi non c'è stata alcuna promozione di backend.
+
 ## Avvio manuale
 
 ```bash
@@ -49,6 +53,74 @@ Health check:
 curl -s http://127.0.0.1:8000/health
 # {"status":"ok"}
 ```
+
+`/health` è sempre pubblico, non esegue inferenza e serve solo a verificare
+che il processo sia vivo.
+
+### Readiness
+
+```bash
+curl -s http://127.0.0.1:8000/ready
+# {"ready":true,"busy":false,"draining":false,"queue_depth":0,
+#  "stt_model":"mlx-community/parakeet-tdt-0.6b-v3",
+#  "llm_model":"mlx-community/Qwen3-1.7B-4bit"}
+```
+
+`/ready` risponde `200` solo dopo che il warm-up è completato e finché il
+server non è in chiusura; durante l'avvio e lo shutdown risponde `503` con
+`ready:false`. `busy` (una richiesta è in esecuzione), `draining` (un worker
+è in fase di svuotamento) e `queue_depth` (job in coda) sono informativi e
+non rendono `ready:false`. Le probe non avviano inferenza né modificano i
+contatori di ammissione. Con l'autenticazione attiva `/ready` è protetto,
+mentre `/health` resta pubblico.
+
+## Autenticazione opzionale
+
+L'autenticazione è disattivata finché `security.api_key_env` resta `null`.
+Per attivarla, indicare il nome della variabile d'ambiente in `config.yaml`:
+
+```yaml
+security:
+  api_key_env: "GANGIOKEET_API_KEY"
+```
+
+e avviare il server con la variabile valorizzata:
+
+```bash
+export GANGIOKEET_API_KEY="$(openssl rand -hex 32)"
+uv run python -m dictation_server.main
+```
+
+Se il nome è configurato ma la variabile è assente o vuota, l'avvio fallisce
+prima di caricare o bindare i modelli. La chiave non viene mai scritta nei log.
+
+Con auth attiva `/health` resta pubblico; tutte le altre rotte HTTP e il
+WebSocket richiedono l'header:
+
+```bash
+curl -s -X POST http://127.0.0.1:8000/v1/audio/transcriptions \
+  -H "Authorization: Bearer $GANGIOKEET_API_KEY" \
+  -F file=@audio.wav
+```
+
+```python
+async with websockets.connect(
+    "ws://127.0.0.1:8000/ws/dictate",
+    additional_headers={
+        "Authorization": f"Bearer {api_key}",
+    },
+) as ws:
+    ...
+```
+
+L'ambiente di una shell non viene ereditato da launchd. Per il LaunchAgent,
+esportare `GANGIOKEET_API_KEY` nella shell da cui si lancia l'installer:
+`deploy/install_launchd.sh` legge il valore dall'ambiente e, solo se non è
+vuoto, lo aggiunge al plist locale generato
+(`~/Library/LaunchAgents/com.gangio.mlx-dictation.plist`, permessi `0600`).
+Senza la variabile il campo è omesso. Il valore non viene mai stampato,
+passato in argv o scritto nel template versionato; dopo l'installazione si
+può fare `unset GANGIOKEET_API_KEY`.
 
 ## LaunchAgent
 
@@ -97,8 +169,11 @@ Dopo `abort` il server cancella e drena il worker prima di accettare un nuovo
 nel prompt del post-processore.
 
 Audio: frame binari PCM16 signed little-endian, mono, 16 kHz. I chunk vengono
-accodati in RAM; il limite complessivo è `64 MiB`. Oltre il limite il server
-invia `{"type":"error","code":"payload_too_large"}` e chiude con codice 1009.
+accodati in RAM; il limite per sessione è `limits.max_audio_bytes` (default
+`64 MiB`). Un singolo frame oltre `ws_max_size` (lo stesso valore, passato a
+uvicorn) viene chiuso dal layer WebSocket con codice 1009. Se è il buffer
+cumulativo a superare il limite, il server invia
+`{"type":"error","code":"payload_too_large"}` e chiude con codice 1009.
 
 ```json
 {"type": "stop"}
@@ -109,9 +184,14 @@ invia `{"type":"error","code":"payload_too_large"}` e chiude con codice 1009.
 
 ```json
 {"type": "result", "raw_text": "...", "final_text": "...",
- "fast_path": false,
+ "fast_path": false, "warnings": [],
  "metrics": {"stt_ms": 123.4, "llm_ms": 456.7, "total_ms": 580.1}}
 ```
+
+`warnings` è additivo: contiene codici stabili come `llm_timeout` o
+`llm_failed` quando il post-processing fallisce e il server usa il testo
+normalizzato. `fast_path` resta `false` dopo qualunque tentativo LLM, anche
+se il risultato proviene dal fallback.
 
 `fast_path` è `true` quando l'LLM è stato saltato: testo sotto la soglia,
 nessun trigger di autocorrezione, nessun override fonetico, oppure
@@ -119,12 +199,26 @@ nessun trigger di autocorrezione, nessun override fonetico, oppure
 protocollo non chiudono la connessione:
 
 ```json
-{"type": "error", "code": "protocol", "message": "..."}
+{"type": "error", "code": "protocol", "message": "...", "retryable": false}
 ```
 
 Audio binario fuori da `recording`, JSON non valido, messaggi sconosciuti e
-transizioni di stato non valide producono `code="protocol"`. Un errore interno
-della pipeline produce `code="internal"` e riporta lo stato a `idle`.
+transizioni di stato non valide producono `code="protocol"`. PCM con un
+numero dispari di byte produce `code="invalid_audio"` senza chiamare gli
+engine e la sessione torna `idle`. Un errore interno della pipeline produce
+`code="internal"` con messaggio generico e riporta lo stato a `idle`.
+
+Errori applicativi e codici di chiusura:
+
+| Codice | `retryable` | Chiusura WS |
+|---|---|---|
+| `unauthorized` | `false` | `1008` prima di `start`/audio |
+| `busy` | `true` | `1013` |
+| `queue_timeout` | `true` | nessuna: la connessione resta riusabile |
+| `processing_timeout` | `true` | `1013`; il drain continua in background |
+| `invalid_audio` | `false` | nessuna: la connessione torna `idle` |
+| `payload_too_large` | `false` | `1009` |
+| `internal` | `false` | nessuna: messaggio generico |
 
 Esempio Python:
 
@@ -162,6 +256,16 @@ Parametri supportati:
 | `response_format` | `json` (default) o `text`. `srt`, `vtt` e `verbose_json` non sono supportati. |
 | `profile` | Estensione locale; default `default`. |
 | `format` | Estensione locale in query string. `format=pcm` dichiara PCM16 mono 16 kHz grezzo. |
+| `language` | Accettato solo assente o vuoto (anche solo spazi, no-op); un valore non vuoto restituisce `400 unsupported_parameter`. |
+| `prompt` | Accettato solo assente o vuoto (anche solo spazi, no-op); un valore non vuoto restituisce `400 unsupported_parameter`. |
+| `temperature` | Accettato solo assente/vuoto oppure un valore numerico uguale a `0`; il letterale `null` e ogni altro valore restituiscono `400 unsupported_parameter`. |
+| `stream` | Accettato assente oppure `false`, `0`, `no`, `off`; `true` restituisce `400 unsupported_parameter`. |
+| `timestamp_granularities`, `timestamp_granularities[]` | Accettati solo assenti o vuoti; valori non vuoti restituiscono `400 unsupported_parameter`. |
+
+I campi multipart sconosciuti restituiscono `400 unsupported_parameter`. I
+parametri query sconosciuti vengono ignorati per compatibilità. Gli errori di
+validazione dei tipi generati dal framework possono mantenere il formato
+`detail` a lista di FastAPI.
 
 Selezione del decoder:
 
@@ -178,15 +282,37 @@ Risposta `json`:
 
 ```json
 {"text": "Testo finale.", "raw_text": "testo grezzo",
- "fast_path": false,
+ "fast_path": false, "warnings": [],
  "metrics": {"stt_ms": 123.4, "llm_ms": 456.7, "total_ms": 580.1}}
 ```
 
-`response_format=text` restituisce `text/plain` con il solo `text`.
+`warnings` è additivo e non cambia le chiavi storiche. `response_format=text`
+restituisce `text/plain` con il solo `text`; se ci sono warning aggiunge
+l'header `X-GangioKeet-Warnings` con i codici separati da virgola, mentre non
+aggiunge nulla quando la lista è vuota.
+
+Errori REST (oltre ai `422` di validazione del framework):
+
+| Codice | HTTP | Note |
+|---|---|---|
+| `unauthorized` | `401` | Auth Bearer attiva. |
+| `busy` | `503` | `Retry-After: 1`. |
+| `queue_timeout` | `503` | `Retry-After: 1`. |
+| `decode_timeout` | `504` | |
+| `upload_timeout` | `408` | |
+| `processing_timeout` | `504` | |
+| `invalid_audio` | `422` | PCM malformato, mai `500`. |
+| `payload_too_large` | `413` | |
+| `unsupported_parameter` | `400` | |
+| `decoder_unavailable` | `503` | |
+| `internal` | `500` | Messaggio generico. |
+
+Il corpo è sempre `{"detail": {"code": "...", "message": "...",
+"retryable": true|false}}`.
 
 ## Configurazione
 
-`config.yaml` (estratto: il file completo contiene 20 termini canonici e 13
+`config.yaml` (estratto: il file completo contiene 21 termini canonici e 13
 override fonetici):
 
 ```yaml
@@ -195,6 +321,23 @@ server:
   port: 8000
   stt_model: "mlx-community/parakeet-tdt-0.6b-v3"
   llm_model: "mlx-community/Qwen3-1.7B-4bit"
+
+limits:
+  max_audio_bytes: 67108864
+  max_http_body_bytes: 68157440
+  max_buffered_audio_bytes: 201326592
+  max_sessions: 4
+  max_pending_jobs: 2
+
+timeouts:
+  upload_seconds: 10.0
+  decode_seconds: 5.0
+  queue_seconds: 2.0
+  processing_seconds: 10.0
+  llm_seconds: 5.0
+
+security:
+  api_key_env: null  # oppure "GANGIOKEET_API_KEY"
 
 routing:
   fast_path_max_words: 5
@@ -213,6 +356,32 @@ glossary:
 - `glossary.canonical_terms` e `glossary.phonetic_overrides` vengono iniettati
   nel system prompt congelato a boot; cambiarli richiede un riavvio.
 - Il file è validato con `extra="forbid"`: chiavi sconosciute sono errori.
+- Tutti i valori numerici di `limits` e `timeouts` devono essere positivi;
+  `max_audio_bytes` non può superare né `max_buffered_audio_bytes` né
+  `max_http_body_bytes`.
+
+### Limiti e timeout
+
+I default di `config.yaml` sono:
+
+| Impostazione | Default | Effetto |
+|---|---:|---|
+| `limits.max_audio_bytes` | 67.108.864 (64 MiB) | PCM massimo trattenuto per sessione WS e audio massimo accettato dal REST, incluso `format=pcm`. |
+| `limits.max_http_body_bytes` | 68.157.440 (65 MiB) | Corpo HTTP massimo per `POST /v1/audio/transcriptions`. Controllato prima del multipart e, per richieste chunked, contando i byte ricevuti. |
+| `limits.max_buffered_audio_bytes` | 201.326.592 (192 MiB) | Budget di audio trattenuto condiviso fra WebSocket e REST. Esaurito il budget, la richiesta fallisce con `busy`. |
+| `limits.max_sessions` | 4 | Sessioni audio contemporanee (WS + REST). Oltre il limite: `busy`. |
+| `limits.max_pending_jobs` | 2 | Job in coda oltre a quello attivo. Coda piena: `busy` immediato. |
+| `timeouts.upload_seconds` | 10,0 | Tempo per ricevere il corpo REST. Allo scadere: `upload_timeout` (408). |
+| `timeouts.decode_seconds` | 5,0 | Decodifica WAV/ffmpeg. Allo scadere: `decode_timeout` (504). |
+| `timeouts.queue_seconds` | 2,0 | Attesa in coda prima dello start. Allo scadere: `queue_timeout` (503). |
+| `timeouts.processing_seconds` | 10,0 | Limite rigido del job attivo, STT + LLM. Allo scadere: `processing_timeout` (504 lato REST, 1013 lato WS) e drain. |
+| `timeouts.llm_seconds` | 5,0 | Deadline cooperativa del cleaner LLM. Allo scadere il server usa il testo normalizzato con warning `llm_timeout`, entro il limite di processing. |
+
+Il limite del corpo HTTP è più alto di quello audio perché comprende
+l'overhead multipart. Il PCM grezzo dichiarato con `format=pcm` resta comunque
+soggetto a `max_audio_bytes`. `max_audio_bytes` è anche il `ws_max_size`
+passato a uvicorn, quindi un frame oltre il limite viene rifiutato prima di
+essere accodato.
 
 ## Test
 
@@ -265,61 +434,179 @@ in-process è il modo corretto per i gate.
 
 ### Risultati misurati
 
-Run del 25 ottobre 2026, server in-process dopo warm-up, 30 campioni per
+Run del **26 ottobre 2026**, server in-process dopo warm-up, 30 campioni per
 modalità e 2 warm-up per modalità:
 
-- MacBook Air Apple M1, 8 GB, macOS 27.0.1, Python 3.12.15
+- MacBook Air Apple M1, 8 GB, macOS 27.0.1 (26A434), Python 3.12.15
 - mlx 0.32.4, mlx-lm 0.32.2, parakeet-mlx 0.5.3
+- commit di accettazione `568ad49`
 - STT `mlx-community/parakeet-tdt-0.6b-v3`, LLM
   `mlx-community/Qwen3-1.7B-4bit`
 - audio `tests/fixtures/it_short.pcm`: 3,90 s (124.848 byte), chunk da
   3200 byte
-- caricamento modelli + freeze: 7,34 s; warm-up: 1,60 s
+- caricamento modelli + freeze: 6,83 s; warm-up: 1,08 s
+
+Questo è uno **smoke benchmark** su un singolo audio sintetico di 3,9 s: non è
+il confronto sul corpus da 60 clip (che resta **BLOCKED**) e non misura
+qualità, WER o RTF. I vecchi target di latenza restano **non raggiunti**.
 
 | Metrica (ms) | p50 | p95 | max |
 |---|---:|---:|---:|
-| WebSocket `stop` → `result` (LLM) | 1122,4 | 1166,2 | 1247,0 |
-| WebSocket `stop` → `result` (fast path) | 625,0 | 637,0 | 644,6 |
-| Pipeline `total_ms` (LLM) | 1120,6 | 1156,7 | 1237,9 |
-| STT `stt_ms` (modalità LLM) | 595,5 | 614,8 | 670,6 |
-| LLM `llm_ms` (modalità LLM) | 518,9 | 541,5 | 566,7 |
-| LLM TTFT (`generate_step` → primo token) | 247,8 | 262,4 | 265,7 |
-| Pipeline `total_ms` (fast path) | 621,7 | 634,0 | 640,9 |
-| STT `stt_ms` (fast path) | 602,3 | 615,5 | 636,1 |
+| WebSocket `stop` → `result` (LLM) | 1041,4 | 1053,6 | 1059,8 |
+| WebSocket `stop` → `result` (fast path) | 570,1 | 577,7 | 577,7 |
+| Pipeline `total_ms` (LLM) | 1039,1 | 1051,0 | 1057,7 |
+| STT `stt_ms` (modalità LLM) | 558,9 | 566,4 | 575,8 |
+| LLM `llm_ms` (modalità LLM) | 479,3 | 489,0 | 499,0 |
+| LLM TTFT (`generate_step` → primo token) | 228,5 | 233,2 | 235,0 |
+| Pipeline `total_ms` (fast path) | 567,5 | 574,9 | 575,4 |
+| STT `stt_ms` (fast path) | 558,3 | 563,2 | 565,5 |
 
 Memoria:
 
-- RSS misurata con `ps`: 204 MB dopo il warm-up, 50 MB dopo le richieste
-  brevi, 52 MB dopo la richiesta lunga, picco 699 MB.
+- RSS misurata con `ps`: 297 MB dopo il warm-up, 74 MB dopo le richieste
+  brevi, 76 MB dopo la richiesta lunga, picco 944 MB.
 - Metal: picco 2986 MB dopo il warm-up, 3113 MB durante il benchmark,
   2234 MB attivi al termine. Su memoria unificata la RSS di `ps` non
   rappresenta la memoria realmente impegnata da MLX; il dato Metal è quello
-  significativo.
+  significativo. **RSS e Metal non vanno sommati.**
+- Vecchio gate RSS `< 2,8 GB`: **PASS** con 944 MB.
+- Il criterio proposto per un Mac dedicato (8 GiB − 2 GiB per l'OS = 6 GiB)
+  resta **non verificato** come gate di footprint: i due picchi osservati
+  separatamente sono sotto 6 GiB (RSS ~0,92 GiB, Metal ~3,04 GiB), ma non
+  sono stati misurati footprint del processo, memory pressure o delta swap.
 
 Gate della run:
 
 | Gate | Esito | Valore |
 |---|---|---|
-| WebSocket p95 LLM < 400 ms | **FAIL** | 1166,2 ms |
-| WebSocket p95 fast path < 400 ms | **FAIL** | 637,0 ms |
-| RSS < 2,8 GB | **PASS** | 699 MB |
-| LLM TTFT p95 < 25 ms | **FAIL** | 262,4 ms |
+| WebSocket p95 LLM < 400 ms | **FAIL** | 1053,6 ms |
+| WebSocket p95 fast path < 400 ms | **FAIL** | 577,7 ms |
+| RSS < 2,8 GB | **PASS** | 944 MB |
+| LLM TTFT p95 < 25 ms | **FAIL** | 233,2 ms |
 
-Il benchmark esce con codice 1. I target di latenza **non sono raggiunti su
+Il benchmark esce con **codice 1**. I target di latenza **non sono raggiunti su
 questo hardware**: anche con un audio di 3,9 s lo STT ha un costo fisso di
-circa 600–615 ms, e il TTFT misurato include il prefill del suffisso utente
+circa 558–576 ms, e il TTFT misurato include il prefill del suffisso utente
 (circa 77 token), non solo il riuso della KV cache del system prompt. Il
 valore esclude il clone della cache e il rendering del template, conteggiati
 in `llm_ms`. Il fast path elimina l'LLM ma resta dominato dallo STT. I numeri
 sopra sono quelli reali, senza escludere il prefill o cambiare la definizione
 della metrica.
 
+L'accettazione locale dell'affidabilità è **PASS per il contratto e i test di
+breve durata**: suite default `387 passed, 7 skipped`, integrazione con modelli
+reali `7 passed`. Lo **smoke lungo con modelli caldi non è stato eseguito**.
+Il report completo, inclusi blocker e procedura di rollback, è in
+[`docs/superpowers/reports/2026-10-26-mac-server-acceptance.md`](docs/superpowers/reports/2026-10-26-mac-server-acceptance.md).
+Deploy e smoke Windows **non sono stati eseguiti**.
+
+## Benchmark pubblico italiano (STT + cleaner)
+
+Questa sezione è separata dal benchmark di produzione qui sopra. Serve a
+confrontare modelli STT e cleaner su **parlato pubblico italiano**, senza
+registrare clip dell'utente. È uno screening, non una promozione del modello:
+non copre sistematicamente termini tecnici, identificatori, path, numeri,
+autocorrezioni, silenzi o il dominio reale. Sette clip su 30 contengono
+incidentalmente date o misure; la dettatura numerica/tecnica reale resta da
+testare.
+
+Report completo:
+[`docs/superpowers/reports/2026-10-26-public-italian-stt-benchmark.md`](docs/superpowers/reports/2026-10-26-public-italian-stt-benchmark.md).
+
+### Setup isolato
+
+```bash
+uv venv .venv-stt-eval --python 3.12
+uv pip install --python .venv-stt-eval/bin/python \
+  -e . -r scripts/stt_eval_requirements.txt
+```
+
+`scripts/stt_eval_requirements.txt` è separato dal lock di produzione. Usa
+`datasets==3.6.0` perché `datasets` 5 richiede `torchcodec`; non modifica
+`pyproject.toml` né `uv.lock`.
+
+### Corpus FLEURS italiano
+
+```bash
+.venv-stt-eval/bin/python scripts/stt_eval_ingest_fleurs.py \
+  --output-dir tests/fixtures/stt_eval/public/fleurs_it \
+  --count 30 --seed 20261026 --split test \
+  --revision 70bb2e84b976b7e960aa89f1c648e09c59f894dd
+```
+
+Il manifest e la provenienza sono committati; `audio/` è ignorata da git.
+Il campione è di 30 registrazioni (21 frasi uniche; 15 corte + 15 medie),
+licenza FLEURS CC-BY-4.0. La selezione è deterministica (lowest-id per
+genere/durata), non casuale; il seed rompe solo i pareggi di durata. Le
+revisioni dei modelli sono in `model_revisions.json`: gli adapter risolvono lo
+snapshot cachato di quella revisione e falliscono se manca.
+
+### Esecuzione
+
+Fermare il server live prima del run se tiene già i modelli in memoria.
+
+```bash
+# Phase A: STT raw
+.venv-stt-eval/bin/python scripts/stt_eval.py \
+  --manifest tests/fixtures/stt_eval/public/fleurs_it/manifest.jsonl \
+  --candidate <stt_id> --warmups 2 --repeats 3 \
+  --output .superpowers/stt-benchmark/raw/<stt_id>.json
+
+# Phase B: cleaner sui transcript raw
+.venv-stt-eval/bin/python scripts/stt_eval_cleaners.py \
+  --raw .superpowers/stt-benchmark/raw/<stt_id>.json \
+  --manifest tests/fixtures/stt_eval/public/fleurs_it/manifest.jsonl \
+  --cleaner <cleaner_id> \
+  --output .superpowers/stt-benchmark/cleaners/<cleaner_id>__<stt_id>.json
+
+# Analisi riproducibile (WER, CI clip e cluster, latenza, memoria)
+python3 scripts/stt_eval_analyze.py \
+  --raw-dir .superpowers/stt-benchmark/raw \
+  --cleaners-dir .superpowers/stt-benchmark/cleaners \
+  --manifest tests/fixtures/stt_eval/public/fleurs_it/manifest.jsonl \
+  --output .superpowers/stt-benchmark/summary.json
+```
+
+STT disponibili: `parakeet_baseline`, `qwen3_asr_1_7b_8bit`,
+`nemotron_3_5_asr_streaming_0_6b`, `whisper_large_v3_turbo`.
+Cleaner disponibili: `qwen3_1_7b_4bit`, `qwen2_5_1_5b_instruct_4bit`.
+`cohere_transcribe_03_2026` è gated su Hugging Face e `qwen3_5_0_8b_4bit` non
+è compatibile con il freeze attuale: entrambi sono `NOT RUN` nel report.
+
+### Risultati sintetici (30 registrazioni FLEURS, M1/8 GB)
+
+| STT | WER raw | p50/p95 ms | Peak RSS/Metal MB |
+|---|---:|---:|---:|
+| Parakeet 0.6B | 3,88% | 849 / 1060 | 733 / 2128 |
+| Qwen3-ASR 1.7B 8bit | **2,01%** | 2251 / 3343 | 1803 / 3415 |
+| Nemotron 0.6B | 7,75% | 2867 / 4006 | 1375 / 1940 |
+| Whisper turbo fp16 | 2,81% | 1868 / 2077 | 1279 / 2043 |
+
+RSS e Metal non si sommano; il picco Metal include load e warm-up.
+
+I cleaner peggiorano il parlato letto già pulito: Qwen3-1.7B porta Parakeet
+da 3,88% a 8,42% e Qwen3-ASR da 2,01% a 9,89%; Qwen2.5 è peggiore su tre STT
+su quattro (è leggermente meglio su Whisper). Poiché tutte le clip FLEURS
+hanno 16–38 parole, la production non attiva mai il fast-path: production e
+forced-cleaner coincidono. Non cambiare il cleaner di produzione basandosi
+solo su questo corpus.
+
 ## Limiti di compatibilità
 
-- Il server è pensato per la rete locale: non implementa autenticazione,
-  TLS, rate limiting o multi-tenancy.
+- Il server è pensato per la rete locale: l'autenticazione Bearer è opzionale
+  e, se attiva, il token viaggia in chiaro su HTTP. Non implementa TLS, rate
+  limiting o multi-tenancy; usare una rete fidata o un reverse proxy TLS.
 - Un solo processo e un solo lock Metal: le richieste concorrenti vengono
-  serializzate.
+  serializzate da uno scheduler FIFO a worker singolo. La coda e il budget
+  audio in byte sono condivisi fra WebSocket e REST; `limits` e `timeouts`
+  nel file di configurazione limitano sessioni, coda e durate.
+- Lo scheduler rende visibile il timeout e impedisce l'overlap, ma non
+  guarisce un kernel bloccato per sempre: se il kernel non ritorna, il job va
+  in `processing_timeout`, il servizio resta `busy`/`draining` e `/health`
+  continua a rispondere; serve un riavvio operativo.
+- I log contengono solo codici, durate, byte, profondità di coda e stato di
+  drain: testo dettato, prompt, nomi file, titoli delle finestre e token non
+  vengono mai registrati.
 - L'audio di input deve essere PCM16 mono 16 kHz; il REST converte solo se
   `ffmpeg` è disponibile.
 - Il campo `model` del REST deve corrispondere al modello STT configurato;
