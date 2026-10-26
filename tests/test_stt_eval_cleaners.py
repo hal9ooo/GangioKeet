@@ -13,6 +13,7 @@ sys.path.insert(0, str(SCRIPTS))
 
 import stt_eval_cleaners  # noqa: E402
 import stt_eval_finalizer  # noqa: E402
+import stt_eval_provenance  # noqa: E402
 from stt_eval import load_manifest  # noqa: E402
 
 
@@ -224,6 +225,11 @@ def fake_cleaner_modules(monkeypatch):
 
     monkeypatch.setattr(llm_module, "LLMCleaner", _FakeLLM)
     monkeypatch.setattr(pipeline_module, "Pipeline", _FakePipeline)
+    monkeypatch.setattr(
+        stt_eval_provenance,
+        "cached_snapshot",
+        lambda model_id, revision: Path("/pinned-cleaner"),
+    )
     _FakeLLM.instances = []
     _FakeLLM.clean_mode = "ok"
     _FakePipeline.instances = []
@@ -265,3 +271,13 @@ def test_pipeline_finalizer_forced_timeout_falls_back(fake_cleaner_modules):
 def test_unknown_cleaner_is_rejected():
     with pytest.raises(stt_eval_finalizer.UnknownCleaner):
         stt_eval_finalizer.PipelineFinalizer("does-not-exist", ROOT / "config.yaml")
+
+
+def test_not_run_cleaner_reports_reason():
+    finalizer = stt_eval_finalizer.PipelineFinalizer(
+        "qwen3_5_0_8b_4bit", ROOT / "config.yaml"
+    )
+    with pytest.raises(
+        stt_eval_finalizer.CleanerUnavailable, match="NOT RUN"
+    ):
+        finalizer.load()

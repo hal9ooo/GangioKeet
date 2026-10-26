@@ -10,6 +10,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
+import stt_eval_provenance as provenance
+
 DEFAULT_PARAKEET_MODEL = "mlx-community/parakeet-tdt-0.6b-v3"
 
 
@@ -52,8 +54,8 @@ CANDIDATES: dict[str, CandidateSpec] = {
         runtime="mlx_audio",
         revision=None,
         precision=None,
-        status="verified",
-        notes="mlx-audio 0.6.2 Cohere ASR generate",
+        status="not_run",
+        notes="gated HF repo; API not exercised without access",
     ),
     "nemotron_3_5_asr_streaming_0_6b": CandidateSpec(
         id="nemotron_3_5_asr_streaming_0_6b",
@@ -120,10 +122,22 @@ class ParakeetBaselineAdapter:
 
     def __init__(self, model_id: str = DEFAULT_PARAKEET_MODEL):
         self.model_id = model_id
+        self.revision = provenance.revision_for(
+            "stt", "parakeet_baseline"
+        )
+        self.status = provenance.status_for("stt", "parakeet_baseline")
+        self.not_run_reason = provenance.reason_for(
+            "stt", "parakeet_baseline"
+        )
         self._stt = None
         self._to_array = None
 
     def load(self) -> None:
+        if self.status == "not_run":
+            raise AdapterUnavailable(
+                f"candidate '{self.candidate_id}' is NOT RUN: "
+                f"{self.not_run_reason}"
+            )
         try:
             from dictation_server.audio import pcm_bytes_to_mlx_array
             from dictation_server.stt import ParakeetSTT
@@ -134,8 +148,17 @@ class ParakeetBaselineAdapter:
                 "No implicit install or model download is performed."
             ) from exc
 
+        try:
+            local = provenance.cached_snapshot(
+                self.model_id, self.revision
+            )
+        except Exception as exc:
+            raise AdapterUnavailable(
+                f"pinned baseline revision unavailable for "
+                f"'{self.candidate_id}': {exc}"
+            ) from exc
         self._to_array = pcm_bytes_to_mlx_array
-        stt = ParakeetSTT(self.model_id)
+        stt = ParakeetSTT(str(local))
         stt.load()
         self._stt = stt
 
@@ -154,14 +177,20 @@ class MlxAudioAdapter:
         self.spec = spec
         self.candidate_id = spec.id
         self.model_id = spec.model_id
-        self.revision = spec.revision
+        self.revision = provenance.revision_for("stt", spec.id)
         self.precision = spec.precision
-        self.status = spec.status
+        self.status = provenance.status_for("stt", spec.id)
+        self.not_run_reason = provenance.reason_for("stt", spec.id)
         self.has_finalizer = False
         self._model = None
         self._kwargs = dict(_LANGUAGE_KWARGS[spec.id])
 
     def load(self) -> None:
+        if self.status == "not_run":
+            raise AdapterUnavailable(
+                f"candidate '{self.candidate_id}' is NOT RUN: "
+                f"{self.not_run_reason}"
+            )
         try:
             from mlx_audio.stt import load
         except ImportError as exc:
@@ -169,10 +198,14 @@ class MlxAudioAdapter:
                 f"runtime 'mlx_audio' unavailable for candidate "
                 f"'{self.candidate_id}' (model {self.model_id}): {exc}. "
                 "Install it only in an isolated eval environment; the harness "
-                "never installs packages or downloads models implicitly."
+                "installs no packages (the model loader may populate the HF "
+                "cache on first use)."
             ) from exc
         try:
-            self._model = load(self.model_id)
+            local = provenance.cached_snapshot(
+                self.model_id, self.revision
+            )
+            self._model = load(str(local))
         except Exception as exc:
             raise AdapterUnavailable(
                 f"model load failed for candidate '{self.candidate_id}' "

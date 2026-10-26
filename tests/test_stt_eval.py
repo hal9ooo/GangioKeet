@@ -17,6 +17,7 @@ sys.path.insert(0, str(SCRIPTS))
 import stt_eval  # noqa: E402
 import stt_eval_adapters  # noqa: E402
 import stt_eval_metrics  # noqa: E402
+import stt_eval_provenance  # noqa: E402
 from stt_eval_adapters import (  # noqa: E402
     AdapterUnavailable,
     UnknownCandidate,
@@ -620,11 +621,16 @@ def test_mlx_audio_adapter_reports_missing_runtime(monkeypatch):
         adapter.load()
 
 
+def test_not_run_candidate_reports_reason(monkeypatch):
+    adapter = create_adapter("cohere_transcribe_03_2026")
+    with pytest.raises(AdapterUnavailable, match="NOT RUN"):
+        adapter.load()
+
+
 @pytest.mark.parametrize(
     "candidate_id, language, temperature",
     [
         ("qwen3_asr_1_7b_8bit", "Italian", 0.0),
-        ("cohere_transcribe_03_2026", "it", None),
         ("nemotron_3_5_asr_streaming_0_6b", "it-IT", None),
         ("whisper_large_v3_turbo", "it", 0.0),
     ],
@@ -643,8 +649,9 @@ def test_mlx_audio_adapter_uses_generate(
 
     loaded = {}
 
-    def fake_load(model_id):
-        loaded["model"] = FakeModel(model_id)
+    def fake_load(model_path):
+        loaded["path"] = model_path
+        loaded["model"] = FakeModel(model_path)
         return loaded["model"]
 
     fake_stt = types.ModuleType("mlx_audio.stt")
@@ -653,13 +660,18 @@ def test_mlx_audio_adapter_uses_generate(
     fake_pkg.stt = fake_stt
     monkeypatch.setitem(sys.modules, "mlx_audio", fake_pkg)
     monkeypatch.setitem(sys.modules, "mlx_audio.stt", fake_stt)
+    monkeypatch.setattr(
+        stt_eval_provenance,
+        "cached_snapshot",
+        lambda model_id, revision: Path("/pinned-snapshot"),
+    )
 
     adapter = create_adapter(candidate_id)
     adapter.load()
     text = adapter.transcribe(b"\x00\x00")
 
     assert text == "ciao"
-    assert loaded["model"].model_id == adapter.model_id
+    assert loaded["path"] == "/pinned-snapshot"
     assert loaded["model"].kwargs["language"] == language
     if temperature is not None:
         assert loaded["model"].kwargs["temperature"] == temperature

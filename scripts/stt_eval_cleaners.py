@@ -39,6 +39,13 @@ def run_cleaner(
     raw_path = Path(raw_path)
     manifest_path = Path(manifest_path)
     raw = json.loads(raw_path.read_text(encoding="utf-8"))
+    raw_manifest_hash = raw.get("provenance", {}).get("manifest_sha256")
+    if raw_manifest_hash and raw_manifest_hash != stt_eval._sha256_file(
+        manifest_path
+    ):
+        raise ValueError(
+            f"raw report manifest hash does not match {manifest_path}"
+        )
     manifest = {
         clip["id"]: clip
         for clip in stt_eval.load_manifest(manifest_path)
@@ -94,6 +101,9 @@ def run_cleaner(
                 )
                 production_texts.append(production_text)
                 production_warnings.append(list(finalizer.warnings))
+                production_fast_path = getattr(
+                    finalizer, "fast_path", None
+                )
 
                 started = time.perf_counter()
                 forced_text = finalizer.finalize(
@@ -138,6 +148,7 @@ def run_cleaner(
                         "hypothesis": production_texts[0],
                         "hypotheses": production_texts,
                         "score": production_score,
+                        "fast_path": production_fast_path,
                         "deterministic": all(
                             text == production_texts[0]
                             for text in production_texts

@@ -505,8 +505,10 @@ Deploy e smoke Windows **non sono stati eseguiti**.
 Questa sezione è separata dal benchmark di produzione qui sopra. Serve a
 confrontare modelli STT e cleaner su **parlato pubblico italiano**, senza
 registrare clip dell'utente. È uno screening, non una promozione del modello:
-non copre termini tecnici, identificatori, path, numeri, autocorrezioni,
-silenzi o il dominio reale.
+non copre sistematicamente termini tecnici, identificatori, path, numeri,
+autocorrezioni, silenzi o il dominio reale. Sette clip su 30 contengono
+incidentalmente date o misure; la dettatura numerica/tecnica reale resta da
+testare.
 
 Report completo:
 [`docs/superpowers/reports/2026-10-26-public-italian-stt-benchmark.md`](docs/superpowers/reports/2026-10-26-public-italian-stt-benchmark.md).
@@ -533,7 +535,11 @@ uv pip install --python .venv-stt-eval/bin/python \
 ```
 
 Il manifest e la provenienza sono committati; `audio/` è ignorata da git.
-Il campione è di 30 clip (15 corte + 15 medie), licenza FLEURS CC-BY-4.0.
+Il campione è di 30 registrazioni (21 frasi uniche; 15 corte + 15 medie),
+licenza FLEURS CC-BY-4.0. La selezione è deterministica (lowest-id per
+genere/durata), non casuale; il seed rompe solo i pareggi di durata. Le
+revisioni dei modelli sono in `model_revisions.json`: gli adapter risolvono lo
+snapshot cachato di quella revisione e falliscono se manca.
 
 ### Esecuzione
 
@@ -552,6 +558,13 @@ Fermare il server live prima del run se tiene già i modelli in memoria.
   --manifest tests/fixtures/stt_eval/public/fleurs_it/manifest.jsonl \
   --cleaner <cleaner_id> \
   --output .superpowers/stt-benchmark/cleaners/<cleaner_id>__<stt_id>.json
+
+# Analisi riproducibile (WER, CI clip e cluster, latenza, memoria)
+python3 scripts/stt_eval_analyze.py \
+  --raw-dir .superpowers/stt-benchmark/raw \
+  --cleaners-dir .superpowers/stt-benchmark/cleaners \
+  --manifest tests/fixtures/stt_eval/public/fleurs_it/manifest.jsonl \
+  --output .superpowers/stt-benchmark/summary.json
 ```
 
 STT disponibili: `parakeet_baseline`, `qwen3_asr_1_7b_8bit`,
@@ -560,7 +573,7 @@ Cleaner disponibili: `qwen3_1_7b_4bit`, `qwen2_5_1_5b_instruct_4bit`.
 `cohere_transcribe_03_2026` è gated su Hugging Face e `qwen3_5_0_8b_4bit` non
 è compatibile con il freeze attuale: entrambi sono `NOT RUN` nel report.
 
-### Risultati sintetici (30 clip FLEURS, M1/8 GB)
+### Risultati sintetici (30 registrazioni FLEURS, M1/8 GB)
 
 | STT | WER raw | p50/p95 ms | Peak RSS/Metal MB |
 |---|---:|---:|---:|
@@ -569,11 +582,14 @@ Cleaner disponibili: `qwen3_1_7b_4bit`, `qwen2_5_1_5b_instruct_4bit`.
 | Nemotron 0.6B | 7,75% | 2867 / 4006 | 1375 / 1940 |
 | Whisper turbo fp16 | 2,81% | 1868 / 2077 | 1279 / 2043 |
 
+RSS e Metal non si sommano; il picco Metal include load e warm-up.
+
 I cleaner peggiorano il parlato letto già pulito: Qwen3-1.7B porta Parakeet
-da 3,88% a 8,42% e Qwen3-ASR da 2,01% a 9,89%; Qwen2.5 è peggiore. Poiché
-tutte le clip FLEURS hanno 16–38 parole, la production non attiva mai il
-fast-path: production e forced-cleaner coincidono. Non cambiare il cleaner di
-produzione basandosi solo su questo corpus.
+da 3,88% a 8,42% e Qwen3-ASR da 2,01% a 9,89%; Qwen2.5 è peggiore su tre STT
+su quattro (è leggermente meglio su Whisper). Poiché tutte le clip FLEURS
+hanno 16–38 parole, la production non attiva mai il fast-path: production e
+forced-cleaner coincidono. Non cambiare il cleaner di produzione basandosi
+solo su questo corpus.
 
 ## Limiti di compatibilità
 

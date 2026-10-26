@@ -96,13 +96,15 @@ def select_fleurs_clips(
     medium = shuffled[midpoint:]
     per_bucket = count // 2
 
-    selected = _select_bucket(short, per_bucket) + _select_bucket(
-        medium, per_bucket
-    )
-    selected.sort(key=lambda row: str(row["id"]))
+    chosen = [
+        (row, "short") for row in _select_bucket(short, per_bucket)
+    ] + [
+        (row, "medium") for row in _select_bucket(medium, per_bucket)
+    ]
+    chosen.sort(key=lambda pair: str(pair[0]["id"]))
 
     result = []
-    for row in selected:
+    for row, duration_bucket in chosen:
         result.append(
             {
                 key: value
@@ -111,9 +113,7 @@ def select_fleurs_clips(
             }
             | {
                 "duration_seconds": round(row["_duration"], 6),
-                "duration_bucket": (
-                    "short" if row in short else "medium"
-                ),
+                "duration_bucket": duration_bucket,
             }
         )
     return result
@@ -197,7 +197,10 @@ def write_fleurs_corpus(
         "license": "CC-BY-4.0",
         "seed": seed,
         "count": count,
-        "selection": "15 short + 15 medium, gender-balanced where available",
+        "selection": (
+            f"{count // 2} short + {count // 2} medium, "
+            "gender-balanced where available"
+        ),
         **(provenance or {}),
         "manifest_sha256": hashlib.sha256(
             manifest_text.encode("utf-8")

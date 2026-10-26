@@ -12,6 +12,8 @@ import time
 from dataclasses import dataclass
 from pathlib import Path
 
+import stt_eval_provenance as provenance
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -82,8 +84,11 @@ class PipelineFinalizer:
         self.cleaner_id = spec.id
         self.model_id = spec.model_id
         self.precision = spec.precision
-        self.status = spec.status
-        self.revision: str | None = None
+        self.status = provenance.status_for("cleaners", spec.id)
+        self.not_run_reason = provenance.reason_for(
+            "cleaners", spec.id
+        )
+        self.revision = provenance.revision_for("cleaners", spec.id)
         self.cfg = load_config(config_path)
         self.warnings: list[str] = []
         self.fast_path = True
@@ -93,12 +98,20 @@ class PipelineFinalizer:
         self._echo = EchoSTT()
 
     def load(self) -> None:
+        if self.status == "not_run":
+            raise CleanerUnavailable(
+                f"cleaner '{self.cleaner_id}' is NOT RUN: "
+                f"{self.not_run_reason}"
+            )
         try:
             from dictation_server.llm import LLMCleaner
             from dictation_server.pipeline import Pipeline
             from dictation_server.prompt import build_system_prompt
 
-            llm = LLMCleaner(self.model_id)
+            local = provenance.cached_snapshot(
+                self.model_id, self.revision
+            )
+            llm = LLMCleaner(str(local))
             llm.load()
             llm.freeze(build_system_prompt(self.cfg.glossary))
             self._llm = llm
