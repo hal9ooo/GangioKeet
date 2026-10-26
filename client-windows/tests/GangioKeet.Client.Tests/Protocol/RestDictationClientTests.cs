@@ -69,7 +69,8 @@ public sealed class RestDictationClientTests
         Assert.Equal("dictation.pcm", file.FileName);
         Assert.Equal("application/octet-stream", file.ContentType);
         Assert.Equal(pcm.Length, file.Length);
-        Assert.True(pcm.AsSpan().SequenceEqual(captured.FileBytes ?? []));
+        Assert.NotNull(captured.FileBytes);
+        Assert.True(pcm.AsSpan().SequenceEqual(captured.FileBytes!));
     }
 
     [Fact]

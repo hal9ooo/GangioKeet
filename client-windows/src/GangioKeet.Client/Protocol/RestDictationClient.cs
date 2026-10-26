@@ -346,6 +346,8 @@ public sealed class RestDictationClient
 
         private ITimer? _responseTimer;
 
+        private int _disposed;
+
         public RequestPhase(CancellationToken userCancelled, TimeSpan responseTimeout)
         {
             Cts = CancellationTokenSource.CreateLinkedTokenSource(userCancelled);
@@ -359,7 +361,7 @@ public sealed class RestDictationClient
 
         public void StartUploadDeadline(TimeProvider time, TimeSpan uploadTimeout)
         {
-            _uploadTimer = CreateCancellingTimer(time, uploadTimeout);
+            _uploadTimer = CreateCancellingTimer(time, uploadTimeout, isUploadDeadline: true);
         }
 
         /// <summary>
@@ -375,20 +377,43 @@ public sealed class RestDictationClient
 
             ITimer? uploadTimer = Interlocked.Exchange(ref _uploadTimer, null);
             uploadTimer?.Dispose();
-            _responseTimer = CreateCancellingTimer(time, _responseTimeout);
+            _responseTimer = CreateCancellingTimer(time, _responseTimeout, isUploadDeadline: false);
         }
 
-        private ITimer CreateCancellingTimer(TimeProvider time, TimeSpan dueTime)
+        private ITimer CreateCancellingTimer(TimeProvider time, TimeSpan dueTime, bool isUploadDeadline)
         {
             return time.CreateTimer(
-                static state => ((RequestPhase)state!).Cts.Cancel(),
-                this,
+                _ => CancelFromDeadline(isUploadDeadline),
+                null,
                 dueTime,
                 Timeout.InfiniteTimeSpan);
         }
 
+        private void CancelFromDeadline(bool isUploadDeadline)
+        {
+            // Un callback già in coda può eseguire dopo Dispose (che non attende i callback già
+            // schedulati): con la CTS eliminata Cancel lancia ObjectDisposedException sul thread del
+            // timer. Un callback di upload deschedulato oltre CompleteWrite inoltre non deve
+            // cancellare una richiesta già passata alla fase di risposta.
+            if (Volatile.Read(ref _disposed) != 0
+                || (isUploadDeadline && Volatile.Read(ref UploadCompleted) != 0))
+            {
+                return;
+            }
+
+            try
+            {
+                Cts.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+                // Dispose è passato tra la lettura del flag e Cancel: non c'è più nulla da cancellare.
+            }
+        }
+
         public void Dispose()
         {
+            Volatile.Write(ref _disposed, 1);
             ITimer? uploadTimer = Interlocked.Exchange(ref _uploadTimer, null);
             uploadTimer?.Dispose();
             ITimer? responseTimer = Interlocked.Exchange(ref _responseTimer, null);

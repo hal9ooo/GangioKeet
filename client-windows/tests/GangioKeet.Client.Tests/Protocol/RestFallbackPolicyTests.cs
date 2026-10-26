@@ -37,17 +37,15 @@ public sealed class RestFallbackPolicyTests
         Assert.False(_policy.CanFallback(failure, anyStartOrAudioSent: false));
     }
 
-    [Fact]
-    public void CanFallback_FalseForNetworkLevelFailures()
+    [Theory]
+    [InlineData("connect_failed", "Unable to resolve the host.")]
+    [InlineData("connect_failed", "Connection refused.")]
+    [InlineData("timeout", "The REST request did not complete within its deadline.")]
+    public void CanFallback_FalseForNetworkLevelFailures(string code, string message)
     {
-        // DNS fallito, connessione rifiutata e handshake non concluso entro la deadline di connect:
-        // tutti arrivano come connect_failed, spesso senza HttpStatus.
-        Assert.False(_policy.CanFallback(
-            new ConnectFailure("connect_failed", "Unable to resolve the host.", null),
-            anyStartOrAudioSent: false));
-        Assert.False(_policy.CanFallback(
-            new ConnectFailure("connect_failed", "Connection refused.", null),
-            anyStartOrAudioSent: false));
+        // DNS fallito, connessione rifiutata e timeout (deadline di connect/upload/risposta):
+        // arrivano come connect_failed/timeout, spesso senza HttpStatus.
+        Assert.False(_policy.CanFallback(new ConnectFailure(code, message, null), anyStartOrAudioSent: false));
     }
 
     [Fact]
