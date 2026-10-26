@@ -123,6 +123,11 @@ public static class KeyCodes
             return new KeyCode(MouseX1, FromMouse: true);
         }
 
+        if (normalized is "capslock" or "caps_lock")
+        {
+            return new KeyCode(0x14, FromMouse: false);
+        }
+
         if (normalized is "escape" or "esc")
         {
             return new KeyCode(0x1B, FromMouse: false);

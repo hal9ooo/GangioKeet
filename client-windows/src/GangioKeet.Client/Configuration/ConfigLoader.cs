@@ -135,13 +135,20 @@ public static class ConfigLoader
         {
             Fail(sourcePath, "hotkey key 'alt_r' is rejected: it conflicts with the AltGr modifier");
         }
-        if (key == "mouse_x1" || (allowEscape && key == "escape") || (key.StartsWith('f') && int.TryParse(key.AsSpan(1), out var number) && number >= 1 && number <= 24 && key.Length == $"f{number}".Length))
+
+        // capslock è ammesso solo come hotkey principale, non come abort_key.
+        bool isCapsLock = !allowEscape && key is "capslock" or "caps_lock";
+        if (isCapsLock
+            || key == "mouse_x1"
+            || (allowEscape && key == "escape")
+            || (key.StartsWith('f') && int.TryParse(key.AsSpan(1), out var number) && number >= 1 && number <= 24 && key.Length == $"f{number}".Length))
         {
             return;
         }
+
         Fail(
             sourcePath,
-            $"hotkey key '{value}' is not valid: expected f1-f24 or mouse_x1"
+            $"hotkey key '{value}' is not valid: expected f1-f24, capslock or mouse_x1"
             + (allowEscape ? ", or 'escape' for hotkey.abort_key" : ""));
     }
 

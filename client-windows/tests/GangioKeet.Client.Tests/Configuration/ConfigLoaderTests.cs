@@ -44,7 +44,7 @@ public sealed class ConfigLoaderTests
         Assert.Null(config.Server.ApiKeyEnv);
 
         Assert.Equal("push_to_talk", config.Hotkey.Mode);
-        Assert.Equal("f8", config.Hotkey.Key);
+        Assert.Equal("capslock", config.Hotkey.Key);
         Assert.Equal("escape", config.Hotkey.AbortKey);
         Assert.Equal(250, config.Hotkey.DoubleTapMaxMs);
         Assert.Equal(350, config.Hotkey.DoubleTapGapMs);
@@ -186,7 +186,7 @@ public sealed class ConfigLoaderTests
         Assert.Equal(5.0, config.Server.UploadTimeoutSeconds);
         Assert.Equal(20.0, config.Server.RestResponseTimeoutSeconds);
         Assert.Equal(30.0, config.Server.HealthCheckIntervalSeconds);
-        Assert.Equal("f8", config.Hotkey.Key);
+        Assert.Equal("capslock", config.Hotkey.Key);
         Assert.Equal("escape", config.Hotkey.AbortKey);
         Assert.Equal(250, config.Hotkey.DoubleTapMaxMs);
         Assert.Equal(350, config.Hotkey.DoubleTapGapMs);
@@ -221,5 +221,23 @@ public sealed class ConfigLoaderTests
         string? resolved = ApiCredential.Resolve(null, name => throw new InvalidOperationException("must not read environment"));
 
         Assert.Null(resolved);
+    }
+
+    [Fact]
+    public void CapsLockHotkey_IsAccepted()
+    {
+        ConfigLoader.Validate(new ClientConfig
+        {
+            Hotkey = new HotkeyConfig { Key = "capslock", AbortKey = "escape" },
+        });
+    }
+
+    [Fact]
+    public void CapsLockAsAbortKey_IsRejected()
+    {
+        Assert.Throws<ConfigException>(() => ConfigLoader.Validate(new ClientConfig
+        {
+            Hotkey = new HotkeyConfig { Key = "f8", AbortKey = "capslock" },
+        }));
     }
 }

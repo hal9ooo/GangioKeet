@@ -18,7 +18,7 @@ server:
 
 hotkey:
   mode: "push_to_talk"                # push_to_talk | toggle
-  key: "f8"                           # f1..f24, mouse_x1 (alt_r escluso: conflitto AltGr)
+  key: "capslock"                     # capslock, f1..f24, mouse_x1 (alt_r escluso: conflitto AltGr)
   abort_key: "escape"                 # f1..f24, mouse_x1, escape
   double_tap_max_ms: 250              # durata massima di un tap perché conti come tap
   double_tap_gap_ms: 350              # intervallo massimo tra i due tap del double-tap

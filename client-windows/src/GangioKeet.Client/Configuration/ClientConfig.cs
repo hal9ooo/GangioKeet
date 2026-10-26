@@ -68,7 +68,7 @@ public sealed class HotkeyConfig
     public string Mode { get; set; } = "push_to_talk";
 
     [YamlMember(Alias = "key")]
-    public string Key { get; set; } = "f8";
+    public string Key { get; set; } = "capslock";
 
     [YamlMember(Alias = "abort_key")]
     public string AbortKey { get; set; } = "escape";
