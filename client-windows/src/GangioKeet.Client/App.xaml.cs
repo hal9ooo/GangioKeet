@@ -156,7 +156,10 @@ public partial class App : Application
             _controller,
             _recovery,
             _health,
-            config);
+            config,
+            new AudioDevices(),
+            ConfigLoader.DefaultPath,
+            _logger);
 
         _hooks.Start();
     }

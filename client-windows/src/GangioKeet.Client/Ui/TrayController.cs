@@ -1,5 +1,7 @@
+using System.Collections.Generic;
 using System.Windows;
 using System.Threading;
+using GangioKeet.Client.Audio;
 using GangioKeet.Client.Configuration;
 using GangioKeet.Client.Controller;
 using GangioKeet.Client.Platform;
@@ -20,8 +22,13 @@ public sealed class TrayController : IDisposable
     private readonly RecoveryStore _recovery;
     private readonly HealthMonitor _health;
     private readonly ClientConfig _config;
+    private readonly IAudioDeviceProvider _devices;
+    private readonly string _configPath;
+    private readonly FileLogger? _logger;
     private readonly Action<Action> _post;
 
+    private string? _selectedDeviceId;
+    private System.Windows.Controls.MenuItem? _microphoneMenu;
     private bool _disposed;
 
     public TrayController(
@@ -30,6 +37,9 @@ public sealed class TrayController : IDisposable
         RecoveryStore recovery,
         HealthMonitor health,
         ClientConfig config,
+        IAudioDeviceProvider devices,
+        string configPath,
+        FileLogger? logger = null,
         Action<Action>? post = null)
     {
         _tray = tray;
@@ -37,6 +47,10 @@ public sealed class TrayController : IDisposable
         _recovery = recovery;
         _health = health;
         _config = config;
+        _devices = devices;
+        _configPath = configPath;
+        _logger = logger;
+        _selectedDeviceId = config.Audio.InputDevice;
 
         // Gli eventi di health/recovery arrivano da thread di background: ogni modifica
         // di oggetti WPF deve passare dal thread UI.
@@ -107,6 +121,17 @@ public sealed class TrayController : IDisposable
         _tray.ContextMenu.Items.Add(copyItem);
         _tray.ContextMenu.Items.Add(discardItem);
         _tray.ContextMenu.Items.Add(new System.Windows.Controls.Separator());
+
+        _microphoneMenu = new System.Windows.Controls.MenuItem { Header = "Microfono" };
+        _microphoneMenu.Items.Add(new System.Windows.Controls.MenuItem
+        {
+            Header = "Caricamento…",
+            IsEnabled = false,
+        });
+        _microphoneMenu.SubmenuOpened += (_, _) => _ = RefreshMicrophonesAsync();
+        _tray.ContextMenu.Items.Add(_microphoneMenu);
+
+        _tray.ContextMenu.Items.Add(new System.Windows.Controls.Separator());
         _tray.ContextMenu.Items.Add(new System.Windows.Controls.MenuItem
         {
             Header = "Apri impostazioni microfono",
@@ -118,6 +143,82 @@ public sealed class TrayController : IDisposable
             Header = "Esci",
             Command = new RelayCommand(_ => Application.Current.Shutdown()),
         });
+    }
+
+    private async Task RefreshMicrophonesAsync()
+    {
+        if (_microphoneMenu is null)
+        {
+            return;
+        }
+
+        try
+        {
+            IReadOnlyList<AudioDeviceInfo> devices = await _devices.ListAsync(CancellationToken.None);
+            _post(() => PopulateMicrophoneMenu(devices));
+        }
+        catch (Exception ex)
+        {
+            _logger?.Write("microphone_enumeration_failed", ex.Message);
+            _post(() => PopulateMicrophoneMenu([]));
+        }
+    }
+
+    private void PopulateMicrophoneMenu(IReadOnlyList<AudioDeviceInfo> devices)
+    {
+        if (_microphoneMenu is null)
+        {
+            return;
+        }
+
+        System.Windows.Controls.MenuItem menu = _microphoneMenu;
+        menu.Items.Clear();
+
+        var defaultItem = new System.Windows.Controls.MenuItem
+        {
+            Header = "Predefinito di Windows",
+            IsCheckable = true,
+            IsChecked = MicrophoneMenuPolicy.IsDefaultSelected(_selectedDeviceId),
+        };
+        defaultItem.Click += (_, _) => ApplyMicrophone(null);
+        menu.Items.Add(defaultItem);
+        menu.Items.Add(new System.Windows.Controls.Separator());
+
+        foreach (AudioDeviceInfo device in MicrophoneMenuPolicy.Order(devices))
+        {
+            AudioDeviceInfo selected = device;
+            var item = new System.Windows.Controls.MenuItem
+            {
+                Header = selected.Name,
+                IsCheckable = true,
+                IsChecked = MicrophoneMenuPolicy.IsDeviceSelected(_selectedDeviceId, selected.Id),
+                ToolTip = selected.Id,
+            };
+            item.Click += (_, _) => ApplyMicrophone(selected.Id);
+            menu.Items.Add(item);
+        }
+
+        if (devices.Count == 0)
+        {
+            menu.Items.Add(new System.Windows.Controls.MenuItem
+            {
+                Header = "Nessun microfono attivo",
+                IsEnabled = false,
+            });
+        }
+    }
+
+    private void ApplyMicrophone(string? deviceId)
+    {
+        _selectedDeviceId = deviceId;
+        _controller.SetInputDevice(deviceId);
+
+        if (!ConfigWriter.SetAudioInputDevice(_configPath, deviceId))
+        {
+            _logger?.Write(
+                "microphone_persist_failed",
+                $"Could not persist audio.input_device to {_configPath}; the choice stays active in memory.");
+        }
     }
 
     private void OnHealthChanged(HealthStatus status)

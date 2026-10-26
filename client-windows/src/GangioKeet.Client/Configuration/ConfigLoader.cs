@@ -16,14 +16,19 @@ public static class ConfigLoader
 {
     private static readonly IDeserializer YamlDecoder = new DeserializerBuilder().Build();
 
+    /// <summary>Percorso predefinito della configurazione utente.</summary>
+    public static string DefaultPath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "GangioKeet",
+        "client_config.yaml");
+
     public static ClientConfig Load(string? explicitPath = null, string? appDataBase = null)
     {
         string path = explicitPath is not null
             ? Path.GetFullPath(explicitPath)
-            : Path.Combine(
-                appDataBase ?? Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "GangioKeet",
-                "client_config.yaml");
+            : appDataBase is null
+                ? DefaultPath
+                : Path.Combine(appDataBase, "GangioKeet", "client_config.yaml");
 
         ClientConfig config;
         if (!File.Exists(path))
