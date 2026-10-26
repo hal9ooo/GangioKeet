@@ -10,7 +10,7 @@ SPEC_CANONICAL_TERMS = [
     "Proxmox VE", "FastAPI", "CodeIgniter 4", "PostgreSQL", "MariaDB",
     "Home Assistant", "ESPHome", "Tasmota", "Tailscale", "MikroTik",
     "RouterOS", "Authelia", "Nginx Proxy Manager", "MLX", "Parakeet",
-    "llama.cpp", "OpenCode", "Cursor", "WebSocket", "GitHub",
+    "llama.cpp", "OpenCode", "Cursor", "WebSocket", "GitHub", "Docker",
 ]
 SPEC_PHONETIC_OVERRIDES = {
     "elle ics ci": "LXC",

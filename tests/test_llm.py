@@ -1,9 +1,11 @@
 import importlib
+import threading
+import time
 
 import mlx.core as mx
 import pytest
 
-from dictation_server.llm import LLMCleaner
+from dictation_server.llm import LLMCleaner, LLMDeadlineExceeded
 from dictation_server.routing import compute_max_tokens
 
 
@@ -67,6 +69,96 @@ def test_clean_rejects_thinking_output():
     llm.freeze("system rules")
     with pytest.raises(RuntimeError, match="think"):
         llm.clean("ciao", "chat")
+
+
+def test_deadline_error_is_distinct_from_generic_failures():
+    assert issubclass(LLMDeadlineExceeded, Exception)
+    assert not issubclass(LLMDeadlineExceeded, RuntimeError)
+
+
+def test_expired_deadline_is_rejected_before_generation_starts():
+    llm = FakeLLM()
+    llm.freeze("system rules")
+
+    with pytest.raises(LLMDeadlineExceeded):
+        llm.clean("ciao", "default", deadline=time.monotonic() - 1.0)
+
+    assert llm.calls == []
+    assert llm._deadline is None
+
+
+def test_future_deadline_is_visible_to_generation_and_reset_afterwards():
+    class DeadlineCapturingLLM(FakeLLM):
+        def _generate(self, user_prompt, max_tokens):
+            captured.append(self._deadline)
+            return super()._generate(user_prompt, max_tokens)
+
+    captured = []
+    llm = DeadlineCapturingLLM()
+    llm.freeze("system rules")
+    deadline = time.monotonic() + 5.0
+
+    assert llm.clean("ciao", "default", deadline=deadline) == "pulito"
+    assert captured == [deadline]
+    assert llm._deadline is None
+
+
+def test_deadline_between_tokens_raises_cooperative_error(monkeypatch):
+    llm = _prepared_llm()
+
+    def expiring_generate_step(prompt, model, *, max_tokens, sampler,
+                               prompt_cache):
+        yield 42, None
+        llm._deadline = time.monotonic() - 1.0
+        yield 43, None
+
+    generate_module = importlib.import_module("mlx_lm.generate")
+    monkeypatch.setattr(generate_module, "generate_step", expiring_generate_step)
+
+    with pytest.raises(LLMDeadlineExceeded):
+        llm._generate("<profile>chat</profile>", 5)
+    assert llm.tokenizer.decoded == []
+
+
+def test_deadline_is_cooperative_and_never_hard_kills_a_blocked_token(
+        monkeypatch):
+    llm = _prepared_llm()
+    started = threading.Event()
+    release = threading.Event()
+    finished = threading.Event()
+
+    def blocking_generate_step(prompt, model, *, max_tokens, sampler,
+                               prompt_cache):
+        yield 42, None
+        started.set()
+        release.wait(2.0)
+        yield 43, None
+
+    generate_module = importlib.import_module("mlx_lm.generate")
+    monkeypatch.setattr(generate_module, "generate_step", blocking_generate_step)
+    llm._deadline = time.monotonic() + 0.05
+
+    def run():
+        try:
+            llm._generate("<profile>chat</profile>", 5)
+        except LLMDeadlineExceeded:
+            pass
+        finally:
+            finished.set()
+
+    thread = threading.Thread(target=run)
+    thread.start()
+    try:
+        assert started.wait(1.0)
+        time.sleep(0.1)
+        # The in-flight token is not interrupted: only the external
+        # scheduler processing deadline can bound a blocked kernel.
+        assert not finished.is_set()
+    finally:
+        release.set()
+        thread.join(2.0)
+
+    assert finished.is_set()
 
 
 class FakeTokenizer:

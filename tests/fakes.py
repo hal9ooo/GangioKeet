@@ -15,7 +15,7 @@ class FakeLLM:
     def __init__(self):
         self.calls = []
 
-    def clean(self, raw_text, profile):
+    def clean(self, raw_text, profile, *, deadline=None):
         self.calls.append((raw_text, profile))
         return f"[{profile}] {raw_text}"
 
@@ -49,7 +49,7 @@ class SlowFakeLLM(FakeLLM):
         self.delay = delay
         self.finished = False
 
-    def clean(self, raw_text, profile):
+    def clean(self, raw_text, profile, *, deadline=None):
         self.calls.append((raw_text, profile))
         time.sleep(self.delay)
         self.finished = True
@@ -77,7 +77,7 @@ class TracedFakeLLM(FakeLLM):
         self.events = events
         self.delay = delay
 
-    def clean(self, raw_text, profile):
+    def clean(self, raw_text, profile, *, deadline=None):
         self.events.append((time.perf_counter(), "start", "llm"))
         try:
             time.sleep(self.delay)
@@ -151,7 +151,7 @@ class BlockingFakeLLM(FakeLLM):
         self.finished = threading.Event()
         self.starts = 0
 
-    def clean(self, raw_text, profile):
+    def clean(self, raw_text, profile, *, deadline=None):
         self.starts += 1
         self.started.set()
         try:

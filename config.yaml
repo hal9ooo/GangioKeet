@@ -53,6 +53,7 @@ glossary:
     - "Cursor"
     - "WebSocket"
     - "GitHub"
+    - "Docker"
 
   phonetic_overrides:
     "elle ics ci": "LXC"

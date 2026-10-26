@@ -69,3 +69,15 @@ def test_override_does_not_match_inside_longer_phrase():
     cfg = RoutingConfig(fast_path_max_words=10,
                         self_correction_triggers=[])
     assert should_run_llm("fast a pine", cfg, OVERRIDES) is False
+
+
+def test_short_text_with_canonical_term_still_skips_llm():
+    cfg = RoutingConfig(fast_path_max_words=5,
+                        self_correction_triggers=[])
+    assert should_run_llm("usa docker ora", cfg, {}) is False
+
+
+def test_short_override_still_forces_llm():
+    cfg = RoutingConfig(fast_path_max_words=5,
+                        self_correction_triggers=[])
+    assert should_run_llm("fast a pi", cfg, OVERRIDES) is True

@@ -64,7 +64,7 @@ class CountingSlowLLM(SlowFakeLLM):
         super().__init__(delay)
         self.completed = 0
 
-    def clean(self, raw_text, profile):
+    def clean(self, raw_text, profile, *, deadline=None):
         super().clean(raw_text, profile)
         self.completed += 1
         return f"[{profile}] {raw_text}"
