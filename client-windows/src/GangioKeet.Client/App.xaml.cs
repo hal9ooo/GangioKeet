@@ -34,6 +34,8 @@ public partial class App : Application
     private WasapiAudioCapture? _capture;
     private LowLevelInputHooks? _hooks;
     private StaPasteDispatcher? _pasteDispatcher;
+    private SynthSoundPlayer? _soundPlayer;
+    private HttpClient? _healthHttp;
     private CancellationTokenSource? _healthCts;
 
     protected override void OnStartup(StartupEventArgs e)
@@ -108,6 +110,7 @@ public partial class App : Application
 
         _pill = new PillWindow();
         SynthSoundPlayer sound = new() { Enabled = config.Ui.SoundFeedback };
+        _soundPlayer = sound;
 
         _capture = new WasapiAudioCapture(config.Audio);
 
@@ -130,8 +133,9 @@ public partial class App : Application
         GestureDetector gestures = new(config.Hotkey, time);
         _hooks.RawEvent += (_, raw) => HandleRawEvent(raw, gestures, config);
 
+        _healthHttp = new HttpClient();
         _health = new HealthMonitor(
-            new HttpClient(),
+            _healthHttp,
             new Uri($"http://{config.Server.Host}:{config.Server.Port}"),
             ApiCredential.Resolve(config.Server.ApiKeyEnv, Environment.GetEnvironmentVariable),
             time,
@@ -253,29 +257,31 @@ public partial class App : Application
         {
             _logger?.Write("shutdown", "Shutting down.");
 
-            _healthCts?.Cancel();
-            _healthCts?.Dispose();
-            _health?.Dispose();
-
+            // Prima si ferma chi produce eventi (hook, health), poi chi li consuma,
+            // infine le risorse WPF. Mai il contrario: gli handler non devono toccare
+            // servizi già disposti.
             _hooks?.Dispose();
-            _tray?.Dispose();
-            _pill?.Close();
-            _pasteDispatcher?.Dispose();
-
-            _recovery?.Discard();
+            _healthCts?.Cancel();
 
             if (_controller is not null)
             {
                 try
                 {
-                    _controller.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(3));
+                    _controller.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(5));
                 }
                 catch (AggregateException)
                 {
                 }
             }
 
-            _capture?.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(3));
+            _health?.Dispose();
+            _healthCts?.Dispose();
+            _healthHttp?.Dispose();
+            _pasteDispatcher?.Dispose();
+            _soundPlayer?.Dispose();
+            _tray?.Dispose();
+            _pill?.Close();
+            _recovery?.Discard();
         }
         catch (Exception ex)
         {

@@ -133,6 +133,29 @@ public sealed class HealthMonitorTests
     }
 
     [Fact]
+    public async Task MalformedReadyBody_DoesNotStopTheMonitor()
+    {
+        FakeHealthServer server = new()
+        {
+            HealthResponse = """{"status":"ok"}""",
+            ReadyResponse = "not-json",
+        };
+
+        using HttpClient http = new(server);
+        FakeTimeProvider time = new();
+        HealthMonitor monitor = new(http, BaseUri, token: null, time, TimeSpan.FromSeconds(30));
+
+        HealthStatus? observed = null;
+        monitor.Changed += s => observed = s;
+        using CancellationTokenSource cts = new(TimeSpan.FromSeconds(5));
+        await monitor.RunAsync(cts.Token);
+
+        Assert.NotNull(observed);
+        Assert.True(observed.Value.Reachable);
+        Assert.Null(observed.Value.Ready);
+    }
+
+    [Fact]
     public async Task Token_IsSentWhenConfigured()
     {
         string? receivedToken = null;

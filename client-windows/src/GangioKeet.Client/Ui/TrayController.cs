@@ -20,6 +20,7 @@ public sealed class TrayController : IDisposable
     private readonly RecoveryStore _recovery;
     private readonly HealthMonitor _health;
     private readonly ClientConfig _config;
+    private readonly Action<Action> _post;
 
     private bool _disposed;
 
@@ -28,13 +29,28 @@ public sealed class TrayController : IDisposable
         DictationController controller,
         RecoveryStore recovery,
         HealthMonitor health,
-        ClientConfig config)
+        ClientConfig config,
+        Action<Action>? post = null)
     {
         _tray = tray;
         _controller = controller;
         _recovery = recovery;
         _health = health;
         _config = config;
+
+        // Gli eventi di health/recovery arrivano da thread di background: ogni modifica
+        // di oggetti WPF deve passare dal thread UI.
+        _post = post ?? (action =>
+        {
+            if (_tray.Dispatcher.CheckAccess())
+            {
+                action();
+            }
+            else
+            {
+                _tray.Dispatcher.BeginInvoke(action);
+            }
+        });
 
         _health.Changed += OnHealthChanged;
         _recovery.Changed += OnRecoveryChanged;
@@ -57,6 +73,7 @@ public sealed class TrayController : IDisposable
     private void BuildContextMenu()
     {
         _tray.ContextMenu = new System.Windows.Controls.ContextMenu();
+        _tray.ContextMenu.Opened += (_, _) => UpdateRecoveryMenu();
         _tray.ToolTipText = "GangioKeet";
 
         var retryItem = new System.Windows.Controls.MenuItem
@@ -105,14 +122,17 @@ public sealed class TrayController : IDisposable
 
     private void OnHealthChanged(HealthStatus status)
     {
-        _tray.ToolTipText = status.Reachable
-            ? "GangioKeet — Online"
-            : "GangioKeet — Offline";
+        _post(() =>
+        {
+            _tray.ToolTipText = status.Reachable
+                ? "GangioKeet — Online"
+                : "GangioKeet — Offline";
+        });
     }
 
     private void OnRecoveryChanged(object? sender, EventArgs e)
     {
-        UpdateRecoveryMenu();
+        _post(UpdateRecoveryMenu);
     }
 
     private void UpdateRecoveryMenu()
@@ -124,19 +144,33 @@ public sealed class TrayController : IDisposable
 
         if (_tray.ContextMenu.Items[0] is System.Windows.Controls.MenuItem retry)
         {
-            retry.IsEnabled = hasRecovery && !isActive;
+            retry.IsEnabled = RecoveryMenuPolicy.CanRetry(hasRecovery, isActive);
         }
 
         if (_tray.ContextMenu.Items[1] is System.Windows.Controls.MenuItem copy)
         {
-            copy.IsEnabled = hasRecovery;
+            copy.IsEnabled = RecoveryMenuPolicy.CanCopy(hasRecovery);
         }
 
         if (_tray.ContextMenu.Items[2] is System.Windows.Controls.MenuItem discard)
         {
-            discard.IsEnabled = hasRecovery;
+            discard.IsEnabled = RecoveryMenuPolicy.CanDiscard(hasRecovery);
         }
     }
+}
+
+/// <summary>
+/// Policy pura di abilitazione delle voci tray: testabile senza WPF.
+/// Il retry è disabilitato durante una sessione attiva; copia e scarta restano
+/// disponibili finché esiste un recupero.
+/// </summary>
+public static class RecoveryMenuPolicy
+{
+    public static bool CanRetry(bool hasRecovery, bool isActive) => hasRecovery && !isActive;
+
+    public static bool CanCopy(bool hasRecovery) => hasRecovery;
+
+    public static bool CanDiscard(bool hasRecovery) => hasRecovery;
 }
 
 /// <summary>Semplice implementazione di ICommand per binding ai menu item.</summary>

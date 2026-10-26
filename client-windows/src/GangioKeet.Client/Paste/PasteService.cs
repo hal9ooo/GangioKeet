@@ -135,6 +135,32 @@ public sealed class PasteService
         return current.ProcessId == target.ProcessId && current.Handle == target.Handle;
     }
 
+    /// <summary>
+    /// Copia il testo negli appunti senza incollarlo e senza ripristinare il contenuto
+    /// precedente: è un'azione esplicita dell'utente sul testo recuperato.
+    /// </summary>
+    public async Task<bool> CopyTextAsync(string text, CancellationToken ct)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return false;
+        }
+
+        try
+        {
+            await _dispatcher.InvokeAsync(() => _clipboard.SetText(text), ct).ConfigureAwait(false);
+            return true;
+        }
+        catch (ClipboardUnavailableException)
+        {
+            return false;
+        }
+        catch (OperationCanceledException)
+        {
+            return false;
+        }
+    }
+
     private async Task<bool> RestoreAsync(ClipboardSnapshot snapshot, uint sequence)
     {
         try

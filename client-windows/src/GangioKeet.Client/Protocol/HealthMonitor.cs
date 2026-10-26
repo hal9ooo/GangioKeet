@@ -123,7 +123,8 @@ public sealed class HealthMonitor : IDisposable
 
             reachable = healthResp.IsSuccessStatusCode;
 
-            // /ready è opzionale: 404 non è un errore
+            // /ready è opzionale: 404 non è un errore, e una risposta malformata non deve
+            // fermare il monitor (il tray resterebbe su uno stato obsoleto).
             try
             {
                 using var readyReq = new HttpRequestMessage(HttpMethod.Get, new Uri(_baseUri, "/ready"));
@@ -136,15 +137,22 @@ public sealed class HealthMonitor : IDisposable
                 if (readyResp.IsSuccessStatusCode)
                 {
                     string body = await readyResp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-                    using JsonDocument doc = JsonDocument.Parse(body);
-                    JsonElement root = doc.RootElement;
-
-                    if (root.TryGetProperty("status", out JsonElement statusEl))
+                    try
                     {
-                        string status = statusEl.GetString() ?? "";
-                        ready = status == "ready";
-                        busy = status == "busy";
-                        draining = status == "draining";
+                        using JsonDocument doc = JsonDocument.Parse(body);
+                        JsonElement root = doc.RootElement;
+
+                        if (root.TryGetProperty("status", out JsonElement statusEl))
+                        {
+                            string status = statusEl.GetString() ?? "";
+                            ready = status == "ready";
+                            busy = status == "busy";
+                            draining = status == "draining";
+                        }
+                    }
+                    catch (JsonException)
+                    {
+                        // /ready presente ma non interpretabile: resta "sconosciuto", non offline.
                     }
                 }
                 // 404 o altro errore su /ready = server senza /ready, non offline
@@ -152,6 +160,10 @@ public sealed class HealthMonitor : IDisposable
             catch (HttpRequestException)
             {
                 // /ready non disponibile, ignorato
+            }
+            catch (InvalidOperationException)
+            {
+                // Content non leggibile (es. risposta chiusa): ignorato
             }
         }
         catch (HttpRequestException)

@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using GangioKeet.Client.Controller;
 
 namespace GangioKeet.Client.Protocol;
 
@@ -14,7 +15,7 @@ namespace GangioKeet.Client.Protocol;
 /// questo livello non ritenta mai.
 /// </para>
 /// </summary>
-public sealed class DictationSession : IAsyncDisposable
+public sealed class DictationSession : IDictationSession
 {
     /// <summary>Frame testuale "stop" del contratto WebSocket (README §Messaggi client).</summary>
     public const string StopMessageJson = "{\"type\":\"stop\"}";

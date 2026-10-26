@@ -3,10 +3,8 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using GangioKeet.Client.Audio;
-using GangioKeet.Client.Configuration;
 using GangioKeet.Client.Context;
 using GangioKeet.Client.Controller;
-using GangioKeet.Client.Paste;
 using GangioKeet.Client.Protocol;
 using GangioKeet.Client.Recovery;
 
@@ -49,19 +47,81 @@ internal sealed class FakeCapture : IAudioCapture
     }
 }
 
-internal sealed class FakePasteService
+internal sealed class FakeSession : IDictationSession
 {
-    public PasteOutcome? Result { get; set; } = new(PasteStatus.Pasted, false);
-    public int PasteCalls { get; private set; }
-    public string? LastText { get; private set; }
-    public ForegroundWindowInfo? LastTarget { get; private set; }
+    private readonly TaskCompletionSource<SessionConnectOutcome> _connect =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource<DictationOutcome> _completion =
+        new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    public Task<PasteOutcome> PasteAsync(string text, ForegroundWindowInfo target, CancellationToken ct)
+    public bool Connected { get; set; } = true;
+    public string ConnectFailureCode { get; set; } = "connect_failed";
+    public TaskCompletionSource? ConnectGate { get; set; }
+
+    public List<byte[]> Enqueued { get; } = [];
+    public bool EnqueueResult { get; set; } = true;
+    public int FinishCalls { get; private set; }
+    public int AbortCalls { get; private set; }
+    public int DisposeCalls { get; private set; }
+    public bool Aborted { get; private set; }
+
+    public async Task<SessionConnectOutcome> ConnectAndStartAsync(
+        Uri uri, StartMessage start, string? token, TimeSpan connectTimeout, CancellationToken ct)
     {
-        PasteCalls++;
-        LastText = text;
-        LastTarget = target;
-        return Task.FromResult(Result ?? new PasteOutcome(PasteStatus.Pasted, false));
+        if (ConnectGate is not null)
+        {
+            await ConnectGate.Task.WaitAsync(connectTimeout, ct);
+        }
+
+        _connect.TrySetResult(Connected
+            ? new SessionConnectOutcome(true, null)
+            : new SessionConnectOutcome(false, new ConnectFailure(ConnectFailureCode, "fake", null)));
+        return await _connect.Task.WaitAsync(connectTimeout, ct);
+    }
+
+    public bool TryEnqueueAudio(ReadOnlyMemory<byte> ownedPcm)
+    {
+        if (!EnqueueResult) return false;
+        Enqueued.Add(ownedPcm.ToArray());
+        return true;
+    }
+
+    public Task<DictationOutcome> Completion => _completion.Task;
+
+    public Task<DictationOutcome> FinishAsync(CancellationToken ct)
+    {
+        FinishCalls++;
+        return _completion.Task.WaitAsync(ct);
+    }
+
+    public Task AbortAsync(CancellationToken ct)
+    {
+        AbortCalls++;
+        Aborted = true;
+        _completion.TrySetResult(new DictationOutcome(
+            DictationStatus.Aborted, null, new DictationError("aborted", "aborted", false)));
+        return Task.CompletedTask;
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        DisposeCalls++;
+        GC.SuppressFinalize(this);
+        return ValueTask.CompletedTask;
+    }
+
+    public void PublishResult(string text, IReadOnlyList<string>? warnings = null)
+    {
+        _completion.TrySetResult(new DictationOutcome(
+            DictationStatus.Result,
+            new ResultMessage("raw", text, false, new DictationMetrics(1, 2, 3), warnings ?? []),
+            null));
+    }
+
+    public void PublishError(string code, string message)
+    {
+        _completion.TrySetResult(new DictationOutcome(
+            DictationStatus.Error, null, new DictationError(code, message, true)));
     }
 }
 
@@ -105,5 +165,3 @@ internal sealed class FakeSoundPlayer : ISoundPlayer
     public List<SoundKind> PlayedSounds { get; } = [];
     public void Play(SoundKind kind) => PlayedSounds.Add(kind);
 }
-
-
