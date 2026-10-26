@@ -435,9 +435,10 @@ def test_launchd_plist_template():
     assert plist["StandardOutPath"].startswith(
         "__HOME__/Library/Logs/mlx-dictation/"
     )
-    assert plist["StandardErrPath"].startswith(
+    assert plist["StandardErrorPath"].startswith(
         "__HOME__/Library/Logs/mlx-dictation/"
     )
+    assert "StandardErrPath" not in plist
     assert "/Users/" not in TEMPLATE.read_text()
     assert "GANGIOKEET_API_KEY" not in TEMPLATE.read_text()
     assert "api_key" not in plist["EnvironmentVariables"]
@@ -459,6 +460,7 @@ def test_install_launchd_script_is_valid_and_idempotent():
     assert "unload" in text
     assert "bootstrap" in text
     assert "launchctl load" in text
+    assert "GANGIOKEET_RECORDING" in text
 
     # The key is read from the environment by an embedded Python snippet,
     # never expanded by the shell or passed through argv.
@@ -467,7 +469,7 @@ def test_install_launchd_script_is_valid_and_idempotent():
     assert '"$GANGIOKEET_API_KEY"' not in text
 
 
-def run_installer(tmp_path, api_key):
+def run_installer(tmp_path, api_key, recording=None):
     home = tmp_path / "home"
     home.mkdir()
     bin_dir = tmp_path / "bin"
@@ -495,6 +497,8 @@ def run_installer(tmp_path, api_key):
     }
     if api_key is not None:
         env["GANGIOKEET_API_KEY"] = api_key
+    if recording is not None:
+        env["GANGIOKEET_RECORDING"] = recording
 
     result = subprocess.run(
         ["bash", str(INSTALLER)],
@@ -538,9 +542,47 @@ def test_installer_omits_api_key_when_unset(tmp_path):
     assert result.returncode == 0, result.stderr
     plist = plistlib.loads(target.read_bytes())
     assert "GANGIOKEET_API_KEY" not in plist["EnvironmentVariables"]
+    assert "--recording" not in plist["ProgramArguments"]
     assert stat.S_IMODE(target.stat().st_mode) == 0o600
     assert "GANGIOKEET_API_KEY" not in result.stdout
     assert "GANGIOKEET_API_KEY" not in result.stderr
+
+
+def test_installer_adds_recording_flag_when_requested(tmp_path):
+    result, target, _, _ = run_installer(
+        tmp_path, None, recording="1"
+    )
+
+    assert result.returncode == 0, result.stderr
+    plist = plistlib.loads(target.read_bytes())
+    assert plist["ProgramArguments"][-1] == "--recording"
+    assert "GANGIOKEET_RECORDING" not in plist.get(
+        "EnvironmentVariables", {}
+    )
+    assert "recording mode enabled" in result.stdout
+
+
+def test_installer_combines_recording_and_api_key(tmp_path):
+    api_key = "test-token"
+    result, target, _, _ = run_installer(
+        tmp_path, api_key, recording="true"
+    )
+
+    assert result.returncode == 0, result.stderr
+    plist = plistlib.loads(target.read_bytes())
+    assert plist["ProgramArguments"][-1] == "--recording"
+    assert (
+        plist["EnvironmentVariables"]["GANGIOKEET_API_KEY"] == api_key
+    )
+
+
+def test_installer_rejects_invalid_recording_value(tmp_path):
+    result, _, _, _ = run_installer(
+        tmp_path, None, recording="maybe"
+    )
+
+    assert result.returncode != 0
+    assert "GANGIOKEET_RECORDING" in result.stderr
 
 
 def test_module_entrypoint_runs_main():

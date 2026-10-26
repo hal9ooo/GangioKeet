@@ -147,12 +147,22 @@ la sopravvivenza ai riavvii usare il LaunchAgent qui sotto.
 ./deploy/install_launchd.sh
 ```
 
+Per installare il LaunchAgent già in modalità registrazione:
+
+```bash
+GANGIOKEET_RECORDING=1 ./deploy/install_launchd.sh
+```
+
+La variabile viene usata solo dall'installer: aggiunge `--recording` agli
+argomenti del plist locale. Senza la variabile la registrazione resta spenta;
+per disattivarla basta rilanciare l'installer senza `GANGIOKEET_RECORDING`.
+
 Lo script:
 
 1. risolve `uv` dal `PATH`;
 2. crea `~/Library/Logs/mlx-dictation/`;
-3. sostituisce `__UV_PATH__` nel template e copia il plist in
-   `~/Library/LaunchAgents/com.gangio.mlx-dictation.plist`;
+3. sostituisce `__UV_PATH__`, `__HOME__` e `__PROJECT_DIR__` nel template e
+   copia il plist in `~/Library/LaunchAgents/com.gangio.mlx-dictation.plist`;
 4. rimuove un eventuale caricamento precedente e fa `bootstrap`, con
    fallback a `launchctl load`.
 
@@ -625,6 +635,12 @@ corpus delle proprie dettature:
 ```bash
 uv run python -m dictation_server.main --recording
 # equivalente: recording.enabled: true in config.yaml
+```
+
+Per farla partire anche al boot tramite LaunchAgent:
+
+```bash
+GANGIOKEET_RECORDING=1 ./deploy/install_launchd.sh
 ```
 
 Ogni dettatura completata (WebSocket o REST) scrive:

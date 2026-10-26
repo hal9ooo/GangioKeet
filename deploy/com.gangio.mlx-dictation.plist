@@ -25,7 +25,7 @@
     <true/>
     <key>StandardOutPath</key>
     <string>__HOME__/Library/Logs/mlx-dictation/stdout.log</string>
-    <key>StandardErrPath</key>
+    <key>StandardErrorPath</key>
     <string>__HOME__/Library/Logs/mlx-dictation/stderr.log</string>
 </dict>
 </plist>
