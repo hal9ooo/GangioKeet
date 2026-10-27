@@ -21,7 +21,8 @@
     ],
     "precision": "F16",
     "license": "Apache-2.0",
-    "runtime_id": "transcribe-vulkan"
+    "runtime_id": "transcribe-vulkan",
+    "family": "qwen3-asr"
   },
   "cleaner": {
     "candidate_id": "gemma4_e2b",
@@ -36,7 +37,8 @@
     ],
     "precision": "Q4_0",
     "license": "Apache-2.0",
-    "runtime_id": "llama-vulkan"
+    "runtime_id": "llama-vulkan",
+    "family": "gemma4"
   },
   "runtime": {
     "lock_path": "native/runtime-lock.json",

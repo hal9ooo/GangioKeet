@@ -44,10 +44,18 @@ public partial class App : Application
     private SynthSoundPlayer? _soundPlayer;
     private HttpClient? _monitorHttp;
     private CancellationTokenSource? _monitorCts;
+    private AppRuntime? _runtime;
+    private string? _localSttId;
+    private string? _localCleanerId;
+    private string? _localBackend;
+    private readonly object _shutdownGate = new();
+    private Task? _shutdownTask;
+    private int _shutdownRequested;
 
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        SessionEnding += OnSessionEnding;
 
         _guard = new SingleInstanceGuard("GangioKeet");
         _instanceHandle = _guard.TryAcquire();
@@ -149,22 +157,37 @@ public partial class App : Application
         _soundPlayer = sound;
 
         _capture = new WasapiAudioCapture(config.Audio);
-
-        _monitorHttp = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
-        _probe = new EndpointProbe(
-            _monitorHttp,
-            ApiCredential.Resolve(config.Server.ApiKeyEnv, Environment.GetEnvironmentVariable),
-            time);
-        _selector = new EndpointSelector(config.Endpoints!, config.Server.SwitchMarginPercent);
         _telemetry = new TelemetryStore();
-        _monitor = new EndpointMonitor(
-            _probe,
-            _selector,
-            time,
-            TimeSpan.FromSeconds(config.Server.HealthCheckIntervalSeconds),
-            TimeSpan.FromSeconds(config.Server.HealthCheckTimeoutSeconds));
 
-        RemoteDictationBackend backend = new(CreateSession, _selector, config, time);
+        IDictationBackend backend;
+        if (config.Inference.Mode == "local")
+        {
+            LocalInferenceSetup setup = LocalInferenceFactory.Create(config);
+            _localSttId = setup.SttId;
+            _localCleanerId = setup.CleanerId;
+            _localBackend = setup.Backend;
+            _runtime = new AppRuntime(setup.Pipeline);
+            backend = new LocalDictationBackend(setup.Pipeline, () => _runtime.IsReady);
+            _ = StartLocalRuntimeAsync(_runtime);
+        }
+        else
+        {
+            _monitorHttp = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+            _probe = new EndpointProbe(
+                _monitorHttp,
+                ApiCredential.Resolve(config.Server.ApiKeyEnv, Environment.GetEnvironmentVariable),
+                time);
+            EndpointSelector selector = new(config.Endpoints!, config.Server.SwitchMarginPercent);
+            _selector = selector;
+            _monitor = new EndpointMonitor(
+                _probe,
+                selector,
+                time,
+                TimeSpan.FromSeconds(config.Server.HealthCheckIntervalSeconds),
+                TimeSpan.FromSeconds(config.Server.HealthCheckTimeoutSeconds));
+            backend = new RemoteDictationBackend(CreateSession, selector, config, time);
+        }
+
         _controller = new DictationController(
             _capture,
             backend,
@@ -200,12 +223,29 @@ public partial class App : Application
             new AudioDevices(),
             ConfigLoader.DefaultPath,
             ShowSettings,
-            _logger);
+            _logger,
+            exit: RequestShutdownAsync);
 
-        _monitorCts = new CancellationTokenSource();
-        _ = _monitor.RunAsync(_monitorCts.Token);
+        if (_monitor is not null)
+        {
+            _monitorCts = new CancellationTokenSource();
+            _ = _monitor.RunAsync(_monitorCts.Token);
+        }
 
         _hooks.Start();
+    }
+
+    private async Task StartLocalRuntimeAsync(AppRuntime runtime)
+    {
+        try
+        {
+            await runtime.StartAsync(CancellationToken.None).ConfigureAwait(true);
+            _logger?.Write("local_runtime", runtime.State.ToString());
+        }
+        catch (Exception error)
+        {
+            _logger?.Write("local_runtime_failed", error.Message);
+        }
     }
 
     private void ShowSettings()
@@ -216,23 +256,34 @@ public partial class App : Application
             return;
         }
 
-        if (_selector is null || _probe is null || _telemetry is null)
+        if (_telemetry is null)
         {
             return;
         }
 
-        SettingsWindow window = new(
-            _selector,
-            _probe,
-            _telemetry,
-            ConfigLoader.DefaultPath,
-            OnEndpointsSaved,
-            _logger);
+        SettingsWindow window = _selector is null || _probe is null
+            ? new(null, null, _telemetry, ConfigLoader.DefaultPath, _ => { }, _logger,
+                LocalInfo, OnModeSaved)
+            : new(_selector, _probe, _telemetry, ConfigLoader.DefaultPath, OnEndpointsSaved, _logger);
 
         window.Closed += (_, _) => _settings = null;
         _settings = window;
         window.Show();
         window.Activate();
+    }
+
+    private LocalSettingsInfo LocalInfo() => new(
+        _config?.Inference.Mode ?? "local",
+        _localBackend ?? _config?.Inference.Backend ?? "vulkan",
+        _localSttId is null || _localCleanerId is null ? "—" : $"{_localSttId} + {_localCleanerId}",
+        _runtime?.State.ToString() ?? "Stopped",
+        _runtime?.Failure?.Message);
+
+    private void OnModeSaved(string mode)
+    {
+        if (_config is null) return;
+        _config.Inference.Mode = mode;
+        _logger?.Write("inference_mode_saved", mode);
     }
 
     private void OnEndpointsSaved(IReadOnlyList<EndpointConfig> endpoints)
@@ -337,40 +388,99 @@ public partial class App : Application
         _gestures?.OnRaw(raw);
     }
 
-    protected override void OnExit(ExitEventArgs e)
+    public async Task RequestShutdownAsync()
+    {
+        if (Interlocked.Exchange(ref _shutdownRequested, 1) != 0)
+        {
+            Task? existing;
+            lock (_shutdownGate) existing = _shutdownTask;
+            if (existing is not null) await existing.ConfigureAwait(true);
+            return;
+        }
+
+        Task stopping;
+        lock (_shutdownGate) stopping = _shutdownTask ??= ShutdownCoreAsync();
+        await stopping.ConfigureAwait(true);
+        Shutdown();
+    }
+
+    private async Task StopOwnedAsync()
+    {
+        // Prima si ferma chi produce eventi (hook, gesture pump, monitor),
+        // poi chi li consuma, infine le risorse native. Nessun timeout: il
+        // runtime attende il ritorno delle chiamate native prima del dispose.
+        _hooks?.Dispose();
+        _gestures?.Dispose();
+        _monitorCts?.Cancel();
+        _monitor?.Dispose();
+
+        if (_controller is not null)
+        {
+            await _controller.AbortAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
+        if (_runtime is not null)
+        {
+            await _runtime.StopAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+
+        if (_controller is not null)
+        {
+            await _controller.DisposeAsync().ConfigureAwait(false);
+        }
+    }
+
+    private void DisposeDesktop()
+    {
+        _monitorCts?.Dispose();
+        _monitorHttp?.Dispose();
+        _pasteDispatcher?.Dispose();
+        _soundPlayer?.Dispose();
+        _tray?.Dispose();
+        _settings?.Close();
+        _splash?.Close();
+        _pill?.Close();
+        _recovery?.Discard();
+    }
+
+    private async Task ShutdownCoreAsync()
     {
         try
         {
             _logger?.Write("shutdown", "Shutting down.");
+            await StopOwnedAsync().ConfigureAwait(false);
+            await Dispatcher.InvokeAsync(DisposeDesktop);
+        }
+        catch (Exception ex)
+        {
+            _logger?.Write("shutdown_error", ex.Message);
+        }
+    }
 
-            // Prima si ferma chi produce eventi (hook, gesture pump, monitor),
-            // poi chi li consuma, infine le risorse WPF. Mai il contrario: gli
-            // handler non devono toccare servizi già disposti.
-            _hooks?.Dispose();
-            _gestures?.Dispose();
-            _monitorCts?.Cancel();
-            _monitor?.Dispose();
+    private void OnSessionEnding(object sender, SessionEndingCancelEventArgs e)
+    {
+        // WPF calls this on the UI thread. Blocking here would deadlock the
+        // continuations that eventually call Shutdown(); let the normal
+        // asynchronous path finish while Windows is ending the session.
+        _ = RequestShutdownAsync();
+    }
 
-            if (_controller is not null)
+    protected override void OnExit(ExitEventArgs e)
+    {
+        try
+        {
+            if (_shutdownTask is null)
             {
-                try
-                {
-                    _controller.DisposeAsync().AsTask().Wait(TimeSpan.FromSeconds(5));
-                }
-                catch (AggregateException)
-                {
-                }
+                // Solo il percorso di emergenza (chiusura non passata da
+                // RequestShutdownAsync) blocca qui. Il percorso normale ha già
+                // atteso il ritorno nativo prima di Shutdown().
+                StopOwnedAsync().GetAwaiter().GetResult();
+                DisposeDesktop();
             }
-
-            _monitorCts?.Dispose();
-            _monitorHttp?.Dispose();
-            _pasteDispatcher?.Dispose();
-            _soundPlayer?.Dispose();
-            _tray?.Dispose();
-            _settings?.Close();
-            _splash?.Close();
-            _pill?.Close();
-            _recovery?.Discard();
+            else
+            {
+                _shutdownTask.GetAwaiter().GetResult();
+            }
         }
         catch (Exception ex)
         {

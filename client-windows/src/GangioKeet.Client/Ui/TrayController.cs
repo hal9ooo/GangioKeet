@@ -20,13 +20,14 @@ public sealed class TrayController : IDisposable
     private readonly TaskbarIcon _tray;
     private readonly DictationController _controller;
     private readonly RecoveryStore _recovery;
-    private readonly EndpointSelector _selector;
+    private readonly EndpointSelector? _selector;
     private readonly ClientConfig _config;
     private readonly IAudioDeviceProvider _devices;
     private readonly string _configPath;
     private readonly Action _openSettings;
     private readonly FileLogger? _logger;
     private readonly Action<Action> _post;
+    private readonly Func<Task>? _exit;
 
     private string? _selectedDeviceId;
     private System.Windows.Controls.MenuItem? _microphoneMenu;
@@ -36,18 +37,20 @@ public sealed class TrayController : IDisposable
         TaskbarIcon tray,
         DictationController controller,
         RecoveryStore recovery,
-        EndpointSelector selector,
+        EndpointSelector? selector,
         ClientConfig config,
         IAudioDeviceProvider devices,
         string configPath,
         Action openSettings,
         FileLogger? logger = null,
-        Action<Action>? post = null)
+        Action<Action>? post = null,
+        Func<Task>? exit = null)
     {
         _tray = tray;
         _controller = controller;
         _recovery = recovery;
         _selector = selector;
+        _exit = exit;
         _config = config;
         _devices = devices;
         _configPath = configPath;
@@ -69,7 +72,7 @@ public sealed class TrayController : IDisposable
             }
         });
 
-        _selector.Changed += OnEndpointChanged;
+        if (_selector is not null) _selector.Changed += OnEndpointChanged;
         _recovery.Changed += OnRecoveryChanged;
 
         BuildContextMenu();
@@ -82,7 +85,7 @@ public sealed class TrayController : IDisposable
         if (_disposed) return;
         _disposed = true;
 
-        _selector.Changed -= OnEndpointChanged;
+        if (_selector is not null) _selector.Changed -= OnEndpointChanged;
         _recovery.Changed -= OnRecoveryChanged;
 
         _tray.Dispose();
@@ -147,11 +150,20 @@ public sealed class TrayController : IDisposable
             Header = "Impostazioni…",
             Command = new RelayCommand(_ => _openSettings()),
         });
-        _tray.ContextMenu.Items.Add(new System.Windows.Controls.MenuItem
+        var exitItem = new System.Windows.Controls.MenuItem { Header = "Esci" };
+        exitItem.Click += async (_, _) =>
         {
-            Header = "Esci",
-            Command = new RelayCommand(_ => Application.Current.Shutdown()),
-        });
+            try
+            {
+                if (_exit is not null) await _exit();
+                else Application.Current.Shutdown();
+            }
+            catch (Exception ex)
+            {
+                _logger?.Write("shutdown_request_failed", ex.Message);
+            }
+        };
+        _tray.ContextMenu.Items.Add(exitItem);
 
         _tray.TrayMouseDoubleClick += (_, _) => _openSettings();
     }
@@ -239,6 +251,12 @@ public sealed class TrayController : IDisposable
 
     private void UpdateTooltip()
     {
+        if (_selector is null)
+        {
+            _tray.ToolTipText = "GangioKeet — Locale";
+            return;
+        }
+
         EndpointConfig active = _selector.Active;
         EndpointStats stats = _selector.StatsFor(active);
 

@@ -61,7 +61,58 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <Grid Grid.Row="0" Margin="0,0,0,12">
+        <Border x:Name="LocalPanel"
+                Grid.Row="0"
+                Background="#252525"
+                BorderBrush="#3A3A3A"
+                BorderThickness="1"
+                CornerRadius="8"
+                Padding="12"
+                Margin="0,0,0,12"
+                Visibility="Collapsed">
+            <StackPanel>
+                <TextBlock Text="Motore locale"
+                           FontSize="18"
+                           FontWeight="SemiBold" />
+                <TextBlock Text="Nessun server o probe di rete in questa modalità."
+                           Foreground="#9E9E9E"
+                           Margin="0,2,0,10" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="160" />
+                        <ColumnDefinition Width="160" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0" Margin="0,0,12,0">
+                        <TextBlock Text="modalità" Style="{StaticResource Label}" />
+                        <ComboBox x:Name="ModeCombo"
+                                  SelectionChanged="ModeCombo_SelectionChanged">
+                            <ComboBoxItem Content="Locale" Tag="local" />
+                            <ComboBoxItem Content="Remoto" Tag="remote" />
+                        </ComboBox>
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Margin="0,0,12,0">
+                        <TextBlock Text="backend" Style="{StaticResource Label}" />
+                        <TextBlock x:Name="LocalBackendText" Text="—" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="stato" Style="{StaticResource Label}" />
+                        <TextBlock x:Name="LocalStateText" Text="—" />
+                    </StackPanel>
+                </Grid>
+                <TextBlock x:Name="LocalPairText"
+                           Text="—"
+                           Foreground="#E0E0E0"
+                           Margin="0,8,0,0"
+                           TextWrapping="Wrap" />
+                <TextBlock x:Name="LocalErrorText"
+                           Foreground="#FF8A65"
+                           Margin="0,4,0,0"
+                           TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+
+        <Grid x:Name="RemoteHeader" Grid.Row="0" Margin="0,0,0,12">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="Auto" />
@@ -89,7 +140,8 @@
             </Border>
         </Grid>
 
-        <ScrollViewer Grid.Row="1"
+        <ScrollViewer x:Name="RemoteList"
+                      Grid.Row="1"
                       VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Auto">
             <ItemsControl x:Name="RowsList">
@@ -203,7 +255,8 @@
             </ItemsControl>
         </ScrollViewer>
 
-        <Border Grid.Row="2"
+        <Border x:Name="RemoteTelemetry"
+                Grid.Row="2"
                 Background="#252525"
                 BorderBrush="#3A3A3A"
                 BorderThickness="1"
@@ -222,7 +275,7 @@
             </StackPanel>
         </Border>
 
-        <Grid Grid.Row="3" Margin="0,0,0,6">
+        <Grid x:Name="RemoteButtons" Grid.Row="3" Margin="0,0,0,6">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />

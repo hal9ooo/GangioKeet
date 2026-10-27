@@ -5,6 +5,8 @@ namespace GangioKeet.Client.Controller;
 
 public sealed class LocalDictationBackend(IInferencePipeline pipeline, Func<bool>? isReady = null) : IDictationBackend
 {
+    public bool IsReady => isReady?.Invoke() ?? true;
+
     public IActiveDictationTurn CreateTurn(StartMessage start) => new LocalDictationTurn(pipeline, start, isReady: isReady);
 
     public async Task<DictationOutcome> RetryAsync(ReadOnlyMemory<byte> pcm, StartMessage start, CancellationToken ct)

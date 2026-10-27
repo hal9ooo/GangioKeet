@@ -34,6 +34,19 @@ public sealed class DictationControllerTests
     }
 
     [Fact]
+    public void Start_LocalBackendNotReady_DoesNotCapture()
+    {
+        Harness h = new(backend: new NotReadyBackend());
+
+        h.Controller.Start();
+
+        Assert.Equal(ClientState.Idle, h.Controller.State);
+        Assert.Equal(0, h.Capture.StartCalls);
+        Assert.Equal(PillState.Error, h.Pill.LastState);
+        Assert.Contains("locali", h.Pill.LastMessage);
+    }
+
+    [Fact]
     public void DoubleStart_SecondCallIsIgnored()
     {
         Harness h = new();
@@ -388,6 +401,14 @@ public sealed class DictationControllerTests
         {
             await Task.Delay(10, cts.Token);
         }
+    }
+
+    private sealed class NotReadyBackend : IDictationBackend
+    {
+        public bool IsReady => false;
+        public IActiveDictationTurn CreateTurn(StartMessage start) => throw new InvalidOperationException("not ready");
+        public Task<DictationOutcome> RetryAsync(ReadOnlyMemory<byte> pcm, StartMessage start, CancellationToken ct)
+            => throw new InvalidOperationException("not ready");
     }
 
     private sealed class Harness

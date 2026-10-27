@@ -98,6 +98,11 @@ public sealed class DictationController : IAsyncDisposable
     public void Start()
     {
         if (_state != ClientState.Idle) return;
+        if (!_backend.IsReady)
+        {
+            _pill.Show(PillState.Error, "Modelli locali non pronti", null);
+            return;
+        }
 
         nint handle = _foreground.CaptureHandle();
         if (handle == 0) return;

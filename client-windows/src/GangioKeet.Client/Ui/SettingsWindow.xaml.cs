@@ -16,23 +16,28 @@ namespace GangioKeet.Client.Ui;
 /// </summary>
 public sealed partial class SettingsWindow : Window
 {
-    private readonly EndpointSelector _selector;
-    private readonly EndpointProbe _probe;
-    private readonly TelemetryStore _telemetry;
+    private readonly EndpointSelector? _selector;
+    private readonly EndpointProbe? _probe;
+    private readonly TelemetryStore? _telemetry;
     private readonly string _configPath;
     private readonly Action<IReadOnlyList<EndpointConfig>> _onSaved;
     private readonly FileLogger? _logger;
+    private readonly Func<LocalSettingsInfo>? _localInfo;
+    private readonly Action<string>? _onModeSaved;
     private readonly DispatcherTimer _timer;
 
     private TimeSpan _probeTimeout = TimeSpan.FromSeconds(2);
+    private bool _initializing;
 
     public SettingsWindow(
-        EndpointSelector selector,
-        EndpointProbe probe,
-        TelemetryStore telemetry,
+        EndpointSelector? selector,
+        EndpointProbe? probe,
+        TelemetryStore? telemetry,
         string configPath,
         Action<IReadOnlyList<EndpointConfig>> onSaved,
-        FileLogger? logger = null)
+        FileLogger? logger = null,
+        Func<LocalSettingsInfo>? localInfo = null,
+        Action<string>? onModeSaved = null)
     {
         _selector = selector;
         _probe = probe;
@@ -40,9 +45,19 @@ public sealed partial class SettingsWindow : Window
         _configPath = configPath;
         _onSaved = onSaved;
         _logger = logger;
+        _localInfo = localInfo;
+        _onModeSaved = onModeSaved;
 
         InitializeComponent();
         RowsList.ItemsSource = Rows;
+
+        bool local = _selector is null;
+        LocalPanel.Visibility = local ? Visibility.Visible : Visibility.Collapsed;
+        RemoteHeader.Visibility = local ? Visibility.Collapsed : Visibility.Visible;
+        RemoteList.Visibility = local ? Visibility.Collapsed : Visibility.Visible;
+        RemoteTelemetry.Visibility = local ? Visibility.Collapsed : Visibility.Visible;
+        RemoteButtons.Visibility = local ? Visibility.Collapsed : Visibility.Visible;
+        if (local) UpdateLocal();
 
         _timer = new DispatcherTimer(
             TimeSpan.FromMilliseconds(500),
@@ -56,10 +71,15 @@ public sealed partial class SettingsWindow : Window
     }
 
     public ObservableCollection<EndpointRowViewModel> Rows { get; } = [];
+    public bool UsesLocalServices => _selector is null;
+    public bool IsLocalPanelVisible => LocalPanel.Visibility == Visibility.Visible;
+    public string LocalState => LocalStateText.Text;
+    public string LocalPair => LocalPairText.Text;
 
     private void LoadFromConfig(ClientConfig config)
     {
         Rows.Clear();
+        SetMode(config.Inference.Mode);
 
         if (config.Endpoints is null)
         {
@@ -72,6 +92,20 @@ public sealed partial class SettingsWindow : Window
         }
 
         _probeTimeout = TimeSpan.FromSeconds(config.Server.HealthCheckTimeoutSeconds);
+    }
+
+    private void SetMode(string mode)
+    {
+        _initializing = true;
+        foreach (ComboBoxItem item in ModeCombo.Items)
+        {
+            if (string.Equals(item.Tag as string, mode, StringComparison.Ordinal))
+            {
+                ModeCombo.SelectedItem = item;
+                break;
+            }
+        }
+        _initializing = false;
     }
 
     private void ReloadFromDisk()
@@ -124,6 +158,7 @@ public sealed partial class SettingsWindow : Window
 
     private async void VerifyNow_Click(object sender, RoutedEventArgs e)
     {
+        if (_probe is null) return;
         StatusText.Text = "Verifica in corso…";
 
         foreach (EndpointRowViewModel row in Rows)
@@ -205,8 +240,36 @@ public sealed partial class SettingsWindow : Window
         StatusText.Text = "Salvato. Il monitor riprova subito gli endpoint.";
     }
 
+    private void ModeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_initializing || _onModeSaved is null || ModeCombo.SelectedItem is not ComboBoxItem item
+            || item.Tag is not string mode) return;
+        if (!ConfigWriter.SetInferenceMode(_configPath, mode))
+        {
+            StatusText.Text = "Salvataggio modalità non riuscito: configurazione invariata.";
+            return;
+        }
+        _onModeSaved(mode);
+        StatusText.Text = "Modalità salvata. Riavvia GangioKeet per applicarla.";
+    }
+
+    private void UpdateLocal()
+    {
+        LocalSettingsInfo info = _localInfo?.Invoke() ?? new("local", "vulkan", "—", "—", null);
+        LocalBackendText.Text = info.Backend;
+        LocalStateText.Text = info.State;
+        LocalPairText.Text = info.Pair;
+        LocalErrorText.Text = info.Error ?? "";
+    }
+
     private void Refresh()
     {
+        if (_selector is null)
+        {
+            UpdateLocal();
+            return;
+        }
+
         IReadOnlyList<EndpointStats> snapshot = _selector.Snapshot();
         var byKey = new Dictionary<string, EndpointStats>(StringComparer.OrdinalIgnoreCase);
         foreach (EndpointStats stats in snapshot)
@@ -242,7 +305,10 @@ public sealed partial class SettingsWindow : Window
             ? $"Auto · {active.Name}"
             : $"Auto · {active.Name} · {EndpointFormatPolicy.Latency(activeStats.MedianLatencyMs)}";
 
-        TelemetryText.Text = FormatTelemetry(_telemetry.Snapshot());
+        if (_telemetry is not null)
+        {
+            TelemetryText.Text = FormatTelemetry(_telemetry.Snapshot());
+        }
     }
 
     private static string? TryCurrentKey(EndpointRowViewModel row)
