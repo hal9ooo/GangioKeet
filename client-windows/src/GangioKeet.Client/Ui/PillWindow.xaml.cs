@@ -29,6 +29,9 @@ public sealed partial class PillWindow : Window, IPillView
     private static readonly SolidColorBrush OrangeBrush = new(Color.FromRgb(0xFF, 0x98, 0x00));
 
     private readonly System.Windows.Threading.DispatcherTimer _levelTimer;
+    private readonly WaveformHistory _waveform = new();
+    private readonly System.Windows.Shapes.Rectangle[] _bars =
+        new System.Windows.Shapes.Rectangle[WaveformHistory.BarCount];
     private double _currentLevel;
 
     public PillWindow()
@@ -39,11 +42,33 @@ public sealed partial class PillWindow : Window, IPillView
         _ = new WindowInteropHelper(this).EnsureHandle();
         PositionPill();
 
+        CreateWaveformBars();
+
         _levelTimer = new System.Windows.Threading.DispatcherTimer(
             TimeSpan.FromMilliseconds(50),
             System.Windows.Threading.DispatcherPriority.Normal,
             (_, _) => UpdateLevelDot(),
             Dispatcher);
+    }
+
+    private void CreateWaveformBars()
+    {
+        for (int i = 0; i < _bars.Length; i++)
+        {
+            var bar = new System.Windows.Shapes.Rectangle
+            {
+                Width = 3,
+                Height = 2,
+                RadiusX = 1,
+                RadiusY = 1,
+                Fill = GreenBrush,
+                Margin = new Thickness(0, 0, 2, 0),
+                VerticalAlignment = VerticalAlignment.Bottom,
+            };
+
+            _bars[i] = bar;
+            WaveformPanel.Children.Add(bar);
+        }
     }
 
     /// <summary>Modalità di posizionamento: <c>center_bottom</c> (default) o <c>cursor</c>.</summary>
@@ -59,7 +84,18 @@ public sealed partial class PillWindow : Window, IPillView
 
             StatusText.Text = message ?? StateToDefaultMessage(state);
             StatusDot.Fill = StateToColor(state);
-            _levelTimer.IsEnabled = state is PillState.Recording;
+
+            bool recording = state is PillState.Recording;
+            WaveformPanel.Visibility = recording ? Visibility.Visible : Visibility.Collapsed;
+            StatusText.Visibility = recording ? Visibility.Collapsed : Visibility.Visible;
+
+            if (recording)
+            {
+                _waveform.Reset();
+                RenderWaveform();
+            }
+
+            _levelTimer.IsEnabled = recording;
         });
     }
 
@@ -88,7 +124,7 @@ public sealed partial class PillWindow : Window, IPillView
 
     public void SetLevel(double level)
     {
-        _currentLevel = level;
+        Volatile.Write(ref _currentLevel, level);
     }
 
     private void OnSourceInitialized(object? sender, EventArgs e)
@@ -108,9 +144,32 @@ public sealed partial class PillWindow : Window, IPillView
 
     private void UpdateLevelDot()
     {
-        double size = 6 + _currentLevel * 8; // da 6 a 14 px
+        double level = Volatile.Read(ref _currentLevel);
+
+        double size = 6 + level * 8; // da 6 a 14 px
         StatusDot.Width = size;
         StatusDot.Height = size;
+
+        // Il timer gira solo durante Recording: ogni tick è un campione della
+        // forma d'onda.
+        _waveform.Push(level);
+        RenderWaveform();
+    }
+
+    private void RenderWaveform()
+    {
+        IReadOnlyList<byte> levels = _waveform.Levels;
+        int offset = WaveformHistory.BarCount - levels.Count;
+
+        for (int i = 0; i < _bars.Length; i++)
+        {
+            byte level = i >= offset && i - offset < levels.Count
+                ? levels[i - offset]
+                : (byte)0;
+
+            // 2, 6, 10, 14 px: quantizzato, leggero, nessun ridimensionamento della pill.
+            _bars[i].Height = 2 + level * 4;
+        }
     }
 
     private void PositionPill()
