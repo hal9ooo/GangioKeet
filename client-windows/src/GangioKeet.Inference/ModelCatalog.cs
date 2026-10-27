@@ -46,6 +46,9 @@ public sealed class ModelCatalog
     public ModelArtifact Get(string id) => Candidates.FirstOrDefault(candidate => candidate.Id == id)
         ?? throw new KeyNotFoundException($"Unknown model candidate: {id}");
 
+    public static Task VerifyArtifactAsync(ModelArtifact candidate, string modelRoot, CancellationToken ct)
+        => new ModelCatalog([candidate]).VerifyAsync(modelRoot, ct);
+
     public async Task VerifyAsync(string modelRoot, CancellationToken ct)
     {
         string root = Path.GetFullPath(modelRoot);

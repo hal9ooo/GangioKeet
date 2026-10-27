@@ -1,11 +1,90 @@
 {
   "schema_version": 1,
   "candidates": [
-    {"id":"qwen3_asr_1_7b","family":"qwen3-asr","source_checkpoint":"Qwen/Qwen3-ASR-1.7B","revision":"","files":[],"precision":"unselected","license":"Apache-2.0","runtime_id":"transcribe-vulkan","status":"not_downloaded"},
-    {"id":"parakeet_v3","family":"parakeet-tdt","source_checkpoint":"nvidia/parakeet-tdt-0.6b-v3","revision":"","files":[],"precision":"unselected","license":"CC-BY-4.0","runtime_id":"transcribe-vulkan","status":"not_downloaded"},
-    {"id":"whisper_large_v3","family":"whisper","source_checkpoint":"openai/whisper-large-v3","revision":"","files":[],"precision":"unselected","license":"Apache-2.0","runtime_id":"whisper-vulkan","status":"not_downloaded"},
-    {"id":"qwen3_1_7b","family":"qwen3","source_checkpoint":"Qwen/Qwen3-1.7B","revision":"","files":[],"precision":"unselected","license":"Apache-2.0","runtime_id":"llama-vulkan","status":"not_downloaded"},
-    {"id":"gemma4_e2b","family":"gemma4","source_checkpoint":"google/gemma-4-E2B-it","artifact_repository":"google/gemma-4-E2B-it-qat-q4_0-gguf","revision":"","files":[],"precision":"Q4_0","license":"Apache-2.0","runtime_id":"llama-vulkan","status":"not_downloaded"},
-    {"id":"qwen3_4b","family":"qwen3","source_checkpoint":"Qwen/Qwen3-4B","revision":"","files":[],"precision":"unselected","license":"Apache-2.0","runtime_id":"llama-vulkan","status":"not_downloaded"}
+    {
+      "id": "qwen3_asr_1_7b",
+      "family": "qwen3-asr",
+      "source_checkpoint": "Qwen/Qwen3-ASR-1.7B",
+      "revision": "0e0a596e3959c3f3f2ab7d443a5b6f0f4a4bba6f",
+      "files": [
+        {
+          "path": "qwen3_asr_1_7b/Qwen3-ASR-1.7B-F16.gguf",
+          "sha256": "edb09c29b8f73822c639168d5ef72aa2dccdf8b4e48fc4b8518885352ff62c71"
+        }
+      ],
+      "precision": "F16",
+      "license": "Apache-2.0",
+      "runtime_id": "transcribe-vulkan",
+      "status": "downloaded",
+      "artifact_repository": "handy-computer/Qwen3-ASR-1.7B-gguf"
+    },
+    {
+      "id": "parakeet_v3",
+      "family": "parakeet-tdt",
+      "source_checkpoint": "nvidia/parakeet-tdt-0.6b-v3",
+      "revision": "d8d8c32cb2017c57e5307767343e97870f8a7f53",
+      "files": [
+        {
+          "path": "parakeet_v3/parakeet-tdt-0.6b-v3-F16.gguf",
+          "sha256": "d9ec7e2c39da7b4fec3e01e71e82c7f7bbe97741e08c0c054091bf3d520a41d3"
+        }
+      ],
+      "precision": "F16",
+      "license": "CC-BY-4.0",
+      "runtime_id": "transcribe-vulkan",
+      "status": "downloaded",
+      "artifact_repository": "handy-computer/parakeet-tdt-0.6b-v3-gguf"
+    },
+    {
+      "id": "whisper_large_v3",
+      "family": "whisper",
+      "source_checkpoint": "openai/whisper-large-v3",
+      "revision": "274ad1d1cf680b7ee53cc70f78461394cd3a344b",
+      "files": [
+        {
+          "path": "whisper_large_v3/whisper-large-v3-F16.gguf",
+          "sha256": "e633ab1d74b0e98f4f57daedaee34291297dbbf01389bda3d890766600c1c584"
+        }
+      ],
+      "precision": "F16",
+      "license": "Apache-2.0",
+      "runtime_id": "transcribe-vulkan",
+      "status": "downloaded",
+      "artifact_repository": "handy-computer/whisper-large-v3-gguf"
+    },
+    {
+      "id": "qwen3_1_7b",
+      "family": "qwen3",
+      "source_checkpoint": "Qwen/Qwen3-1.7B",
+      "revision": "",
+      "files": [],
+      "precision": "unselected",
+      "license": "Apache-2.0",
+      "runtime_id": "llama-vulkan",
+      "status": "not_downloaded"
+    },
+    {
+      "id": "gemma4_e2b",
+      "family": "gemma4",
+      "source_checkpoint": "google/gemma-4-E2B-it",
+      "artifact_repository": "google/gemma-4-E2B-it-qat-q4_0-gguf",
+      "revision": "",
+      "files": [],
+      "precision": "Q4_0",
+      "license": "Apache-2.0",
+      "runtime_id": "llama-vulkan",
+      "status": "not_downloaded"
+    },
+    {
+      "id": "qwen3_4b",
+      "family": "qwen3",
+      "source_checkpoint": "Qwen/Qwen3-4B",
+      "revision": "",
+      "files": [],
+      "precision": "unselected",
+      "license": "Apache-2.0",
+      "runtime_id": "llama-vulkan",
+      "status": "not_downloaded"
+    }
   ]
 }

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import threading
 import time
 from pathlib import Path
 
@@ -163,11 +164,15 @@ async def test_process_cancellation_releases_lock_and_clears_metal_cache():
 @pytest.mark.asyncio
 async def test_cancellation_logs_worker_failure_type_only(caplog):
     secret = "testo dettato riservato"
+    loop = asyncio.get_running_loop()
+    started = asyncio.Event()
+    release = threading.Event()
 
     class SlowFailingLLM(FakeLLM):
         def clean(self, raw_text, profile, *, deadline=None):
             self.calls.append((raw_text, profile))
-            time.sleep(0.1)
+            loop.call_soon_threadsafe(started.set)
+            assert release.wait(5), "test did not release the worker"
             raise RuntimeError(f"llm exploded with {secret}")
 
     counter = ClearCounter()
@@ -176,8 +181,9 @@ async def test_cancellation_logs_worker_failure_type_only(caplog):
     )
     with caplog.at_level(logging.WARNING, logger="dictation_server.pipeline"):
         t = asyncio.create_task(p.process(make_silence(0.5)))
-        await asyncio.sleep(0.02)
+        await asyncio.wait_for(started.wait(), timeout=5)
         t.cancel()
+        release.set()
         with pytest.raises(asyncio.CancelledError):
             await t
 

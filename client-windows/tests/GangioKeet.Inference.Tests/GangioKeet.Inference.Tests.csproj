@@ -12,5 +12,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="../../src/GangioKeet.Inference/GangioKeet.Inference.csproj" />
+    <ProjectReference Include="../../tools/GangioKeet.Eval/GangioKeet.Eval.csproj" />
   </ItemGroup>
 </Project>
