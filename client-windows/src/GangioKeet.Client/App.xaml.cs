@@ -29,7 +29,10 @@ public partial class App : Application
     private DictationController? _controller;
     private TelemetryStore? _telemetry;
     private RecoveryStore? _recovery;
-    private HealthMonitor? _health;
+    private EndpointSelector? _selector;
+    private EndpointProbe? _probe;
+    private EndpointMonitor? _monitor;
+    private SettingsWindow? _settings;
     private TrayController? _tray;
     private PillWindow? _pill;
     private WasapiAudioCapture? _capture;
@@ -38,8 +41,8 @@ public partial class App : Application
     private GestureRouter? _gestureRouter;
     private StaPasteDispatcher? _pasteDispatcher;
     private SynthSoundPlayer? _soundPlayer;
-    private HttpClient? _healthHttp;
-    private CancellationTokenSource? _healthCts;
+    private HttpClient? _monitorHttp;
+    private CancellationTokenSource? _monitorCts;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -118,10 +121,19 @@ public partial class App : Application
 
         _capture = new WasapiAudioCapture(config.Audio);
 
-        EndpointSelector endpointSelector = new(
-            config.Endpoints!,
-            config.Server.SwitchMarginPercent);
+        _monitorHttp = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+        _probe = new EndpointProbe(
+            _monitorHttp,
+            ApiCredential.Resolve(config.Server.ApiKeyEnv, Environment.GetEnvironmentVariable),
+            time);
+        _selector = new EndpointSelector(config.Endpoints!, config.Server.SwitchMarginPercent);
         _telemetry = new TelemetryStore();
+        _monitor = new EndpointMonitor(
+            _probe,
+            _selector,
+            time,
+            TimeSpan.FromSeconds(config.Server.HealthCheckIntervalSeconds),
+            TimeSpan.FromSeconds(config.Server.HealthCheckTimeoutSeconds));
 
         _controller = new DictationController(
             _capture,
@@ -133,7 +145,7 @@ public partial class App : Application
             _pill,
             sound,
             config,
-            endpointSelector,
+            _selector,
             _telemetry,
             time);
 
@@ -147,17 +159,6 @@ public partial class App : Application
             time);
         _hooks.RawEvent += (_, raw) => HandleRawEvent(raw, config);
 
-        _healthHttp = new HttpClient();
-        _health = new HealthMonitor(
-            _healthHttp,
-            ServerEndpoint.HttpBase(config.Server),
-            ApiCredential.Resolve(config.Server.ApiKeyEnv, Environment.GetEnvironmentVariable),
-            time,
-            TimeSpan.FromSeconds(config.Server.HealthCheckIntervalSeconds));
-
-        _healthCts = new CancellationTokenSource();
-        _ = _health.RunAsync(_healthCts.Token);
-
         _tray = new TrayController(
             new TaskbarIcon
             {
@@ -165,13 +166,57 @@ public partial class App : Application
             },
             _controller,
             _recovery,
-            _health,
+            _selector,
             config,
             new AudioDevices(),
             ConfigLoader.DefaultPath,
+            ShowSettings,
             _logger);
 
+        _monitorCts = new CancellationTokenSource();
+        _ = _monitor.RunAsync(_monitorCts.Token);
+
         _hooks.Start();
+    }
+
+    private void ShowSettings()
+    {
+        if (_settings is not null)
+        {
+            _settings.Activate();
+            return;
+        }
+
+        if (_selector is null || _probe is null || _telemetry is null)
+        {
+            return;
+        }
+
+        SettingsWindow window = new(
+            _selector,
+            _probe,
+            _telemetry,
+            ConfigLoader.DefaultPath,
+            OnEndpointsSaved,
+            _logger);
+
+        window.Closed += (_, _) => _settings = null;
+        _settings = window;
+        window.Show();
+        window.Activate();
+    }
+
+    private void OnEndpointsSaved(IReadOnlyList<EndpointConfig> endpoints)
+    {
+        if (_config is null || _selector is null)
+        {
+            return;
+        }
+
+        _config.Endpoints = [.. endpoints];
+        _selector.Reset(endpoints);
+        _ = _monitor?.ProbeOnceAsync(CancellationToken.None);
+        _logger?.Write("endpoints_saved", $"{endpoints.Count} endpoint");
     }
 
     private static System.Windows.Media.ImageSource CreateTrayIcon()
@@ -250,12 +295,13 @@ public partial class App : Application
         {
             _logger?.Write("shutdown", "Shutting down.");
 
-            // Prima si ferma chi produce eventi (hook, gesture pump, health), poi chi li
-            // consuma, infine le risorse WPF. Mai il contrario: gli handler non devono
-            // toccare servizi già disposti.
+            // Prima si ferma chi produce eventi (hook, gesture pump, monitor),
+            // poi chi li consuma, infine le risorse WPF. Mai il contrario: gli
+            // handler non devono toccare servizi già disposti.
             _hooks?.Dispose();
             _gestures?.Dispose();
-            _healthCts?.Cancel();
+            _monitorCts?.Cancel();
+            _monitor?.Dispose();
 
             if (_controller is not null)
             {
@@ -268,12 +314,12 @@ public partial class App : Application
                 }
             }
 
-            _health?.Dispose();
-            _healthCts?.Dispose();
-            _healthHttp?.Dispose();
+            _monitorCts?.Dispose();
+            _monitorHttp?.Dispose();
             _pasteDispatcher?.Dispose();
             _soundPlayer?.Dispose();
             _tray?.Dispose();
+            _settings?.Close();
             _pill?.Close();
             _recovery?.Discard();
         }

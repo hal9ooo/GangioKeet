@@ -20,10 +20,11 @@ public sealed class TrayController : IDisposable
     private readonly TaskbarIcon _tray;
     private readonly DictationController _controller;
     private readonly RecoveryStore _recovery;
-    private readonly HealthMonitor _health;
+    private readonly EndpointSelector _selector;
     private readonly ClientConfig _config;
     private readonly IAudioDeviceProvider _devices;
     private readonly string _configPath;
+    private readonly Action _openSettings;
     private readonly FileLogger? _logger;
     private readonly Action<Action> _post;
 
@@ -35,25 +36,27 @@ public sealed class TrayController : IDisposable
         TaskbarIcon tray,
         DictationController controller,
         RecoveryStore recovery,
-        HealthMonitor health,
+        EndpointSelector selector,
         ClientConfig config,
         IAudioDeviceProvider devices,
         string configPath,
+        Action openSettings,
         FileLogger? logger = null,
         Action<Action>? post = null)
     {
         _tray = tray;
         _controller = controller;
         _recovery = recovery;
-        _health = health;
+        _selector = selector;
         _config = config;
         _devices = devices;
         _configPath = configPath;
+        _openSettings = openSettings;
         _logger = logger;
         _selectedDeviceId = config.Audio.InputDevice;
 
-        // Gli eventi di health/recovery arrivano da thread di background: ogni modifica
-        // di oggetti WPF deve passare dal thread UI.
+        // Gli eventi del monitor e del recovery arrivano da thread di background:
+        // ogni modifica di oggetti WPF deve passare dal thread UI.
         _post = post ?? (action =>
         {
             if (_tray.Dispatcher.CheckAccess())
@@ -66,11 +69,12 @@ public sealed class TrayController : IDisposable
             }
         });
 
-        _health.Changed += OnHealthChanged;
+        _selector.Changed += OnEndpointChanged;
         _recovery.Changed += OnRecoveryChanged;
 
         BuildContextMenu();
         UpdateRecoveryMenu();
+        UpdateTooltip();
     }
 
     public void Dispose()
@@ -78,7 +82,7 @@ public sealed class TrayController : IDisposable
         if (_disposed) return;
         _disposed = true;
 
-        _health.Changed -= OnHealthChanged;
+        _selector.Changed -= OnEndpointChanged;
         _recovery.Changed -= OnRecoveryChanged;
 
         _tray.Dispose();
@@ -140,9 +144,16 @@ public sealed class TrayController : IDisposable
         _tray.ContextMenu.Items.Add(new System.Windows.Controls.Separator());
         _tray.ContextMenu.Items.Add(new System.Windows.Controls.MenuItem
         {
+            Header = "Impostazioni…",
+            Command = new RelayCommand(_ => _openSettings()),
+        });
+        _tray.ContextMenu.Items.Add(new System.Windows.Controls.MenuItem
+        {
             Header = "Esci",
             Command = new RelayCommand(_ => Application.Current.Shutdown()),
         });
+
+        _tray.TrayMouseDoubleClick += (_, _) => _openSettings();
     }
 
     private async Task RefreshMicrophonesAsync()
@@ -221,14 +232,19 @@ public sealed class TrayController : IDisposable
         }
     }
 
-    private void OnHealthChanged(HealthStatus status)
+    private void OnEndpointChanged()
     {
-        _post(() =>
-        {
-            _tray.ToolTipText = status.Reachable
-                ? "GangioKeet — Online"
-                : "GangioKeet — Offline";
-        });
+        _post(UpdateTooltip);
+    }
+
+    private void UpdateTooltip()
+    {
+        EndpointConfig active = _selector.Active;
+        EndpointStats stats = _selector.StatsFor(active);
+
+        _tray.ToolTipText = stats.Measured && !stats.Reachable
+            ? "GangioKeet — Offline"
+            : $"GangioKeet — {active.Name} · {EndpointFormatPolicy.Latency(stats.MedianLatencyMs)}";
     }
 
     private void OnRecoveryChanged(object? sender, EventArgs e)
