@@ -12,7 +12,5 @@ collect_ignore = []
 if sys.platform != "darwin":
     collect_ignore += [
         "test_benchmark.py",
-        "test_stt_eval.py",
         "test_stt_eval_cleaners.py",
-        "test_stt_eval_ingest.py",
     ]

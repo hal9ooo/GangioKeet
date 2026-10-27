@@ -13,6 +13,8 @@ import re
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from stt_eval_punctuation import aggregate_punctuation, score_record
+
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_RAW = ROOT / ".superpowers" / "stt-benchmark" / "raw"
 DEFAULT_CLEANERS = ROOT / ".superpowers" / "stt-benchmark" / "cleaners"
@@ -128,6 +130,12 @@ def _cluster_bootstrap(
     ]
 
 
+def _unreviewed(entry: dict) -> bool:
+    return entry.get("reference_status") == "unreviewed" or (
+        not entry.get("is_silence", False)
+        and not (entry.get("reference_raw", "").strip() or entry.get("reference_final", "").strip()))
+
+
 def raw_summary(manifest: dict, raw_dir: Path, bootstrap: int) -> dict:
     out = {}
     baseline = None
@@ -135,12 +143,17 @@ def raw_summary(manifest: dict, raw_dir: Path, bootstrap: int) -> dict:
         data = json.loads(path.read_text(encoding="utf-8"))
         clip_rows = []
         bucket = defaultdict(list)
+        punctuation_scores = []
         for clip in data["clips"]:
-            e, n = counts(clip["raw"]["score"])
+            entry = manifest[clip["id"]]
+            unreviewed = _unreviewed(entry)
+            e, n = (0, 0) if unreviewed else counts(clip["raw"]["score"])
+            punctuation_scores.append(_punctuation_for(entry, clip["raw"]))
             clip_rows.append((e, n))
             bucket[manifest[clip["id"]]["duration_bucket"]].append((e, n))
         out[path.stem] = {
             "wer": aggregate(clip_rows),
+            "punctuation": aggregate_punctuation(punctuation_scores),
             "by_bucket": {k: aggregate(v) for k, v in bucket.items()},
             "p50_ms": data["pooled_latency"]["p50"],
             "p95_ms": data["pooled_latency"]["p95"],
@@ -150,7 +163,8 @@ def raw_summary(manifest: dict, raw_dir: Path, bootstrap: int) -> dict:
             "metal_mb": data.get("peak_metal_mb"),
             "nondeterministic": len(data.get("nondeterministic_clips", [])),
             "clips": {
-                c["id"]: counts(c["raw"]["score"]) for c in data["clips"]
+                c["id"]: ((0, 0) if _unreviewed(manifest[c["id"]])
+                          else counts(c["raw"]["score"])) for c in data["clips"]
             },
         }
         if path.stem == "parakeet_baseline":
@@ -181,6 +195,14 @@ def raw_summary(manifest: dict, raw_dir: Path, bootstrap: int) -> dict:
     return out
 
 
+def _punctuation_for(entry: dict, phase: dict) -> dict | None:
+    if _unreviewed(entry):
+        return None
+    if isinstance(phase.get("hypothesis"), str):
+        return score_record(entry, phase["hypothesis"])["punctuation"]
+    return phase.get("punctuation")
+
+
 def cleaner_summary(
     manifest: dict, raw: dict, cleaners_dir: Path, bootstrap: int
 ) -> dict:
@@ -196,13 +218,20 @@ def cleaner_summary(
         forced_latencies = []
         nondeterministic = 0
         warnings = Counter()
+        production_punctuation, forced_punctuation = [], []
         for clip in data["clips"]:
-            production = counts(clip["production"]["score"])
-            forced = counts(clip["forced"]["score"])
+            entry = manifest[clip["id"]]
+            unscored = _unreviewed(entry) or (
+                "reference_final" in entry and not entry["reference_final"].strip()
+                and not entry.get("is_silence", False))
+            production = (0, 0) if unscored else counts(clip["production"]["score"])
+            forced = (0, 0) if unscored else counts(clip["forced"]["score"])
+            production_punctuation.append(_punctuation_for(entry, clip["production"]))
+            forced_punctuation.append(_punctuation_for(entry, clip["forced"]))
             production_rows.append(production)
             forced_rows.append(forced)
             raw_counts = raw.get(stt_id, {}).get("clips", {}).get(clip["id"])
-            if raw_counts and raw_counts[1]:
+            if forced[1] and raw_counts and raw_counts[1]:
                 delta_pairs.append(
                     (forced[0], raw_counts[0], raw_counts[1])
                 )
@@ -228,6 +257,8 @@ def cleaner_summary(
             "cleaner": cleaner_id,
             "production_wer": production_wer,
             "forced_wer": aggregate(forced_rows),
+            "production_punctuation": aggregate_punctuation(production_punctuation),
+            "forced_punctuation": aggregate_punctuation(forced_punctuation),
             "production_p50_ms": _percentile(production_latencies, 0.5),
             "production_p95_ms": _percentile(production_latencies, 0.95),
             "forced_p50_ms": _percentile(forced_latencies, 0.5),

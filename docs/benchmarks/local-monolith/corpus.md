@@ -37,3 +37,19 @@ Download nel solo ambiente eval: datasets 5.1.0, soundfile 0.14.0,
 huggingface-hub 2.3.0, pyarrow 26.0.0, numpy 2.5.4.
 L'importatore carica soltanto Parquet della revisione fissata e decodifica
 con soundfile, senza eseguire script remoti o richiedere TorchCodec.
+
+## Punteggiatura e acquisizioni non annotate
+
+La WER continua a ignorare punteggiatura e casing. La metrica separata
+allinea parole normalizzate con Levenshtein e valuta `? . , ! : ;` solo ai
+confini con due anchor esatti adiacenti, o con lo stesso bordo finale.
+Backtracking: diagonale, cancellazione, inserimento; ripetizioni allineate
+da destra. Un confine interessato da omissioni/inserzioni è segnalato come
+non allineabile, senza un match artificiale. Precision/recall indefiniti
+restano null; gli aggregati sommano i conteggi anziché mediare gli F1.
+
+Un'acquisizione `unreviewed`, o senza entrambe le reference e non etichettata
+come silenzio, non entra nei denominatori. `raw_only` è utile per WER ASR
+ma non per WER finale o punteggiatura. Il silenzio è una categoria esplicita,
+con false trascrizioni contate separatamente. Le reference legacy non vuote
+restano utilizzabili; il report conserva separati ASR e testo rifinito.

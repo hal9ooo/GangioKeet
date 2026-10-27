@@ -9,6 +9,30 @@ sys.path.insert(0, str(SCRIPTS))
 import stt_eval_analyze  # noqa: E402
 
 
+def test_raw_summary_reports_missing_question_even_when_wer_is_zero(tmp_path):
+    manifest = {"one": {"duration_bucket": "short", "reference_raw": "come funziona",
+                        "reference_final": "Come funziona?", "is_silence": False}}
+    report = {"clips": [{"id": "one", "raw": {"score": _score(0, 2),
+               "hypothesis": "Come funziona."}}], "pooled_latency": {"p50": 10, "p95": 10},
+               "rtf_summary": {"p50": 0.1}, "load_seconds": 1, "peak_rss_mb": 100}
+    (tmp_path / "candidate.json").write_text(json.dumps(report), encoding="utf-8")
+    summary = stt_eval_analyze.raw_summary(manifest, tmp_path, bootstrap=2)["candidate"]
+    assert summary["wer"] == 0
+    assert summary["punctuation"]["missed_questions"] == 1
+
+
+def test_old_unannotated_capture_does_not_enter_analysis_denominators(tmp_path):
+    manifest = {"one": {"duration_bucket": "short", "reference_raw": "",
+                        "reference_final": "", "is_silence": False}}
+    report = {"clips": [{"id": "one", "raw": {"score": _score(0, 2),
+               "hypothesis": "Come funziona."}}], "pooled_latency": {"p50": 10, "p95": 10},
+               "rtf_summary": {"p50": 0.1}, "load_seconds": 1, "peak_rss_mb": 100}
+    (tmp_path / "candidate.json").write_text(json.dumps(report), encoding="utf-8")
+    summary = stt_eval_analyze.raw_summary(manifest, tmp_path, bootstrap=2)["candidate"]
+    assert summary["wer"] is None
+    assert summary["punctuation"] is None
+
+
 def _score(errors: int, words: int) -> dict:
     return {
         "substitutions": errors,

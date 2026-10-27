@@ -143,6 +143,16 @@ def _entry(**overrides):
     return entry
 
 
+def test_manifest_preserves_annotation_status_and_provenance(tmp_path):
+    manifest = tmp_path / "manifest.jsonl"
+    manifest.write_text(json.dumps(_entry(reference_status="unreviewed", reference_raw="",
+        reference_final="", source_row_index=42, reference_revision="human-v1")) + "\n", encoding="utf-8")
+    row = load_manifest(manifest, require_audio=False)[0]
+    assert row["reference_status"] == "unreviewed"
+    assert row["source_row_index"] == 42
+    assert row["reference_revision"] == "human-v1"
+
+
 def _write_wav(
     path: Path,
     *,
@@ -453,8 +463,14 @@ def test_runner_measures_only_repeats_and_separates_raw_final(tmp_path):
     assert final_aggregate["silence_false_positives"] == 0
 
     assert result["load_seconds"] >= 0.0
-    assert result["peak_rss_mb"] > 0.0
-    assert result["peak_metal_mb"] is not None
+    if stt_eval.resource is not None:
+        assert result["peak_rss_mb"] > 0.0
+    else:
+        assert result["peak_rss_mb"] == 0.0
+    if sys.platform == "darwin":
+        assert result["peak_metal_mb"] is not None
+    else:
+        assert result["peak_metal_mb"] is None
     assert result["clips"][0]["load_seconds"] == pytest.approx(
         result["load_seconds"]
     )
@@ -469,6 +485,18 @@ def test_runner_does_not_invent_final_metrics_without_finalizer(tmp_path):
     assert all(clip["final"] is None for clip in result["clips"])
     assert result["aggregate"]["final"] is None
     assert result["candidate"]["has_finalizer"] is False
+
+
+def test_runner_excludes_unreviewed_capture_from_scores(tmp_path):
+    _, manifest = _corpus(tmp_path)
+    rows = [json.loads(line) for line in manifest.read_text(encoding="utf-8").splitlines()]
+    rows[0].update(reference_raw="", reference_final="", reference_status="unreviewed")
+    manifest.write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+    result = run_candidate("fake", manifest, tmp_path / "report.json", 0, 1,
+                           adapter_factory=lambda _: FakeAdapter())
+    assert result["clips"][0]["raw"]["score"] is None
+    assert result["aggregate"]["raw"]["reference_words"] == 5
+    assert result["aggregate"]["unreviewed_clips"] == 1
 
 
 def test_runner_reports_non_deterministic_text(tmp_path):
@@ -635,6 +663,7 @@ def test_not_run_candidate_reports_reason(monkeypatch):
         ("whisper_large_v3_turbo", "it", 0.0),
     ],
 )
+@pytest.mark.skipif(sys.platform != "darwin", reason="MLX arrays require macOS")
 def test_mlx_audio_adapter_uses_generate(
     monkeypatch, candidate_id, language, temperature
 ):

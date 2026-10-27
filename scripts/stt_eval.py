@@ -41,6 +41,7 @@ from stt_eval_metrics import (  # noqa: E402
     aggregate_scores,
     score_transcripts,
 )
+from stt_eval_punctuation import score_record, aggregate_punctuation  # noqa: E402
 
 HARNESS_REVISION = "stt-eval-harness-v1"
 
@@ -166,6 +167,13 @@ def _validate_entry(entry, *, line: int, base: Path, require_audio: bool):
                 f"line {line}: '{field}' must be a non-empty string or null"
             )
         optional[field] = value
+
+    status = entry.get("reference_status")
+    if status is not None and status not in {"provided", "reviewed", "raw_only", "unreviewed"}:
+        raise ManifestError(f"line {line}: invalid reference_status: {status!r}")
+    for field in ("reference_status", "reference_revision", "source_path", "source_row_index"):
+        if field in entry:
+            optional[field] = entry[field]
 
     if is_silence and category != "silence_noise":
         raise ManifestError(
@@ -470,19 +478,18 @@ def run_candidate(
             if duration_seconds > 0
             else None
         )
-        raw_score = score_transcripts(
-            clip["reference_raw"], raw_hypothesis
-        )
+        raw_evaluation = score_record(clip, raw_hypothesis)
+        raw_score = raw_evaluation["raw"]
 
         final_result = None
         if has_finalizer:
             final_hypothesis = final_hypotheses[0]
+            final_evaluation = score_record(clip, final_hypothesis)
             final_result = {
                 "hypothesis": final_hypothesis,
                 "hypotheses": final_hypotheses,
-                "score": score_transcripts(
-                    clip["reference_final"], final_hypothesis
-                ),
+                "score": final_evaluation["final"],
+                "punctuation": final_evaluation["punctuation"],
                 "deterministic": all(
                     hypothesis == final_hypothesis
                     for hypothesis in final_hypotheses
@@ -496,6 +503,7 @@ def run_candidate(
                 "profile": clip["profile"],
                 "technical_terms": clip["technical_terms"],
                 "is_silence": clip["is_silence"],
+                "scored": raw_evaluation["scored"],
                 "audio_path": str(clip["audio_path"]),
                 "audio_sha256": audio_sha256,
                 "duration_seconds": round(duration_seconds, 3),
@@ -503,14 +511,15 @@ def run_candidate(
                 "final_hypothesis": (
                     final_result["hypothesis"] if final_result else None
                 ),
-                "raw_wer": raw_score["wer"],
+                "raw_wer": raw_score["wer"] if raw_score is not None else None,
                 "final_wer": (
-                    final_result["score"]["wer"] if final_result else None
+                    final_result["score"]["wer"] if final_result and final_result["score"] is not None else None
                 ),
                 "raw": {
                     "hypothesis": raw_hypothesis,
                     "hypotheses": raw_hypotheses,
                     "score": raw_score,
+                    "punctuation": raw_evaluation["punctuation"],
                 },
                 "final": final_result,
                 "deterministic": deterministic,
@@ -541,11 +550,12 @@ def run_candidate(
     raw_per_clip = [
         {"is_silence": clip["is_silence"], "score": clip["raw"]["score"]}
         for clip in clip_results
+        if clip["raw"]["score"] is not None
     ]
     final_per_clip = [
         {"is_silence": clip["is_silence"], "score": clip["final"]["score"]}
         for clip in clip_results
-        if clip["final"] is not None
+        if clip["final"] is not None and clip["final"]["score"] is not None
     ]
 
     result = {
@@ -586,8 +596,12 @@ def run_candidate(
         "aggregate": {
             "raw": aggregate_scores(raw_per_clip),
             "final": (
-                aggregate_scores(final_per_clip) if has_finalizer else None
+                aggregate_scores(final_per_clip) if final_per_clip else None
             ),
+            "unreviewed_clips": sum(not clip["scored"] for clip in clip_results),
+            "raw_punctuation": aggregate_punctuation([clip["raw"]["punctuation"] for clip in clip_results]),
+            "final_punctuation": aggregate_punctuation([clip["final"]["punctuation"]
+                for clip in clip_results if clip["final"] is not None]),
         },
     }
 
