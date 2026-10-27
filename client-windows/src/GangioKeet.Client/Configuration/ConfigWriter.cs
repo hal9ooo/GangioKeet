@@ -143,8 +143,120 @@ public static class ConfigWriter
         }
     }
 
-    private static string ReplaceValue(string line, string rendered)
+    /// <summary>
+    /// Scrive il blocco <c>endpoints:</c> preservando il resto del file. Se il
+    /// blocco manca viene inserito in coda alla sezione <c>server:</c> (o in
+    /// fondo). Restituisce <c>false</c> su errore di I/O o input non valido.
+    /// </summary>
+    public static bool SetEndpoints(string path, IReadOnlyList<EndpointConfig> endpoints)
     {
+        if (endpoints.Count == 0)
+        {
+            return false;
+        }
+
+        try
+        {
+            List<string> lines = File.Exists(path)
+                ? [.. File.ReadAllLines(path)]
+                : [];
+
+            List<string> rendered = RenderEndpoints(endpoints);
+            int start = lines.FindIndex(line => IsTopLevelKey(line, "endpoints"));
+
+            if (start >= 0)
+            {
+                int end = start + 1;
+                while (end < lines.Count
+                    && (lines[end].Length == 0 || char.IsWhiteSpace(lines[end][0])))
+                {
+                    end++;
+                }
+
+                lines.RemoveRange(start, end - start);
+                lines.InsertRange(start, rendered);
+                EnsureTrailingBlank(lines, start + rendered.Count);
+            }
+            else
+            {
+                int server = lines.FindIndex(line => IsTopLevelKey(line, "server"));
+                int insertAt = server >= 0 ? BlockEnd(lines, server) : lines.Count;
+
+                if (insertAt > 0 && lines[insertAt - 1].Length > 0)
+                {
+                    lines.Insert(insertAt, "");
+                    insertAt++;
+                }
+
+                lines.InsertRange(insertAt, rendered);
+                EnsureTrailingBlank(lines, insertAt + rendered.Count);
+            }
+
+            WriteAtomic(path, lines);
+            return true;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+        catch (ArgumentException)
+        {
+            return false;
+        }
+    }
+
+    private static List<string> RenderEndpoints(IReadOnlyList<EndpointConfig> endpoints)
+    {
+        List<string> lines = ["endpoints:"];
+        foreach (EndpointConfig endpoint in endpoints)
+        {
+            lines.Add($"  - name: {Quote(endpoint.Name)}");
+            lines.Add($"    role: {Quote(endpoint.Role)}");
+            lines.Add($"    host: {Quote(endpoint.Host)}");
+            lines.Add($"    scheme: {Quote(endpoint.Scheme)}");
+            lines.Add($"    port: {endpoint.Port}");
+        }
+
+        return lines;
+    }
+
+    private static string Quote(string value)
+        => $"\"{value.Replace("\\", "\\\\").Replace("\"", "\\\"")}\"";
+
+    private static bool IsTopLevelKey(string line, string key)
+    {
+        if (line.Length == 0 || char.IsWhiteSpace(line[0]) || line[0] == '#')
+        {
+            return false;
+        }
+
+        return line.TrimStart().StartsWith(key + ":", StringComparison.Ordinal);
+    }
+
+    private static int BlockEnd(List<string> lines, int sectionStart)
+    {
+        int index = sectionStart + 1;
+        while (index < lines.Count && (lines[index].Length == 0 || char.IsWhiteSpace(lines[index][0])))
+        {
+            index++;
+        }
+
+        return index;
+    }
+
+    private static void EnsureTrailingBlank(List<string> lines, int index)
+    {
+        if (index < lines.Count && lines[index].Length > 0)
+        {
+            lines.Insert(index, "");
+        }
+    }
+
+    private static string ReplaceValue(string line, string rendered)    {
         int valueStart = line.Length - line.TrimStart().Length;
         string indent = line[..valueStart];
         string body = line[valueStart..];
