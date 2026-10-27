@@ -4,13 +4,19 @@ namespace GangioKeet.Client.Configuration;
 
 public sealed class ClientConfig
 {
+    [YamlMember(Alias = "inference")]
+    public InferenceConfig Inference { get; set; } = new();
+
+    [YamlMember(Alias = "recording")]
+    public RecordingConfig Recording { get; set; } = new();
+
     [YamlMember(Alias = "server")]
     public ServerConfig Server { get; set; } = new();
 
     /// <summary>
     /// Endpoint configurati. Dopo <see cref="ConfigLoader.Load"/> è sempre non
-    /// nullo: se il YAML non ha <c>endpoints:</c> viene sintetizzato dal vecchio
-    /// blocco <c>server:</c>.
+    /// nullo. Solo in remoto viene sintetizzato dal vecchio blocco server;
+    /// una nuova installazione locale non costruisce endpoint fittizi.
     /// </summary>
     [YamlMember(Alias = "endpoints")]
     public List<EndpointConfig>? Endpoints { get; set; }

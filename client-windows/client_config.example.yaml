@@ -1,6 +1,18 @@
 # GangioKeet client configuration example.
 # Copy this file to %APPDATA%/GangioKeet/client_config.yaml, then edit.
 # Strict schema: unknown keys are rejected. Times are seconds (doubles), ms are integers.
+inference:
+  mode: local                        # local | remote; legacy server/endpoints files remain remote
+  model_selection_path: "models/selected.json" # relative to installed app directory
+  cleanup_policy_path: "cleanup.yaml"         # explicit override; never server config.yaml
+  backend: vulkan                    # vulkan | cpu; no silent remote fallback
+
+recording:
+  enabled: false                     # only completed dictations, not ambient recording
+  directory: "recordings"            # relative to the per-user GangioKeet data directory
+  store_context: false               # never stores selected text
+
+# The following remote settings are preserved but unused in local mode.
 # The API token is never stored here: set the environment variable named by
 # server.api_key_env (recommended: GANGIOKEET_API_KEY); unset api_key_env means "no token".
 

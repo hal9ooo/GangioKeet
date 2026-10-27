@@ -288,15 +288,11 @@ public sealed class ConfigLoaderTests
     }
 
     [Fact]
-    public void CreateDefaults_ReturnsOneLegacyServerEndpoint()
+    public void CreateDefaults_IsLocalWithNoRemoteEndpoint()
     {
         ClientConfig config = ConfigLoader.CreateDefaults();
 
-        EndpointConfig endpoint = Assert.Single(config.Endpoints!);
-        Assert.Equal("Server", endpoint.Name);
-        Assert.Equal("primary", endpoint.Role);
-        Assert.Equal(config.Server.Host, endpoint.Host);
-        Assert.Equal(config.Server.Scheme, endpoint.Scheme);
-        Assert.Equal(config.Server.Port, endpoint.Port);
+        Assert.Equal("local", config.Inference.Mode);
+        Assert.Empty(config.Endpoints!);
     }
 }

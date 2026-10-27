@@ -1,6 +1,7 @@
 using System.IO;
 using YamlDotNet.Core;
 using YamlDotNet.Serialization;
+using YamlDotNet.RepresentationModel;
 
 namespace GangioKeet.Client.Configuration;
 
@@ -22,7 +23,7 @@ public static class ConfigLoader
         "GangioKeet",
         "client_config.yaml");
 
-    public static ClientConfig Load(string? explicitPath = null, string? appDataBase = null)
+    public static ClientConfig Load(string? explicitPath = null, string? appDataBase = null, string? installationDirectory = null)
     {
         string path = explicitPath is not null
             ? Path.GetFullPath(explicitPath)
@@ -45,6 +46,16 @@ public static class ConfigLoader
             try
             {
                 config = YamlDecoder.Deserialize<ClientConfig>(text) ?? new ClientConfig();
+                YamlStream yaml = new();
+                yaml.Load(new StringReader(text));
+                if (yaml.Documents.Count > 0 && yaml.Documents[0].RootNode is YamlMappingNode root)
+                {
+                    bool hasLegacy = root.Children.ContainsKey(new YamlScalarNode("server"))
+                        || root.Children.ContainsKey(new YamlScalarNode("endpoints"));
+                    bool hasMode = root.Children.TryGetValue(new YamlScalarNode("inference"), out YamlNode? inference)
+                        && inference is YamlMappingNode mapping && mapping.Children.ContainsKey(new YamlScalarNode("mode"));
+                    if (hasLegacy && !hasMode && config.Inference is not null) config.Inference.Mode = "remote";
+                }
             }
             catch (YamlException e)
             {
@@ -52,9 +63,11 @@ public static class ConfigLoader
             }
         }
 
-        EnsureEndpoints(config);
         Validate(config, path);
-        ApiCredential.Resolve(config.Server.ApiKeyEnv, Environment.GetEnvironmentVariable);
+        EnsureEndpoints(config);
+        ResolvePaths(config, installationDirectory ?? AppContext.BaseDirectory, appDataBase);
+        if (config.Inference.Mode == "remote")
+            ApiCredential.Resolve(config.Server.ApiKeyEnv, Environment.GetEnvironmentVariable);
         return config;
     }
 
@@ -62,16 +75,18 @@ public static class ConfigLoader
     /// Configurazione predefinita, come quando il file non esiste: permette
     /// alla finestra impostazioni di funzionare su un'installazione pulita.
     /// </summary>
-    public static ClientConfig CreateDefaults()
+    public static ClientConfig CreateDefaults(string? installationDirectory = null)
     {
         ClientConfig config = new();
-        EnsureEndpoints(config);
         Validate(config, sourcePath: null);
+        EnsureEndpoints(config);
+        ResolvePaths(config, installationDirectory ?? AppContext.BaseDirectory, null);
         return config;
     }
 
     private static void EnsureEndpoints(ClientConfig config)
     {
+        if (config.Inference.Mode == "local") { config.Endpoints ??= []; return; }
         config.Endpoints ??=
         [
             new EndpointConfig
@@ -87,8 +102,19 @@ public static class ConfigLoader
 
     public static void Validate(ClientConfig config, string? sourcePath = null)
     {
-        ValidateServer(config.Server, sourcePath);
-        ValidateEndpoints(config.Endpoints, config.Server, sourcePath);
+        if (config.Inference is null) Fail(sourcePath, "inference must be a mapping");
+        if (config.Recording is null) Fail(sourcePath, "recording must be a mapping");
+        if (config.Inference!.Mode is not ("local" or "remote")) Fail(sourcePath, "inference.mode must be local or remote");
+        if (config.Inference.Backend is not ("vulkan" or "cpu")) Fail(sourcePath, "inference.backend must be vulkan or cpu");
+        RequireNonEmptyString(config.Inference.ModelSelectionPath, "inference.model_selection_path", sourcePath);
+        RequireNonEmptyString(config.Inference.CleanupPolicyPath, "inference.cleanup_policy_path", sourcePath);
+        RequireNonEmptyString(config.Recording!.Directory, "recording.directory", sourcePath);
+        if (config.Inference.Mode == "remote")
+        {
+            if (config.Server is null) Fail(sourcePath, "server must be a mapping");
+            ValidateServer(config.Server!, sourcePath);
+            ValidateEndpoints(config.Endpoints, config.Server!, sourcePath);
+        }
         ValidateHotkey(config.Hotkey, sourcePath);
         ValidateAudio(config.Audio, sourcePath);
         ValidatePaste(config.Paste, sourcePath);
@@ -96,6 +122,20 @@ public static class ConfigLoader
         ValidateRecovery(config.Recovery, sourcePath);
         ValidateContextProfiles(config.ContextProfiles, sourcePath);
         ValidateBrowserProfiles(config.BrowserProfiles, sourcePath);
+    }
+
+    private static void ResolvePaths(ClientConfig config, string installationDirectory, string? appDataBase)
+    {
+        try
+        {
+            string install = Path.GetFullPath(installationDirectory);
+            config.Inference.ModelSelectionPath = Path.GetFullPath(config.Inference.ModelSelectionPath, install);
+            config.Inference.CleanupPolicyPath = Path.GetFullPath(config.Inference.CleanupPolicyPath, install);
+            string data = Path.Combine(appDataBase ?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GangioKeet");
+            config.Recording.Directory = Path.GetFullPath(config.Recording.Directory, Path.GetFullPath(data));
+        }
+        catch (Exception error) when (error is ArgumentException or NotSupportedException)
+        { throw new ConfigException("Invalid inference or recording path: " + error.GetType().Name); }
     }
 
     private static string Where(string? sourcePath, string detail)

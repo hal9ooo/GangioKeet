@@ -10,6 +10,50 @@ namespace GangioKeet.Client.Configuration;
 /// </summary>
 public static class ConfigWriter
 {
+    public static bool SetInferenceMode(string path, string mode) => mode is "local" or "remote"
+        && SetSectionScalar(path, "inference", "mode", mode);
+
+    public static bool SetRecordingEnabled(string path, bool enabled) =>
+        SetSectionScalar(path, "recording", "enabled", enabled ? "true" : "false");
+
+    private static bool SetSectionScalar(string path, string section, string key, string value)
+    {
+        try
+        {
+            List<string> lines = File.Exists(path) ? [.. File.ReadAllLines(path)] : [];
+            int start = lines.FindIndex(line => IsTopLevelKey(line, section));
+            if (start < 0)
+            {
+                if (lines.Count > 0 && lines[^1].Length > 0) lines.Add("");
+                lines.Add(section + ":");
+                lines.Add($"  {key}: {value}");
+            }
+            else
+            {
+                string rest = lines[start][(lines[start].IndexOf(':') + 1)..].Trim();
+                if (rest.Length > 0 && !rest.StartsWith('#')) return false;
+                int end = start + 1;
+                while (end < lines.Count && (string.IsNullOrWhiteSpace(lines[end])
+                    || lines[end].TrimStart().StartsWith('#') || char.IsWhiteSpace(lines[end][0]))) end++;
+                string indent = DetectIndent(lines, start) ?? "  ";
+                int found = -1;
+                for (int index = start + 1; index < end; index++)
+                    if (lines[index].StartsWith(indent + key + ":", StringComparison.Ordinal))
+                    {
+                        if (found >= 0) return false;
+                        found = index;
+                    }
+                if (found >= 0) lines[found] = ReplaceValue(lines[found], $"{key}: {value}");
+                else lines.Insert(start + 1, $"{indent}{key}: {value}");
+            }
+            Directory.CreateDirectory(Path.GetDirectoryName(Path.GetFullPath(path))!);
+            WriteAtomic(path, lines);
+            return true;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or ArgumentException)
+        { return false; }
+    }
+
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
     public static bool SetAudioInputDevice(string path, string? deviceId)
