@@ -49,10 +49,11 @@ public sealed class EndpointSelector : IEndpointResolver
     {
         lock (_gate)
         {
+            // Un round partito prima di un Reset può riferirsi a una
+            // destinazione appena rimossa: non va ricreata.
             if (!_states.TryGetValue(endpoint.Key, out State? state))
             {
-                state = new State(endpoint);
-                _states[endpoint.Key] = state;
+                return;
             }
 
             state.Apply(result);

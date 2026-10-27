@@ -286,4 +286,17 @@ public sealed class ConfigLoaderTests
             File.Delete(path);
         }
     }
+
+    [Fact]
+    public void CreateDefaults_ReturnsOneLegacyServerEndpoint()
+    {
+        ClientConfig config = ConfigLoader.CreateDefaults();
+
+        EndpointConfig endpoint = Assert.Single(config.Endpoints!);
+        Assert.Equal("Server", endpoint.Name);
+        Assert.Equal("primary", endpoint.Role);
+        Assert.Equal(config.Server.Host, endpoint.Host);
+        Assert.Equal(config.Server.Scheme, endpoint.Scheme);
+        Assert.Equal(config.Server.Port, endpoint.Port);
+    }
 }

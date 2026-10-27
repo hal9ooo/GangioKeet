@@ -63,6 +63,16 @@ public static class EndpointFormatPolicy
         return endpoints.Any(endpoint => !seen.Add(endpoint.Key));
     }
 
+    /// <summary>
+    /// I nomi sono l'etichetta che l'utente vede e che il loader richiede
+    /// unici: due righe con lo stesso nome renderebbero il file non caricabile.
+    /// </summary>
+    public static bool HasDuplicateName(IReadOnlyList<EndpointConfig> endpoints)
+    {
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        return endpoints.Any(endpoint => !seen.Add(endpoint.Name.Trim()));
+    }
+
     public static int? ParsePort(string? text)
         => int.TryParse(text, NumberStyles.None, CultureInfo.InvariantCulture, out int port)
             && port is >= 1 and <= 65535

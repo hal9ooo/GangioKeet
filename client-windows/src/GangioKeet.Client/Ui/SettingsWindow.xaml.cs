@@ -78,7 +78,9 @@ public sealed partial class SettingsWindow : Window
     {
         try
         {
-            ClientConfig config = ConfigLoader.Load(_configPath);
+            ClientConfig config = File.Exists(_configPath)
+                ? ConfigLoader.Load(_configPath)
+                : ConfigLoader.CreateDefaults();
             LoadFromConfig(config);
             SaveButton.IsEnabled = true;
             StatusText.Text = "";
@@ -172,6 +174,12 @@ public sealed partial class SettingsWindow : Window
         if (EndpointFormatPolicy.HasDuplicate(endpoints))
         {
             StatusText.Text = "Due righe puntano allo stesso host:porta.";
+            return;
+        }
+
+        if (EndpointFormatPolicy.HasDuplicateName(endpoints))
+        {
+            StatusText.Text = "Due righe hanno lo stesso nome.";
             return;
         }
 

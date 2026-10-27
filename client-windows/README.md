@@ -77,8 +77,8 @@ Strict schema: unknown keys are rejected. The file lives in
 - **Verifica adesso** probes the rows as typed, including unsaved edits: it
   does not change the active endpoint and writes nothing; the results stay
   visible while the window is open.
-- **Salva** validates names, hosts, ports and duplicate host:port (inline
-  error, save refused), writes only the `endpoints:` block, and applies
+- **Salva** validates names, hosts, ports and duplicates (name or host:port;
+  inline error, save refused), writes only the `endpoints:` block, and applies
   immediately: the monitor re-probes at once, no restart. Promoting a row to
   `primary` demotes the previous one.
 - Read-only telemetry: last dictation duration, handshake time, OK/error/retry

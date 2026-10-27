@@ -151,4 +151,28 @@ public sealed class EndpointSelectorTests
 
         Assert.Equal(1, changes);
     }
+
+    [Fact]
+    public void LateApply_AfterReset_DoesNotResurrectRemovedEndpoint()
+    {
+        EndpointConfig a = Endpoint("a", "10.0.0.1", "primary");
+        EndpointConfig b = Endpoint("b", "10.0.0.2");
+        EndpointSelector selector = Selector(25, a, b);
+        selector.Apply(a, Ok(40));
+        selector.Apply(b, Ok(10));
+
+        selector.Reset([a]);
+
+        int changes = 0;
+        selector.Changed += () => changes++;
+
+        // Round partito prima del Reset: il risultato per "b" non deve
+        // ricreare lo stato appena eliminato.
+        selector.Apply(b, Ok(1));
+
+        Assert.Single(selector.Snapshot());
+        Assert.False(selector.StatsFor(b).Measured);
+        Assert.Equal("a", selector.Active.Name);
+        Assert.Equal(0, changes);
+    }
 }

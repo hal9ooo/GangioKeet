@@ -58,6 +58,18 @@ public static class ConfigLoader
         return config;
     }
 
+    /// <summary>
+    /// Configurazione predefinita, come quando il file non esiste: permette
+    /// alla finestra impostazioni di funzionare su un'installazione pulita.
+    /// </summary>
+    public static ClientConfig CreateDefaults()
+    {
+        ClientConfig config = new();
+        EnsureEndpoints(config);
+        Validate(config, sourcePath: null);
+        return config;
+    }
+
     private static void EnsureEndpoints(ClientConfig config)
     {
         config.Endpoints ??=

@@ -63,6 +63,16 @@ public sealed class EndpointFormatPolicyTests
         Assert.False(EndpointFormatPolicy.HasDuplicate([a]));
     }
 
+    [Fact]
+    public void DuplicateName_IsDetectedCaseInsensitively()
+    {
+        EndpointConfig a = new() { Name = "Casa", Role = "primary", Host = "10.0.0.1", Port = 8000 };
+        EndpointConfig b = new() { Name = " casa ", Role = "secondary", Host = "10.0.0.2", Port = 8000 };
+
+        Assert.True(EndpointFormatPolicy.HasDuplicateName([a, b]));
+        Assert.False(EndpointFormatPolicy.HasDuplicateName([a]));
+    }
+
     [Theory]
     [InlineData("8000", 8000)]
     [InlineData("1", 1)]

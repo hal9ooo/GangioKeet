@@ -222,8 +222,27 @@ public partial class App : Application
 
         _config.Endpoints = [.. endpoints];
         _selector.Reset(endpoints);
-        _ = _monitor?.ProbeOnceAsync(CancellationToken.None);
+        _ = ProbeSavedEndpointsAsync();
         _logger?.Write("endpoints_saved", $"{endpoints.Count} endpoint");
+    }
+
+    private async Task ProbeSavedEndpointsAsync()
+    {
+        try
+        {
+            if (_monitor is not null)
+            {
+                await _monitor.ProbeOnceAsync(CancellationToken.None);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // shutdown mentre il round era in volo
+        }
+        catch (Exception ex)
+        {
+            _logger?.Write("probe_once_failed", ex.Message);
+        }
     }
 
     private static System.Windows.Media.ImageSource CreateTrayIcon()
