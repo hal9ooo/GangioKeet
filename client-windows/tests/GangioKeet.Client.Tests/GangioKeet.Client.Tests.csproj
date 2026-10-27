@@ -2,6 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
     <RootNamespace>GangioKeet.Client.Tests</RootNamespace>
     <AssemblyName>GangioKeet.Client.Tests</AssemblyName>
     <Nullable>enable</Nullable>
@@ -10,6 +11,13 @@
     <IsPackable>false</IsPackable>
     <UseAppHost>false</UseAppHost>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- UseWPF sostituisce gli using impliciti del SDK: System.IO e
+         System.Net.Http servono ai test esistenti. -->
+    <Using Include="System.IO" />
+    <Using Include="System.Net.Http" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.0.0" />

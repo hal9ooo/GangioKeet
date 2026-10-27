@@ -10,16 +10,16 @@
         ShowInTaskbar="False"
         ShowActivated="False"
         Topmost="True"
-        WindowStartupLocation="CenterScreen"
-        RenderTransformOrigin="0.5,0.5">
-    <Window.RenderTransform>
-        <ScaleTransform x:Name="SplashScale" ScaleX="0.98" ScaleY="0.98" />
-    </Window.RenderTransform>
-
-    <Grid x:Name="Root" Opacity="0">
+        WindowStartupLocation="CenterScreen">
+    <!-- WPF rifiuta un RenderTransform su Window (CoerceRenderTransform).
+         La scala d'ingresso vive sulla radice, che è l'elemento disegnato. -->
+    <Grid x:Name="Root" Opacity="0" RenderTransformOrigin="0.5,0.5">
+        <Grid.RenderTransform>
+            <ScaleTransform x:Name="SplashScale" ScaleX="0.98" ScaleY="0.98" />
+        </Grid.RenderTransform>
         <Border CornerRadius="10">
             <Border.Background>
-                <ImageBrush ImageSource="/Assets/gangio-cover.png" Stretch="UniformToFill" />
+                <ImageBrush ImageSource="../Assets/gangio-cover.png" Stretch="UniformToFill" />
             </Border.Background>
         </Border>
 

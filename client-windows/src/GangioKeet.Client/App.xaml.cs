@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Net.Http;
 using System.Windows;
 using GangioKeet.Client.Audio;
@@ -78,8 +78,19 @@ public partial class App : Application
         // Lo splash è l'unica finestra all'avvio: senza OnExplicitShutdown la
         // chiusura della splash (3 s) spegnerebbe l'app tray-only.
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
-        _splash = new SplashWindow(TimeSpan.FromSeconds(3));
-        _splash.Show();
+
+        // Lo splash è decorativo: un errore nel XAML non deve impedire
+        // l'avvio dell'app (resterebbe un processo morto senza log né UI).
+        try
+        {
+            _splash = new SplashWindow(TimeSpan.FromSeconds(3));
+            _splash.Show();
+        }
+        catch (Exception ex)
+        {
+            _logger.Write("splash_error", ex.Message);
+            _splash = null;
+        }
 
         try
         {
@@ -87,7 +98,7 @@ public partial class App : Application
         }
         catch (ConfigException ex)
         {
-            _splash.Dismiss();
+            _splash?.Dismiss();
             _logger.Write("config_error", ex.Message);
             MessageBox.Show(
                 $"Configurazione non valida:\n{ex.Message}",
@@ -104,7 +115,7 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            _splash.Dismiss();
+            _splash?.Dismiss();
             _logger.Write("startup_error", ex.Message);
             MessageBox.Show(
                 $"Impossibile avviare GangioKeet:\n{ex.Message}",
