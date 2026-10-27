@@ -84,6 +84,74 @@
           "sha256": "c00cbe50a845003f986d3ed0ee149c08f576d0f3cc54c5346033608185a000d5"
         }
       ]
+    },
+    {
+      "id": "llama-vulkan",
+      "version": "0.30.0",
+      "managed_commit": "d03b6cbca3c66357e2ed9ee9d0324f5eaeabfd4f",
+      "namespace_revision": "equal-length-managed-native-ggml-to-lgml-v2",
+      "license": "MIT",
+      "files": [
+        {
+          "source_path": "llamasharp.backend.vulkan.windows/0.30.0/LLamaSharpRuntimes/win-x64/native/vulkan/ggml-base.dll",
+          "source_sha256": "ff8b0be78fcb46caf453ac23bc820cf2c6aefe4e08d417e45be0e07326de46fd",
+          "path": "lgml-base.dll",
+          "sha256": "a127a7b35a6dbfa9aad5de7bf512f7816b3702caf64841d92a670a8930fe7d28"
+        },
+        {
+          "source_path": "llamasharp.backend.vulkan.windows/0.30.0/LLamaSharpRuntimes/win-x64/native/vulkan/ggml-vulkan.dll",
+          "source_sha256": "bfaf6cd52c228c1cb5adbca5297cb879a8a0806572bf5b3e3509f33323348a54",
+          "path": "lgml-vulkan.dll",
+          "sha256": "a76fc90d455bbd111b968f35c21dd04442cf219c68a2f211789371e78e85c5b8"
+        },
+        {
+          "source_path": "llamasharp.backend.vulkan.windows/0.30.0/LLamaSharpRuntimes/win-x64/native/vulkan/ggml.dll",
+          "source_sha256": "c1193fabb393dc5b674511c7171b3b5362dfb744fd1ddc6d778fb9910ea11b81",
+          "path": "lgml.dll",
+          "sha256": "4d596be415e15ef1a0841ec06faea8df04f977f55b5d0d34b7752e2c595ab6f8"
+        },
+        {
+          "source_path": "llamasharp.backend.vulkan.windows/0.30.0/LLamaSharpRuntimes/win-x64/native/vulkan/llama.dll",
+          "source_sha256": "34d73e76122f94ade1a783cf0727dc56e1edd472e5b899931ec5c8b1659658da",
+          "path": "llama.dll",
+          "sha256": "144bf181c958020bb37934209076ab3b3ecd26904797206cb9e006bfc5b3f8d2"
+        },
+        {
+          "source_path": "llamasharp.backend.vulkan.windows/0.30.0/LLamaSharpRuntimes/win-x64/native/vulkan/mtmd.dll",
+          "source_sha256": "5a4e5365518ce3af85b4e91719b1ae32c85161414956b8cc303d9b2fb93e1f14",
+          "path": "mtmd.dll",
+          "sha256": "fb4256c5219978e890ec12073213ac4faaaab33f62782c7ec026aa4f1007d293"
+        },
+        {
+          "source_path": "llamasharp.backend.cpu/0.30.0/LLamaSharpRuntimes/win-x64/native/avx2/ggml-cpu.dll",
+          "source_sha256": "acde020b10bd70a124561adffa06299c688cddb9251b189c97b645ea947bdbe2",
+          "path": "lgml-cpu.dll",
+          "sha256": "e4b9b9d7b1d147d27553dfc88ee7156065d2c325f5ad63fd9c95b4a6d6f235b2"
+        },
+        {
+          "source_path": "llamasharp/0.30.0/lib/net10.0/LLamaSharp.dll",
+          "source_sha256": "9b992873e0ec1b38d658451732111a38f6229a4b99d212f04f1b14be22637bb3",
+          "path": "LLamaSharp.dll",
+          "sha256": "ccbdfcf8ce6061ef75a68ec5726516052fdc3655bf93fb08c2b0c7ee63a763b1"
+        }
+      ],
+      "packages": [
+        {
+          "id": "llamasharp",
+          "version": "0.30.0",
+          "sha256": "1b5a57b5471602a36205efc7025d8f1db13f4824b89c100723f31b3d635afdac"
+        },
+        {
+          "id": "llamasharp.backend.vulkan.windows",
+          "version": "0.30.0",
+          "sha256": "407f4ea53631e7a845af7df517e19617d5b2448e275ed87dbaf42a4bfdaf9c3d"
+        },
+        {
+          "id": "llamasharp.backend.cpu",
+          "version": "0.30.0",
+          "sha256": "d99f24c96d56a0f86fa7b20b436bd85040919a851bff5d693bdc6e9fde8c4e1c"
+        }
+      ]
     }
   ]
 }

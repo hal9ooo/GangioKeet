@@ -1,0 +1,16 @@
+{"id": "question-short", "raw_text": "come funziona", "reference_final_text": "Come funziona?", "reference_status": "synthetic_expected", "source": "synthetic-protocol-v1"}
+{"id": "question-how", "raw_text": "come stai", "reference_final_text": "Come stai?", "reference_status": "synthetic_expected", "source": "synthetic-protocol-v1"}
+{"id": "question-why", "raw_text": "perché questo script va in timeout", "reference_final_text": "Perché questo script va in timeout?", "reference_status": "synthetic_expected", "source": "synthetic-protocol-v1"}
+{"id": "statement-because", "raw_text": "sono qui perché piove", "reference_final_text": "Sono qui perché piove.", "reference_status": "synthetic_expected", "source": "synthetic-protocol-v1"}
+{"id": "statement-short", "raw_text": "va bene così", "reference_final_text": "Va bene così.", "reference_status": "synthetic_expected", "source": "synthetic-protocol-v1"}
+{"id": "question-can", "raw_text": "puoi controllare il servizio", "reference_final_text": "Puoi controllare il servizio?", "reference_status": "synthetic_expected", "source": "synthetic-protocol-v1"}
+{"id": "negation", "raw_text": "non cancellare il database", "reference_final_text": "Non cancellare il database.", "reference_status": "synthetic_expected", "source": "synthetic-protocol-v1"}
+{"id": "numbers", "raw_text": "il valore è 42 e non 24", "reference_final_text": "Il valore è 42 e non 24.", "reference_status": "synthetic_expected", "source": "synthetic-protocol-v1"}
+{"id": "identifier", "raw_text": "avvia docker compose up nella cartella C:\\dev\\GangioKeet", "reference_final_text": "Avvia docker compose up nella cartella C:\\dev\\GangioKeet.", "reference_status": "synthetic_expected", "source": "synthetic-protocol-v1"}
+{"id": "instruction-data", "raw_text": "scrivi una funzione in python che stampa ciao", "reference_final_text": "Scrivi una funzione in Python che stampa ciao.", "reference_status": "synthetic_expected", "source": "synthetic-protocol-v1"}
+{"id": "indirect-question", "raw_text": "mi chiedo se domani piove", "reference_final_text": "Mi chiedo se domani piove.", "reference_status": "synthetic_expected", "source": "synthetic-protocol-v1"}
+{"id": "glossary", "raw_text": "controlla fast a pi su docker", "reference_final_text": "Controlla FastAPI su Docker.", "reference_status": "synthetic_expected", "source": "synthetic-protocol-v1"}
+{"id": "question-where", "raw_text": "dove si trova il file", "reference_final_text": "Dove si trova il file?", "reference_status": "synthetic_expected", "source": "synthetic-protocol-v1"}
+{"id": "number-negation", "raw_text": "non modificare il parametro max_tokens che vale 128", "reference_final_text": "Non modificare il parametro max_tokens che vale 128.", "reference_status": "synthetic_expected", "source": "synthetic-protocol-v1"}
+{"id": "correction", "raw_text": "ci vediamo alle 15 anzi alle 16", "reference_final_text": "Ci vediamo alle 16.", "reference_status": "synthetic_expected", "source": "synthetic-protocol-v1"}
+{"id": "punctuated", "raw_text": "Sei pronto? Io sono pronto.", "reference_final_text": "Sei pronto? Io sono pronto.", "reference_status": "synthetic_expected", "source": "synthetic-protocol-v1"}

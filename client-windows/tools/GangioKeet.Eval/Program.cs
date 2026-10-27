@@ -28,6 +28,7 @@ public static class Program
             if (args[0] != "probe") throw new ArgumentException($"Unknown command: {args[0]}");
             using CancellationTokenSource cts = new();
             Console.CancelKeyPress += (_, evt) => { evt.Cancel = true; cts.Cancel(); };
+            if (options.ContainsKey("--text-corpus")) return await CleanerProbeCommand.RunAsync(options, cts.Token);
             ProbeCommand probe = new(options.GetValueOrDefault("--model-root", "models"),
                 Required("--native-dir"), options.GetValueOrDefault("--backend", "vulkan"),
                 options.TryGetValue("--cancel-after-ms", out string? ms) ? int.Parse(ms) : null);

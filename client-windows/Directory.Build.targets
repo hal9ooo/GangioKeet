@@ -1,0 +1,9 @@
+<Project>
+  <!-- Compile against the pinned package; ship the same assembly with private
+       ggml ModuleRefs/loader literals. No NuGet cache files are modified. -->
+  <Target Name="UseNamespacedLlamaRuntime" AfterTargets="Build"
+          Condition="Exists('$(MSBuildThisFileDirectory)native/build/llama-0.30.0/LLamaSharp.dll')">
+    <Copy SourceFiles="$(MSBuildThisFileDirectory)native/build/llama-0.30.0/LLamaSharp.dll"
+          DestinationFolder="$(TargetDir)" />
+  </Target>
+</Project>

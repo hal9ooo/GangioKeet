@@ -39,3 +39,14 @@ foreach ($Entry in $Runtime.files) {
     }
 }
 Write-Output "Native runtime verified: $Payload"
+
+# Development bootstrap only. Production receives these verified artifacts and
+# does not execute this script, Python, dotnet restore, or subprocesses.
+$RepoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+& dotnet restore (Join-Path $RepoRoot 'client-windows/src/GangioKeet.Inference') --verbosity quiet
+if ($LASTEXITCODE -ne 0) { throw 'Pinned llama NuGet restore failed.' }
+$NuGetRoot = if ($env:NUGET_PACKAGES) { $env:NUGET_PACKAGES } else { Join-Path $env:USERPROFILE '.nuget/packages' }
+$LlamaRoot = Join-Path $RepoRoot 'client-windows/native/build/llama-0.30.0'
+& python (Join-Path $PSScriptRoot 'namespace_llama_runtime.py') --source $NuGetRoot --destination $LlamaRoot --lock $LockPath
+if ($LASTEXITCODE -ne 0) { throw 'Private llama namespace verification failed.' }
+Write-Output "Namespaced llama runtime verified: $LlamaRoot"
