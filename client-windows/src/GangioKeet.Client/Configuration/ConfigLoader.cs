@@ -52,14 +52,31 @@ public static class ConfigLoader
             }
         }
 
+        EnsureEndpoints(config);
         Validate(config, path);
         ApiCredential.Resolve(config.Server.ApiKeyEnv, Environment.GetEnvironmentVariable);
         return config;
     }
 
+    private static void EnsureEndpoints(ClientConfig config)
+    {
+        config.Endpoints ??=
+        [
+            new EndpointConfig
+            {
+                Name = "Server",
+                Role = "primary",
+                Host = config.Server.Host,
+                Scheme = config.Server.Scheme,
+                Port = config.Server.Port,
+            },
+        ];
+    }
+
     public static void Validate(ClientConfig config, string? sourcePath = null)
     {
         ValidateServer(config.Server, sourcePath);
+        ValidateEndpoints(config.Endpoints, config.Server, sourcePath);
         ValidateHotkey(config.Hotkey, sourcePath);
         ValidateAudio(config.Audio, sourcePath);
         ValidatePaste(config.Paste, sourcePath);
@@ -119,9 +136,88 @@ public static class ConfigLoader
         RequirePositive(server.UploadTimeoutSeconds, "server.upload_timeout_seconds", sourcePath);
         RequirePositive(server.RestResponseTimeoutSeconds, "server.rest_response_timeout_seconds", sourcePath);
         RequirePositive(server.HealthCheckIntervalSeconds, "server.health_check_interval_seconds", sourcePath);
+        RequirePositive(server.HealthCheckTimeoutSeconds, "server.health_check_timeout_seconds", sourcePath);
+        if (server.SwitchMarginPercent is < 0 or > 90)
+        {
+            Fail(sourcePath, "server.switch_margin_percent must be between 0 and 90");
+        }
         if (server.ApiKeyEnv is not null && string.IsNullOrWhiteSpace(server.ApiKeyEnv))
         {
             Fail(sourcePath, "server.api_key_env must be null or a non-empty environment variable name");
+        }
+    }
+
+    private static void ValidateEndpoints(
+        List<EndpointConfig>? endpoints,
+        ServerConfig server,
+        string? sourcePath)
+    {
+        List<EndpointConfig> list = endpoints ??
+        [
+            new EndpointConfig
+            {
+                Name = "Server",
+                Role = "primary",
+                Host = server.Host,
+                Scheme = server.Scheme,
+                Port = server.Port,
+            },
+        ];
+
+        if (list.Count == 0)
+        {
+            Fail(sourcePath, "endpoints must contain at least one entry");
+        }
+
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var destinations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        int primaries = 0;
+
+        foreach (EndpointConfig endpoint in list)
+        {
+            RequireNonEmptyString(endpoint.Name, "endpoints[].name", sourcePath);
+            if (!names.Add(endpoint.Name.Trim()))
+            {
+                Fail(sourcePath, $"endpoint name '{endpoint.Name}' is listed more than once");
+            }
+
+            if (endpoint.Role is not ("primary" or "secondary"))
+            {
+                Fail(sourcePath, $"endpoint '{endpoint.Name}': role must be 'primary' or 'secondary'");
+            }
+
+            if (endpoint.IsPrimary)
+            {
+                primaries++;
+            }
+
+            if (!EndpointHost.IsValid(endpoint.Host))
+            {
+                Fail(
+                    sourcePath,
+                    $"endpoint '{endpoint.Name}': host '{endpoint.Host}' is not valid "
+                    + "(expected IPv4, IPv6 or a hostname without scheme or port)");
+            }
+
+            if (endpoint.Scheme is not ("http" or "https"))
+            {
+                Fail(sourcePath, $"endpoint '{endpoint.Name}': scheme must be 'http' or 'https'");
+            }
+
+            if (endpoint.Port is < 1 or > 65535)
+            {
+                Fail(sourcePath, $"endpoint '{endpoint.Name}': port must be between 1 and 65535");
+            }
+
+            if (!destinations.Add(endpoint.Key))
+            {
+                Fail(sourcePath, $"endpoint '{endpoint.Name}': {endpoint.Key} is listed more than once");
+            }
+        }
+
+        if (primaries > 1)
+        {
+            Fail(sourcePath, "at most one endpoint can have role 'primary'");
         }
     }
 

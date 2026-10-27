@@ -7,6 +7,14 @@ public sealed class ClientConfig
     [YamlMember(Alias = "server")]
     public ServerConfig Server { get; set; } = new();
 
+    /// <summary>
+    /// Endpoint configurati. Dopo <see cref="ConfigLoader.Load"/> è sempre non
+    /// nullo: se il YAML non ha <c>endpoints:</c> viene sintetizzato dal vecchio
+    /// blocco <c>server:</c>.
+    /// </summary>
+    [YamlMember(Alias = "endpoints")]
+    public List<EndpointConfig>? Endpoints { get; set; }
+
     [YamlMember(Alias = "hotkey")]
     public HotkeyConfig Hotkey { get; set; } = new();
 
@@ -60,6 +68,12 @@ public sealed class ServerConfig
 
     [YamlMember(Alias = "health_check_interval_seconds")]
     public double HealthCheckIntervalSeconds { get; set; } = 30.0;
+
+    [YamlMember(Alias = "health_check_timeout_seconds")]
+    public double HealthCheckTimeoutSeconds { get; set; } = 2.0;
+
+    [YamlMember(Alias = "switch_margin_percent")]
+    public int SwitchMarginPercent { get; set; } = 25;
 
     [YamlMember(Alias = "api_key_env")]
     public string? ApiKeyEnv { get; set; } = null;
