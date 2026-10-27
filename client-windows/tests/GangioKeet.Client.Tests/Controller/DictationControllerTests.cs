@@ -176,6 +176,9 @@ public sealed class DictationControllerTests
         session.PublishResult("testo finale");
 
         await WaitUntilAsync(() => h.Input.Combos.Count > 0);
+        await WaitUntilAsync(() => h.Controller.State == ClientState.Idle
+            && h.Pill.HideCalls > 0
+            && h.Sound.PlayedSounds.Contains(SoundKind.Stop));
 
         Assert.Equal("ctrl+v", h.Input.Combos[0]);
         Assert.Equal(ClientState.Idle, h.Controller.State);
