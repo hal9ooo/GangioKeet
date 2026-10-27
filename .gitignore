@@ -33,3 +33,12 @@ recordings/
 # Windows ONNX STT model (downloaded by scripts/fetch_stt_model.py)
 models/
 *.tar.bz2
+
+# Native builds and local monolith evaluation artefacts
+client-windows/**/bin/
+client-windows/**/obj/
+client-windows/native/build/
+client-windows/native/vendor/
+tests/fixtures/stt_eval/public/*/manifest.jsonl
+reports/local-monolith/
+artifacts/

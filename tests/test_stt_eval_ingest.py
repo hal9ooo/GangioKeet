@@ -1,4 +1,7 @@
 import json
+import hashlib
+import io
+from types import SimpleNamespace
 import sys
 import wave
 from pathlib import Path
@@ -137,3 +140,105 @@ def test_existing_manifest_without_optional_fields_still_loads():
     assert clips
     assert all("gender" in clip for clip in clips)
     assert all(clip["gender"] is None for clip in clips)
+
+
+def test_preserves_punctuated_reference(tmp_path):
+    rows = _fake_rows(2)
+    rows[0].update(transcription="come funziona", raw_transcription="Come funziona?")
+    output = write_fleurs_corpus(rows, tmp_path, count=2)
+    clips = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()]
+    clip = next(row for row in clips if row["reference_raw"] == "come funziona")
+    assert clip["reference_final"] == "Come funziona?"
+    assert clip["reference_status"] == "provided"
+    assert clip["reference_revision"] == "fleurs-source-v2"
+
+
+def test_duplicate_sentence_ids_keep_distinct_audio(tmp_path):
+    rows = _fake_rows(2)
+    rows[1]["id"] = rows[0]["id"]
+    rows[0]["path"] = "first.wav"
+    rows[1]["path"] = "second.wav"
+    rows[1]["audio"]["array"] = [-0.25] * 48000
+    output = write_fleurs_corpus(rows, tmp_path, count=2)
+    clips = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()]
+    assert {clip["source_path"] for clip in clips} == {"first.wav", "second.wav"}
+    assert {clip["source_row_index"] for clip in clips} == {0, 1}
+    assert len({clip["audio_sha256"] for clip in clips}) == 2
+    for clip in clips:
+        with wave.open(str(tmp_path / clip["audio_path"]), "rb") as handle:
+            assert hashlib.sha256(handle.readframes(handle.getnframes())).hexdigest() == clip["audio_sha256"]
+
+
+def test_missing_raw_transcription_is_not_invented(tmp_path):
+    rows = _fake_rows(2)
+    for row in rows:
+        row.pop("raw_transcription")
+    output = write_fleurs_corpus(rows, tmp_path, count=2)
+    clips = [json.loads(line) for line in output.read_text(encoding="utf-8").splitlines()]
+    assert all(clip["reference_final"] == "" for clip in clips)
+    assert all(clip["reference_status"] == "raw_only" for clip in clips)
+
+
+def test_manifest_hash_is_stable_with_crlf(tmp_path):
+    output = write_fleurs_corpus(_fake_rows(2), tmp_path, count=2)
+    metadata = json.loads((tmp_path / "provenance.json").read_text(encoding="utf-8"))
+    blob = output.read_bytes()
+    assert b"\r\n" not in blob
+    assert metadata["manifest_hash_encoding"] == "utf-8-lf"
+    crlf = blob.replace(b"\n", b"\r\n")
+    assert hashlib.sha256(crlf.replace(b"\r\n", b"\n")).hexdigest() == metadata["manifest_sha256"]
+
+
+def test_source_id_cannot_escape_audio_root(tmp_path):
+    rows = _fake_rows(2)
+    rows[0]["id"] = "../../outside"
+    output = write_fleurs_corpus(rows, tmp_path, count=2)
+    for line in output.read_text(encoding="utf-8").splitlines():
+        entry = json.loads(line)
+        audio = (tmp_path / entry["audio_path"]).resolve()
+        assert audio.is_relative_to((tmp_path / "audio").resolve())
+        assert audio.is_file()
+
+
+def test_default_loader_reads_pinned_parquet_without_remote_scripts(tmp_path, monkeypatch):
+    import numpy as np
+
+    revision = "a" * 40
+    parquet = "parquet-data/it_it/validation-00000-of-00001.parquet"
+    encoded = io.BytesIO()
+    with wave.open(encoded, "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(16000)
+        handle.writeframes(b"\x00\x20" * 32)
+
+    class Dataset:
+        def cast_column(self, name, feature):
+            return self
+
+        def __iter__(self):
+            for index in range(2):
+                yield {"id": index, "transcription": "come funziona",
+                       "raw_transcription": "Come funziona?", "gender": index,
+                       "audio": {"bytes": encoded.getvalue(), "path": f"{index}.wav"}}
+
+    def load(name, config=None, **kwargs):
+        if name != "parquet" or kwargs.get("data_files") != [
+            f"https://huggingface.co/datasets/google/fleurs/resolve/{revision}/{parquet}"
+        ]:
+            raise AssertionError("must read pinned parquet, never execute dataset scripts")
+        return Dataset()
+
+    api = SimpleNamespace(dataset_info=lambda *a, **k: SimpleNamespace(
+        sha=revision, siblings=[SimpleNamespace(rfilename=parquet)]))
+    monkeypatch.setitem(sys.modules, "datasets", SimpleNamespace(
+        load_dataset=load, Audio=lambda **kwargs: kwargs))
+    monkeypatch.setitem(sys.modules, "huggingface_hub", SimpleNamespace(HfApi=lambda: api))
+    monkeypatch.setitem(sys.modules, "soundfile", SimpleNamespace(
+        read=lambda *a, **k: (np.full(32, 0.25, dtype=np.float32), 16000)))
+    output = ingest_fleurs(tmp_path, count=2, split="validation", revision=revision)
+    metadata = json.loads((tmp_path / "provenance.json").read_text(encoding="utf-8"))
+    assert metadata["revision"] == revision
+    assert metadata["purpose"] == "development"
+    assert all(json.loads(line)["reference_final"] == "Come funziona?"
+               for line in output.read_text(encoding="utf-8").splitlines())

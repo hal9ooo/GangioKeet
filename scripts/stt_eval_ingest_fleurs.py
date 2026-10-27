@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import io
 import json
 import random
 import re
@@ -83,8 +84,8 @@ def select_fleurs_clips(
         )
 
     prepared = []
-    for row in rows:
-        prepared.append({**row, "_duration": _duration(row)})
+    for index, row in enumerate(rows):
+        prepared.append({**row, "source_row_index": index, "_duration": _duration(row)})
 
     # The seed only affects ties: duration ordering remains the stratification.
     shuffled = list(prepared)
@@ -167,13 +168,20 @@ def write_fleurs_corpus(
         sample_rate = int(audio.get("sampling_rate", SAMPLE_RATE))
         audio_path = audio_dir / f"{clip_id}.wav"
         _write_wav(audio_path, audio["array"], sample_rate)
+        punctuated = row.get("raw_transcription")
+        has_final = isinstance(punctuated, str) and bool(punctuated.strip())
 
         entries.append(
             {
                 "id": clip_id,
                 "audio_path": f"audio/{clip_id}.wav",
                 "reference_raw": row["transcription"],
-                "reference_final": row["transcription"],
+                "reference_final": punctuated if has_final else "",
+                "reference_status": "provided" if has_final else "raw_only",
+                "reference_revision": "fleurs-source-v2",
+                "source_path": str(row.get("path") or audio.get("path") or ""),
+                "source_row_index": row["source_row_index"],
+                "audio_sha256": hashlib.sha256(_pcm16_bytes(audio["array"])).hexdigest(),
                 "category": "it_general",
                 "profile": "default",
                 "technical_terms": [],
@@ -187,7 +195,7 @@ def write_fleurs_corpus(
     manifest_text = "".join(
         json.dumps(entry, ensure_ascii=False) + "\n" for entry in entries
     )
-    manifest_path.write_text(manifest_text, encoding="utf-8")
+    manifest_path.write_text(manifest_text, encoding="utf-8", newline="\n")
 
     metadata = {
         "dataset": "google/fleurs",
@@ -202,6 +210,9 @@ def write_fleurs_corpus(
             "gender-balanced where available"
         ),
         **(provenance or {}),
+        "purpose": "held_out" if (provenance or {}).get("split", "test") == "test" else "development",
+        "reference_schema": "fleurs-source-v2",
+        "manifest_hash_encoding": "utf-8-lf",
         "manifest_sha256": hashlib.sha256(
             manifest_text.encode("utf-8")
         ).hexdigest(),
@@ -209,6 +220,7 @@ def write_fleurs_corpus(
     (output_dir / "provenance.json").write_text(
         json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     return manifest_path
 
@@ -224,19 +236,36 @@ def ingest_fleurs(
 ) -> Path:
     if dataset_loader is None:
         try:
-            from datasets import load_dataset
+            from datasets import Audio, load_dataset
+            from huggingface_hub import HfApi
+            import soundfile as sf
         except ImportError as exc:
             raise RuntimeError(
-                "datasets is required to download FLEURS; install it only in "
+                "datasets and soundfile are required to download FLEURS; install them only in "
                 ".venv-stt-eval"
             ) from exc
-        dataset = load_dataset(
-            "google/fleurs",
-            "it_it",
-            split=split,
-            revision=revision,
+        info = HfApi().dataset_info("google/fleurs", revision=revision or "main")
+        revision = info.sha
+        filenames = sorted(
+            entry.rfilename for entry in info.siblings
+            if entry.rfilename.endswith(".parquet") and (
+                entry.rfilename.startswith(f"parquet-data/it_it/{split}-")
+                or entry.rfilename.startswith(f"it_it/{split}/")
+            )
         )
-        rows = list(dataset)
+        if not filenames:
+            raise RuntimeError(f"No Italian {split} parquet in FLEURS revision {revision}")
+        dataset = load_dataset("parquet", data_files=[
+            f"https://huggingface.co/datasets/google/fleurs/resolve/{revision}/{name}"
+            for name in filenames
+        ], split="train").cast_column("audio", Audio(decode=False))
+        rows = []
+        for row in dataset:
+            audio = row["audio"]
+            source = io.BytesIO(audio["bytes"]) if audio.get("bytes") is not None else audio["path"]
+            samples, rate = sf.read(source, dtype="float32")
+            rows.append({**row, "audio": {"array": samples, "sampling_rate": rate,
+                                         "path": audio.get("path", "")}})
     else:
         rows = list(dataset_loader())
 
