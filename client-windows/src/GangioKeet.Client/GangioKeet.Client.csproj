@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <Resource Include="Assets\gangio.ico" />
+    <Resource Include="Assets\gangio-cover.png" />
   </ItemGroup>
 
   <ItemGroup>

@@ -33,6 +33,7 @@ public partial class App : Application
     private EndpointProbe? _probe;
     private EndpointMonitor? _monitor;
     private SettingsWindow? _settings;
+    private SplashWindow? _splash;
     private TrayController? _tray;
     private PillWindow? _pill;
     private WasapiAudioCapture? _capture;
@@ -63,12 +64,19 @@ public partial class App : Application
 
         _logger = new FileLogger();
 
+        // Lo splash è l'unica finestra all'avvio: senza OnExplicitShutdown la
+        // chiusura della splash (3 s) spegnerebbe l'app tray-only.
+        ShutdownMode = ShutdownMode.OnExplicitShutdown;
+        _splash = new SplashWindow(TimeSpan.FromSeconds(3));
+        _splash.Show();
+
         try
         {
             _config = ConfigLoader.Load();
         }
         catch (ConfigException ex)
         {
+            _splash.Dismiss();
             _logger.Write("config_error", ex.Message);
             MessageBox.Show(
                 $"Configurazione non valida:\n{ex.Message}",
@@ -79,14 +87,13 @@ public partial class App : Application
             return;
         }
 
-        ShutdownMode = ShutdownMode.OnExplicitShutdown;
-
         try
         {
             Compose();
         }
         catch (Exception ex)
         {
+            _splash.Dismiss();
             _logger.Write("startup_error", ex.Message);
             MessageBox.Show(
                 $"Impossibile avviare GangioKeet:\n{ex.Message}",
@@ -320,6 +327,7 @@ public partial class App : Application
             _soundPlayer?.Dispose();
             _tray?.Dispose();
             _settings?.Close();
+            _splash?.Close();
             _pill?.Close();
             _recovery?.Discard();
         }

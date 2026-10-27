@@ -1,0 +1,41 @@
+<Window x:Class="GangioKeet.Client.Ui.SplashWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Width="640"
+        Height="344"
+        WindowStyle="None"
+        ResizeMode="NoResize"
+        AllowsTransparency="True"
+        Background="Transparent"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        Topmost="True"
+        WindowStartupLocation="CenterScreen"
+        RenderTransformOrigin="0.5,0.5">
+    <Window.RenderTransform>
+        <ScaleTransform x:Name="SplashScale" ScaleX="0.98" ScaleY="0.98" />
+    </Window.RenderTransform>
+
+    <Grid x:Name="Root" Opacity="0">
+        <Border CornerRadius="10">
+            <Border.Background>
+                <ImageBrush ImageSource="/Assets/gangio-cover.png" Stretch="UniformToFill" />
+            </Border.Background>
+        </Border>
+
+        <Border VerticalAlignment="Bottom"
+                Height="3"
+                Background="#33FFFFFF"
+                CornerRadius="0,0,10,10" />
+
+        <Canvas VerticalAlignment="Bottom" Height="3" ClipToBounds="True">
+            <Rectangle Height="3"
+                       Width="140"
+                       Fill="#4FE0A8">
+                <Rectangle.RenderTransform>
+                    <TranslateTransform x:Name="BarShift" X="-140" />
+                </Rectangle.RenderTransform>
+            </Rectangle>
+        </Canvas>
+    </Grid>
+</Window>
