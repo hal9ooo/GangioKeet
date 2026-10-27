@@ -64,6 +64,17 @@ public partial class App : Application
 
         _logger = new FileLogger();
 
+        // Su un'installazione pulita la cartella di configurazione può non
+        // esistere: la finestra impostazioni deve poter scrivere il primo file.
+        try
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(ConfigLoader.DefaultPath)!);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            _logger.Write("config_directory_error", ex.Message);
+        }
+
         // Lo splash è l'unica finestra all'avvio: senza OnExplicitShutdown la
         // chiusura della splash (3 s) spegnerebbe l'app tray-only.
         ShutdownMode = ShutdownMode.OnExplicitShutdown;
