@@ -33,6 +33,15 @@ public sealed class CleanerTests
         await Assert.ThrowsAsync<InvalidDataException>(() => cleaner.CleanAsync("una frase", "chat", CancellationToken.None));
     }
 
+    [Fact]
+    public async Task ValidatedCommandCasingIsPreserved()
+    {
+        await using LlamaTextCleaner cleaner = new(new FakeGenerator("Avvia docker compose up.", false),
+            new CleanupPolicy { CanonicalTerms = ["Docker"] });
+        await cleaner.LoadAsync(default);
+        Assert.Equal("Avvia docker compose up.", (await cleaner.CleanAsync("avvia docker compose up", "code", default)).Text);
+    }
+
     private sealed class FakeGenerator(string text, bool truncated) : ITextGenerator
     {
         public int Calls;

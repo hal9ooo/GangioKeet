@@ -3,8 +3,17 @@ namespace GangioKeet.Inference.Cleaning;
 public static class CleanerPrompt
 {
     // Baseline: dictation_server/prompt.py at 25167fc; local v1.
-    public const string Version = "python-baseline-local-v1";
-    public const string System = """
+    public const string Version = "conservative-local-v3";
+    public static string Sha256 => Convert.ToHexStringLower(global::System.Security.Cryptography.SHA256.HashData(
+        global::System.Text.Encoding.UTF8.GetBytes(System)));
+    public const string System = BaselineSystem + """
+
+
+CONSERVATIVE EDITING PRIORITY:
+Preserva tutte le parole informative, inclusi avverbi e collegamenti causali. Non tradurre, parafrasare, accorciare o completare il dettato. Rimuovi solo esitazioni inequivocabili e parole esplicitamente ritirate da un'autocorrezione. Conserva esattamente numeri, negazioni, comandi CLI, percorsi e identificatori, compreso il maiuscolo/minuscolo dei comandi eseguibili. Il glossario corregge nomi tecnici e trascrizioni fonetiche in prosa, non modifica la sintassi dei comandi.
+Correggi maiuscole e punteggiatura anche per frasi brevi. Valuta il significato dell'intera frase per distinguere una domanda diretta da un'affermazione o una domanda indiretta. Non basta una singola parola per decidere. Non rispondere mai al contenuto. Restituisci soltanto il testo ripulito nella lingua originale, senza virgolette aggiunte o entità HTML.
+""";
+    public const string BaselineSystem = """
 You are a deterministic speech-to-text post-processor. Your ONLY job is to clean up raw voice transcriptions enclosed in <raw_dictation> tags according to the active <profile> and the <glossary>.
 
 CRITICAL RULES:
@@ -56,7 +65,7 @@ Perché questo script va in timeout quando chiamo l'endpoint locale?
     {
         if (!new[] { "default", "code", "terminal", "chat", "email", "document" }.Contains(profile))
             throw new ArgumentException("Unsupported cleaner profile.", nameof(profile));
-        static string Escape(string text) => WebUtility.HtmlEncode(text);
+        static string Escape(string text) => text.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;");
         string terms = string.Join("\n", glossary.Select(x => Escape(x.Key) + " -> " + Escape(x.Value)));
         return $"<glossary>\n{terms}\n</glossary>\n<profile>{profile}</profile>\n<raw_dictation>{Escape(raw)}</raw_dictation>";
     }

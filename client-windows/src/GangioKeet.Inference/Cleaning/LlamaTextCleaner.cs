@@ -14,7 +14,7 @@ public sealed class LlamaTextCleaner(ITextGenerator generator, CleanupPolicy pol
         IReadOnlyList<string> warnings = OutputPolicy.Validate(raw, generated.Text);
         if (generated.Truncated || warnings.Count > 0)
             throw new InvalidDataException("Cleaner output rejected: " + (generated.Truncated ? "token_limit" : string.Join(",", warnings)));
-        return new CleanedText(GlossaryNormalizer.Normalize(generated.Text.Trim(), policy), generator.Identity);
+        return new CleanedText(generated.Text.Trim(), generator.Identity);
     }
 
     public ValueTask DisposeAsync() => generator.DisposeAsync();

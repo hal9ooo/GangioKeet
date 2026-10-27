@@ -1,5 +1,6 @@
 using System.Text.Json;
 using GangioKeet.Inference.Native;
+using GangioKeet.Inference.Cleaning;
 
 namespace GangioKeet.Eval;
 
@@ -25,9 +26,20 @@ public static class Program
                 Console.WriteLine(JsonSerializer.Serialize(new { api.RuntimeVersion, Devices = api.ListDevices() }, ProbeCommand.JsonOptions));
                 return 0;
             }
-            if (args[0] != "probe") throw new ArgumentException($"Unknown command: {args[0]}");
             using CancellationTokenSource cts = new();
             Console.CancelKeyPress += (_, evt) => { evt.Cancel = true; cts.Cancel(); };
+            if (args[0] == "replay")
+            {
+                ReplayCommand replay = new(options.GetValueOrDefault("--model-root", "models"),
+                    Required("--native-dir"), Required("--llama-dir"), Required("--runtime-lock"),
+                    CleanupPolicy.Load(Required("--cleanup-policy")),
+                    options.TryGetValue("--passes", out string? repeat) ? int.Parse(repeat) : 3,
+                    options.GetValueOrDefault("--backend", "vulkan"));
+                return await replay.RunAsync(Required("--catalog"), Required("--manifest"),
+                    options.GetValueOrDefault("--stt"), options.GetValueOrDefault("--cleaner"),
+                    Required("--phase"), Required("--output"), cts.Token);
+            }
+            if (args[0] != "probe") throw new ArgumentException($"Unknown command: {args[0]}");
             if (options.ContainsKey("--text-corpus")) return await CleanerProbeCommand.RunAsync(options, cts.Token);
             ProbeCommand probe = new(options.GetValueOrDefault("--model-root", "models"),
                 Required("--native-dir"), options.GetValueOrDefault("--backend", "vulkan"),

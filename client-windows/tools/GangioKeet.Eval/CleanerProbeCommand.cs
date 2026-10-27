@@ -64,7 +64,7 @@ public static class CleanerProbeCommand
         string output = Path.GetFullPath(Required("--output"));
         Directory.CreateDirectory(Path.GetDirectoryName(output)!);
         await File.WriteAllTextAsync(output, JsonSerializer.Serialize(new { schema_version = 1, phase = "cleaner",
-            candidate, engine = identity, policy_sha256 = policy.Sha256, prompt_version = CleanerPrompt.Version,
+            candidate, engine = identity, policy_sha256 = policy.Sha256, prompt_version = CleanerPrompt.Version, prompt_sha256 = CleanerPrompt.Sha256,
             load_ms = loadMs, clips = rows, coexistence = new { asr, before, after, same_asr_text = before == after },
             peak_working_set_bytes = Process.GetCurrentProcess().PeakWorkingSet64 }, ProbeCommand.JsonOptions), ct);
         Console.WriteLine("Report: " + output);

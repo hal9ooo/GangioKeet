@@ -21,6 +21,14 @@ public sealed class CleanerPromptTests
         CleanerPrompt.Render("ciao", "unknown", new Dictionary<string, string>()));
 
     [Fact]
+    public void EscapingPreservesUnicodeAndQuotesLikeThePythonBaseline()
+    {
+        string rendered = CleanerPrompt.Render("perché è così? \"sì\" & <x>", "chat", new Dictionary<string, string>());
+        Assert.Contains("perché è così? \"sì\" &amp; &lt;x&gt;", rendered);
+        Assert.DoesNotContain("&#", rendered);
+    }
+
+    [Fact]
     public void GemmaTextOnlyMatchesPinnedCanonicalJinjaWithThinkingDisabled() =>
         Assert.Equal("<bos><|turn>system\nRegole.<turn|>\n<|turn>user\ncome funziona<turn|>\n<|turn>model\n",
             GemmaTextTemplate.Render("Regole.", "come funziona"));
