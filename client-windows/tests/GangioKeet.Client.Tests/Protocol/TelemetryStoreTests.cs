@@ -26,6 +26,20 @@ public sealed class TelemetryStoreTests
     }
 
     [Fact]
+    public void RecordTiming_IsKeyedByTurnAndKeepsFailureSeparate()
+    {
+        TelemetryStore store = new();
+
+        store.RecordTiming(11, 3500, null);
+        store.RecordTiming(12, null, "focus_lost");
+
+        Assert.Equal(3500, store.TimingFor(11)!.Value.ReleaseToPasteMs);
+        Assert.Null(store.TimingFor(12)!.Value.ReleaseToPasteMs);
+        Assert.Equal("focus_lost", store.TimingFor(12)!.Value.FailureReason);
+        Assert.Null(store.TimingFor(13));
+    }
+
+    [Fact]
     public void Success_ClearsThePreviousError()
     {
         TelemetryStore store = new();

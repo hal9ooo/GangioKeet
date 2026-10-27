@@ -10,6 +10,12 @@ public readonly record struct TelemetrySnapshot(
     string? LastEndpoint,
     string? LastError);
 
+public readonly record struct TurnTimingRecord(
+    long TurnKey,
+    double? ReleaseToPasteMs,
+    string? FailureReason,
+    DateTimeOffset RecordedAt);
+
 /// <summary>Telemetria in RAM, thread-safe: i codici restano codici.</summary>
 public sealed class TelemetryStore
 {
@@ -22,6 +28,7 @@ public sealed class TelemetryStore
     private double? _lastConnectMs;
     private string? _lastEndpoint;
     private string? _lastError;
+    private readonly Dictionary<long, TurnTimingRecord> _timings = [];
 
     public void RecordDictation(
         bool success,
@@ -54,6 +61,22 @@ public sealed class TelemetryStore
         lock (_gate)
         {
             _retries++;
+        }
+    }
+
+    public void RecordTiming(long turnKey, double? releaseToPasteMs, string? failureReason)
+    {
+        lock (_gate)
+        {
+            _timings[turnKey] = new(turnKey, releaseToPasteMs, failureReason, DateTimeOffset.UtcNow);
+        }
+    }
+
+    public TurnTimingRecord? TimingFor(long turnKey)
+    {
+        lock (_gate)
+        {
+            return _timings.TryGetValue(turnKey, out TurnTimingRecord timing) ? timing : null;
         }
     }
 

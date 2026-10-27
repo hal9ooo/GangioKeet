@@ -45,6 +45,7 @@ public sealed class DictationController : IAsyncDisposable
     private string _wireProfile = "default";
     private ClientState _state = ClientState.Idle;
     private long _turnStarted;
+    private TurnTiming? _turnTiming;
 
     public DictationController(
         IAudioCapture capture,
@@ -137,6 +138,7 @@ public sealed class DictationController : IAsyncDisposable
         if (turn is null) return;
         if (_state is not (ClientState.Recording or ClientState.Connecting)) return;
 
+        _turnTiming?.MarkReleased(_time.GetTimestamp());
         try
         {
             await StopCaptureAsync(ct).ConfigureAwait(false);
@@ -157,6 +159,7 @@ public sealed class DictationController : IAsyncDisposable
     {
         int generation = Interlocked.Increment(ref _generation);
         _ = generation;
+        _turnTiming?.MarkPasteFailed("aborted");
 
         _audioBuffer.Clear();
         ClearPendingAudio();
@@ -294,6 +297,7 @@ public sealed class DictationController : IAsyncDisposable
         // L'endpoint è fissato qui, una volta per dettatura: se il monitor ne
         // elegge un altro durante il turno, il cambio vale dal turno successivo.
         _turnStarted = _time.GetTimestamp();
+        _turnTiming = new TurnTiming(_time);
 
         IActiveDictationTurn? turn = null;
         try
@@ -369,6 +373,12 @@ public sealed class DictationController : IAsyncDisposable
         }
         finally
         {
+            if (_turnTiming is not null)
+            {
+                _telemetry.RecordTiming(_turnStarted, _turnTiming.ReleaseToPasteMs, _turnTiming.FailureReason);
+                _turnTiming = null;
+            }
+
             if (turn is not null)
             {
                 await DisposeTurnAsync(turn).ConfigureAwait(false);
@@ -384,6 +394,7 @@ public sealed class DictationController : IAsyncDisposable
 
         if (outcome.Status == DictationStatus.Aborted)
         {
+            _turnTiming?.MarkPasteFailed("aborted");
             _pill.Hide();
             _state = ClientState.Idle;
             return;
@@ -403,6 +414,7 @@ public sealed class DictationController : IAsyncDisposable
 
         if (string.IsNullOrWhiteSpace(result.FinalText))
         {
+            _turnTiming?.MarkPasteFailed("empty_result");
             _state = ClientState.Idle;
             _pill.Show(PillState.EmptyResult, "Testo vuoto", _profile);
             _ = HidePillAfterAsync(TimeSpan.FromMilliseconds(800), generation);
@@ -424,6 +436,7 @@ public sealed class DictationController : IAsyncDisposable
         if (target is null || !_foreground.IsAlive(target) || _elevation.IsInjectionBlocked(target))
         {
             // Nessun paste possibile: il testo resta recuperabile, mai perso.
+            _turnTiming?.MarkPasteFailed("target_unavailable");
             OfferResultForRecovery(result, target, "uipi_blocked");
             _pill.Show(PillState.Error, "Testo non incollato: recuperabile dalla tray", _profile);
             _state = ClientState.Idle;
@@ -441,6 +454,7 @@ public sealed class DictationController : IAsyncDisposable
 
         if (pasteResult.Status == PasteStatus.Pasted)
         {
+            _turnTiming?.MarkPasted(_time.GetTimestamp());
             _state = ClientState.Idle;
             _pill.Hide();
             _sound.Play(SoundKind.Stop);
@@ -448,14 +462,16 @@ public sealed class DictationController : IAsyncDisposable
             return;
         }
 
-        OfferResultForRecovery(result, target, pasteResult.Status switch
+        string pasteFailure = pasteResult.Status switch
         {
             PasteStatus.FocusLost => "focus_lost",
             PasteStatus.BlockedUipi => "uipi_blocked",
             PasteStatus.ClipboardUnavailable => "clipboard_unavailable",
             PasteStatus.InjectionFailed => "injection_failed",
             _ => "paste_failed",
-        });
+        };
+        _turnTiming?.MarkPasteFailed(pasteFailure);
+        OfferResultForRecovery(result, target, pasteFailure);
 
         _pill.Show(PillState.Error, "Paste non riuscito: testo recuperabile", _profile);
         _state = ClientState.Idle;
@@ -468,6 +484,7 @@ public sealed class DictationController : IAsyncDisposable
         bool offerRecovery)
     {
         if (IsStale(generation)) return;
+        _turnTiming?.MarkPasteFailed(code);
 
         await StopCaptureAsync(CancellationToken.None).ConfigureAwait(false);
 

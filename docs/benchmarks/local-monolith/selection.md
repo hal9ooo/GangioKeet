@@ -22,7 +22,9 @@ Protocollo: un warm-up escluso dalle misure, poi una passata held-out per
 candidato. Sul development erano state eseguite tre passate per candidato;
 la selezione finale usa 200 clip distinti, non tre ripetizioni delle stesse
 30 clip. La scelta non è stata fatta sul development e i parametri non sono
-stati modificati dopo aver visto l'held-out.
+stati modificati dopo aver visto l'held-out. Una seconda passata della
+coppia scelta, riportata in `results.md`, ha riprodotto WER e F1 identici e
+un p95 breve di 2,75 s.
 
 Prompt cleaner: `conservative-local-v3`, SHA256
 `e63fa4085c525b203bbd71897a25c03af0984b0a627ee229e6304081a349e907`.

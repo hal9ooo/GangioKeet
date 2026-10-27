@@ -16,7 +16,7 @@ public sealed record LocalInferenceSetup(IInferencePipeline Pipeline, string Stt
 public static class LocalInferenceFactory
 {
     public static LocalInferenceSetup Create(ClientConfig config, string? nativeDirectory = null,
-        string? llamaDirectory = null, string? runtimeLockPath = null)
+        string? llamaDirectory = null, string? runtimeLockPath = null, string? modelRoot = null)
     {
         if (config.Inference.Mode != "local")
             throw new InvalidOperationException("Local inference requires inference.mode=local.");
@@ -29,8 +29,9 @@ public static class LocalInferenceFactory
         ModelArtifact stt = ReadModel(root.GetProperty("stt"));
         ModelArtifact cleaner = ReadModel(root.GetProperty("cleaner"));
 
-        string modelRoot = Path.GetDirectoryName(selectionPath)
+        string selectedRoot = Path.GetDirectoryName(selectionPath)
             ?? throw new InvalidDataException("selected.json has no parent directory.");
+        string models = modelRoot ?? selectedRoot;
         string install = AppContext.BaseDirectory;
         string transcribe = nativeDirectory ?? Environment.GetEnvironmentVariable("GANGIOKEET_TRANSCRIBE_DIR")
             ?? Path.Combine(install, "native", "transcribe");
@@ -41,8 +42,8 @@ public static class LocalInferenceFactory
         string backend = config.Inference.Backend;
 
         CleanupPolicy policy = CleanupPolicy.Load(config.Inference.CleanupPolicyPath);
-        TranscribeSttEngine sttEngine = new(stt, modelRoot, transcribe, backend);
-        LlamaTextCleaner textCleaner = new(new LlamaGenerator(cleaner, modelRoot, llama, lockPath, backend), policy);
+        TranscribeSttEngine sttEngine = new(stt, models, transcribe, backend);
+        LlamaTextCleaner textCleaner = new(new LlamaGenerator(cleaner, models, llama, lockPath, backend), policy);
         return new(new InferencePipeline(sttEngine, textCleaner, policy, TimeProvider.System),
             stt.Id, cleaner.Id, backend);
     }
