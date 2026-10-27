@@ -42,3 +42,8 @@ client-windows/native/vendor/
 tests/fixtures/stt_eval/public/*/manifest.jsonl
 reports/local-monolith/
 artifacts/
+
+# Public model identities are source; downloaded model bytes remain ignored.
+!client-windows/models/
+client-windows/models/*
+!client-windows/models/*.json

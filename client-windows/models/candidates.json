@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "candidates": [
+    {"id":"qwen3_asr_1_7b","family":"qwen3-asr","source_checkpoint":"Qwen/Qwen3-ASR-1.7B","revision":"","files":[],"precision":"unselected","license":"Apache-2.0","runtime_id":"transcribe-vulkan","status":"not_downloaded"},
+    {"id":"parakeet_v3","family":"parakeet-tdt","source_checkpoint":"nvidia/parakeet-tdt-0.6b-v3","revision":"","files":[],"precision":"unselected","license":"CC-BY-4.0","runtime_id":"transcribe-vulkan","status":"not_downloaded"},
+    {"id":"whisper_large_v3","family":"whisper","source_checkpoint":"openai/whisper-large-v3","revision":"","files":[],"precision":"unselected","license":"Apache-2.0","runtime_id":"whisper-vulkan","status":"not_downloaded"},
+    {"id":"qwen3_1_7b","family":"qwen3","source_checkpoint":"Qwen/Qwen3-1.7B","revision":"","files":[],"precision":"unselected","license":"Apache-2.0","runtime_id":"llama-vulkan","status":"not_downloaded"},
+    {"id":"gemma4_e2b","family":"gemma4","source_checkpoint":"google/gemma-4-E2B-it","artifact_repository":"google/gemma-4-E2B-it-qat-q4_0-gguf","revision":"","files":[],"precision":"Q4_0","license":"Apache-2.0","runtime_id":"llama-vulkan","status":"not_downloaded"},
+    {"id":"qwen3_4b","family":"qwen3","source_checkpoint":"Qwen/Qwen3-4B","revision":"","files":[],"precision":"unselected","license":"Apache-2.0","runtime_id":"llama-vulkan","status":"not_downloaded"}
+  ]
+}
