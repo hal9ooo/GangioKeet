@@ -38,7 +38,7 @@ class RecordingStore:
         self,
         cfg: RecordingConfig,
         stt_model: str,
-        llm_model: str,
+        llm_model: str | None,
         *,
         directory: str | Path | None = None,
     ):
@@ -191,7 +191,8 @@ class RecordingStore:
             0o600,
         )
         try:
-            os.fchmod(fd, 0o600)
+            if hasattr(os, "fchmod"):  # POSIX only; Windows has no fchmod
+                os.fchmod(fd, 0o600)
             with os.fdopen(fd, "ab") as handle:
                 fd = -1
                 handle.write(line.encode("utf-8"))

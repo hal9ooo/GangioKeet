@@ -113,7 +113,8 @@ def test_websocket_dictation_writes_wav_and_manifest(tmp_path: Path):
 
     audio_path = directory / entry["audio_path"]
     assert audio_path.is_file()
-    assert stat.S_IMODE(audio_path.stat().st_mode) == 0o600
+    if sys.platform != "win32":  # Windows chmod cannot express POSIX modes
+        assert stat.S_IMODE(audio_path.stat().st_mode) == 0o600
     with wave.open(str(audio_path), "rb") as handle:
         assert handle.getnchannels() == 1
         assert handle.getsampwidth() == 2

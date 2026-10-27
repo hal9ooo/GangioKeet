@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from dictation_server.config import load_config
-from dictation_server.llm import LLMDeadlineExceeded
+from dictation_server.engines import LLMDeadlineExceeded
 from dictation_server.pipeline import Pipeline
 from tests.fakes import (
     ClearCounter,
@@ -106,7 +106,7 @@ async def test_warm_up_touches_both_engines():
     p = Pipeline(stt, llm, load_config(CONFIG_PATH))
     await p.warm_up()
     assert len(stt.seen) == 1
-    assert stt.seen[0].shape == (16000,)
+    assert len(stt.seen[0]) == 2 * 16000  # one second of PCM16
     assert len(llm.calls) >= 1
 
 
@@ -210,34 +210,22 @@ async def test_engine_error_still_clears_and_releases_lock():
 
 
 @pytest.mark.asyncio
-async def test_pcm_conversion_runs_inside_the_metal_lock(monkeypatch):
-    import dictation_server.pipeline as pipeline_module
-
-    calls = []
-
-    def recording_conversion(pcm):
-        calls.append(len(pcm))
-        return object()
-
-    monkeypatch.setattr(
-        pipeline_module, "pcm_bytes_to_mlx_array", recording_conversion
-    )
+async def test_stt_runs_inside_the_metal_lock_and_receives_raw_pcm():
     counter = ClearCounter()
     stt = FakeSTT()
     p = Pipeline(stt, FakeLLM(), load_config(CONFIG_PATH), counter)
+    pcm = make_silence(0.1)
 
     await p._metal.acquire()
-    task = asyncio.create_task(p.process(make_silence(0.1), bypass_llm=True))
+    task = asyncio.create_task(p.process(pcm, bypass_llm=True))
     try:
         await asyncio.sleep(0.05)
-        assert calls == []
         assert stt.seen == []
     finally:
         p._metal.release()
 
     result = await task
-    assert calls == [3200]
-    assert len(stt.seen) == 1
+    assert stt.seen == [pcm]
     assert result.fast_path is True
     assert counter.n == 1
 

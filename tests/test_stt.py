@@ -1,7 +1,7 @@
-import mlx.core as mx
 import pytest
 
-from dictation_server.audio import pcm_bytes_to_mlx_array
+mx = pytest.importorskip("mlx.core", reason="MLX is macOS-only")
+
 from dictation_server.stt import ParakeetSTT
 from tests.helpers import make_silence
 
@@ -109,7 +109,7 @@ def test_transcribe_uses_low_level_get_logmel_and_generate(monkeypatch):
     model = FakeModel()
     stt = ParakeetSTT("fake-model")
     stt.model = model
-    audio = pcm_bytes_to_mlx_array(make_silence(0.1))
+    pcm = make_silence(0.1)
     seen = {}
 
     def fake_get_logmel(x, config):
@@ -128,7 +128,7 @@ def test_transcribe_uses_low_level_get_logmel_and_generate(monkeypatch):
     monkeypatch.setattr("parakeet_mlx.parakeet.get_logmel", fake_get_logmel)
     model.generate = fake_generate
 
-    assert stt.transcribe(audio) == "ciao mondo"
+    assert stt.transcribe(pcm) == "ciao mondo"
     assert seen["mel"] == "mel"
     assert seen["config"] is model.preprocessor_config
     assert isinstance(seen["decoding"], DecodingConfig)
@@ -138,4 +138,4 @@ def test_transcribe_uses_low_level_get_logmel_and_generate(monkeypatch):
 def test_transcribe_before_load_raises():
     stt = ParakeetSTT("fake-model")
     with pytest.raises(RuntimeError, match="load"):
-        stt.transcribe(pcm_bytes_to_mlx_array(make_silence(0.1)))
+        stt.transcribe(make_silence(0.1))

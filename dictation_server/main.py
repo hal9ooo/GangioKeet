@@ -8,15 +8,37 @@ from fastapi import FastAPI
 
 from .auth import ApiKeyPolicy
 from .config import AppConfig, load_config
-from .llm import LLMCleaner
+from .engines import LLM, STT
 from .pipeline import Pipeline
 from .prompt import build_system_prompt
 from .server import create_app
-from .stt import ParakeetSTT
 
 logger = logging.getLogger(__name__)
 
 _APP_LOG_HANDLER_ATTR = "_dictation_server_handler"
+
+
+def _build_stt(cfg: AppConfig) -> STT:
+    if cfg.server.backend == "onnx":
+        from .stt_onnx import OnnxParakeetSTT
+
+        assert cfg.server.stt_onnx_dir is not None  # validated by ServerConfig
+        return OnnxParakeetSTT(cfg.server.stt_onnx_dir)
+
+    from .stt import ParakeetSTT
+
+    return ParakeetSTT(cfg.server.stt_model)
+
+
+def _build_llm(cfg: AppConfig) -> LLM:
+    if cfg.server.llm_model is None:
+        from .llm_null import NullLLM
+
+        return NullLLM()
+
+    from .llm import LLMCleaner
+
+    return LLMCleaner(cfg.server.llm_model)
 
 
 def configure_logging(level: int = logging.INFO) -> None:
@@ -46,8 +68,8 @@ def configure_logging(level: int = logging.INFO) -> None:
 
 def build_app(
     cfg: AppConfig,
-    stt: ParakeetSTT | None = None,
-    llm: LLMCleaner | None = None,
+    stt: STT | None = None,
+    llm: LLM | None = None,
 ) -> FastAPI:
     # Resolve auth before constructing or loading any model: a configured
     # but unavailable API key must fail startup without touching engines.
@@ -56,9 +78,9 @@ def build_app(
     )
 
     if stt is None:
-        stt = ParakeetSTT(cfg.server.stt_model)
+        stt = _build_stt(cfg)
     if llm is None:
-        llm = LLMCleaner(cfg.server.llm_model)
+        llm = _build_llm(cfg)
 
     stt.load()
     llm.load()
@@ -104,7 +126,7 @@ async def serve(
 def main(argv: list[str] | None = None) -> None:
     configure_logging()
     parser = argparse.ArgumentParser(
-        description="On-device MLX dictation server"
+        description="On-device dictation server (MLX or sherpa-onnx)"
     )
     parser.add_argument("--config", default="./config.yaml")
     parser.add_argument(

@@ -183,6 +183,21 @@ LAN. If you want loopback only, set `server.host: 127.0.0.1` in `config.yaml`.
 If you want to expose it to the Internet, please don't; there is a whole
 section about it later.
 
+### 1b. Server on Windows (optional, CPU only)
+
+The same protocol also runs without MLX: `sherpa-onnx` executes the int8
+Parakeet TDT 0.6B v3 transducer on the CPU, and a passthrough cleaner stands in
+for the MLX LLM (Parakeet already punctuates).
+
+```powershell
+uv sync --extra onnx
+uv run python scripts/fetch_stt_model.py   # ~640 MB, once
+uv run python -m dictation_server.main --config config.windows.yaml
+```
+
+`config.windows.yaml` binds to `127.0.0.1:8000`, so this endpoint is local-only.
+Add it in the client as a second endpoint to compare latency against the Mac.
+
 ### 2. Client (Windows)
 
 ```powershell

@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -9,10 +10,26 @@ class _StrictModel(BaseModel):
 
 
 class ServerConfig(_StrictModel):
+    backend: Literal["mlx", "onnx"] = "mlx"
     host: str = "0.0.0.0"
     port: int = 8000
     stt_model: str
-    llm_model: str
+    llm_model: str | None = None
+    stt_onnx_dir: str | None = None
+
+    @model_validator(mode="after")
+    def _check_backend_engines(self) -> "ServerConfig":
+        if self.backend == "mlx":
+            if not self.llm_model:
+                raise ValueError(
+                    "server.llm_model is required when server.backend is 'mlx'"
+                )
+            return self
+        if not (self.stt_onnx_dir or "").strip():
+            raise ValueError(
+                "server.stt_onnx_dir is required when server.backend is 'onnx'"
+            )
+        return self
 
 
 class RoutingConfig(_StrictModel):

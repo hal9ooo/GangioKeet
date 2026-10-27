@@ -3,6 +3,8 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip("mlx.core", reason="MLX is macOS-only")
+
 from dictation_server.config import load_config
 from dictation_server.llm import LLMCleaner
 from dictation_server.prompt import build_system_prompt

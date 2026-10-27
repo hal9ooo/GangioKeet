@@ -1,13 +1,14 @@
 import os
-import resource
 import subprocess
 import sys
 
-import mlx.core as mx
 import pytest
+
+mx = pytest.importorskip("mlx.core", reason="MLX is macOS-only")
+resource = pytest.importorskip("resource", reason="resource is POSIX-only")
+
 from mlx.utils import tree_flatten
 
-from dictation_server.audio import pcm_bytes_to_mlx_array
 from dictation_server.stt import ParakeetSTT
 from tests.helpers import make_silence
 
@@ -62,5 +63,5 @@ def test_loaded_weights_are_bfloat16_with_local_attention(stt):
 
 
 def test_transcribe_silence_returns_string(stt):
-    text = stt.transcribe(pcm_bytes_to_mlx_array(make_silence(1.0)))
+    text = stt.transcribe(make_silence(1.0))
     assert isinstance(text, str)

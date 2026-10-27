@@ -1,6 +1,8 @@
 import numpy as np
 import pytest
 
+pytest.importorskip("mlx.core", reason="MLX is macOS-only")
+
 from dictation_server.audio import pcm_bytes_to_mlx_array
 
 

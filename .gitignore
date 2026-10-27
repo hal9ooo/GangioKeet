@@ -29,3 +29,7 @@ client_config.yaml
 
 # Local opt-in dictation recordings: audio and transcripts never get committed
 recordings/
+
+# Windows ONNX STT model (downloaded by scripts/fetch_stt_model.py)
+models/
+*.tar.bz2

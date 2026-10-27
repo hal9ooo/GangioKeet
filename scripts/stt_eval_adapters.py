@@ -112,7 +112,7 @@ class SttAdapter(Protocol):
 
 
 class ParakeetBaselineAdapter:
-    """Existing server STT path (``ParakeetSTT`` + PCM conversion)."""
+    """Existing server STT path (``ParakeetSTT``)."""
 
     candidate_id = "parakeet_baseline"
     revision: str | None = None
@@ -130,7 +130,6 @@ class ParakeetBaselineAdapter:
             "stt", "parakeet_baseline"
         )
         self._stt = None
-        self._to_array = None
 
     def load(self) -> None:
         if self.status == "not_run":
@@ -139,7 +138,6 @@ class ParakeetBaselineAdapter:
                 f"{self.not_run_reason}"
             )
         try:
-            from dictation_server.audio import pcm_bytes_to_mlx_array
             from dictation_server.stt import ParakeetSTT
         except ImportError as exc:
             raise AdapterUnavailable(
@@ -157,17 +155,17 @@ class ParakeetBaselineAdapter:
                 f"pinned baseline revision unavailable for "
                 f"'{self.candidate_id}': {exc}"
             ) from exc
-        self._to_array = pcm_bytes_to_mlx_array
+
         stt = ParakeetSTT(str(local))
         stt.load()
         self._stt = stt
 
     def transcribe(self, pcm: bytes) -> str:
-        if self._stt is None or self._to_array is None:
+        if self._stt is None:
             raise AdapterUnavailable(
                 "parakeet_baseline adapter must be loaded before transcribing"
             )
-        return self._stt.transcribe(self._to_array(pcm))
+        return self._stt.transcribe(pcm)
 
 
 class MlxAudioAdapter:

@@ -14,12 +14,16 @@ import importlib.metadata
 import json
 import math
 import platform
-import resource
 import subprocess
 import sys
 import time
 import wave
 from pathlib import Path
+
+try:
+    import resource
+except ImportError:  # Windows has no getrusage
+    resource = None
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT = SCRIPT_DIR.parent
@@ -338,6 +342,8 @@ def _environment() -> dict:
 
 
 def _peak_rss_mb() -> float:
+    if resource is None:
+        return 0.0
     peak = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
     if sys.platform != "darwin":
         peak *= 1024

@@ -5,12 +5,11 @@ from typing import Callable
 
 from pydantic import BaseModel, Field
 
-from .audio import SAMPLE_RATE, pcm_bytes_to_mlx_array
+from .audio import SAMPLE_RATE
 from .config import AppConfig
+from .engines import LLM, LLMDeadlineExceeded, STT
 from .glossary import normalize_canonical_terms
-from .llm import LLMCleaner, LLMDeadlineExceeded
 from .routing import should_run_llm
-from .stt import ParakeetSTT
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +31,10 @@ class DictationResult(BaseModel):
 
 
 def _clear_metal_cache() -> None:
-    import mlx.core as mx
+    try:
+        import mlx.core as mx
+    except ImportError:  # non-Apple platforms have no MLX cache to clear
+        return
 
     mx.clear_cache()
 
@@ -40,8 +42,8 @@ def _clear_metal_cache() -> None:
 class Pipeline:
     def __init__(
         self,
-        stt: ParakeetSTT,
-        llm: LLMCleaner,
+        stt: STT,
+        llm: LLM,
         cfg: AppConfig,
         clear_metal: Callable[[], None] | None = None,
     ):
@@ -97,14 +99,9 @@ class Pipeline:
         async with self._metal:
             try:
                 if pcm:
-                    audio = pcm_bytes_to_mlx_array(pcm)
-                else:
-                    audio = None
-
-                if audio is not None:
                     stt_start = time.perf_counter()
                     raw_text = await self._run_blocking(
-                        self.stt.transcribe, audio
+                        self.stt.transcribe, pcm
                     )
                     stt_ms = (time.perf_counter() - stt_start) * 1000.0
 

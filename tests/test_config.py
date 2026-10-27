@@ -167,3 +167,71 @@ def test_unknown_key_still_rejected(tmp_path: Path):
     p.write_text(LEGACY_SERVER + "limts:\n  max_audio_bytes: 1\n")
     with pytest.raises(ValidationError):
         load_config(p)
+
+
+ONNX_SERVER = (
+    "server:\n"
+    "  backend: onnx\n"
+    "  host: 127.0.0.1\n"
+    "  stt_model: sherpa\n"
+    "  stt_onnx_dir: models/sherpa\n"
+    "routing:\n"
+    "  self_correction_triggers: []\n"
+    "glossary:\n"
+    "  canonical_terms: []\n"
+    "  phonetic_overrides: {}\n"
+)
+
+
+def test_onnx_backend_allows_null_llm_model(tmp_path: Path):
+    p = tmp_path / "onnx.yaml"
+    p.write_text(ONNX_SERVER)
+    cfg = load_config(p)
+
+    assert cfg.server.backend == "onnx"
+    assert cfg.server.llm_model is None
+    assert cfg.server.stt_onnx_dir == "models/sherpa"
+
+
+def test_onnx_backend_requires_model_dir(tmp_path: Path):
+    p = tmp_path / "onnx-nodir.yaml"
+    p.write_text(ONNX_SERVER.replace("  stt_onnx_dir: models/sherpa\n", ""))
+
+    with pytest.raises(ValidationError, match="stt_onnx_dir"):
+        load_config(p)
+
+
+def test_mlx_backend_requires_llm_model(tmp_path: Path):
+    p = tmp_path / "mlx-nollm.yaml"
+    p.write_text(LEGACY_SERVER.replace("  llm_model: llm\n", ""))
+
+    with pytest.raises(ValidationError, match="llm_model"):
+        load_config(p)
+
+
+def test_unknown_backend_is_rejected(tmp_path: Path):
+    p = tmp_path / "bad-backend.yaml"
+    p.write_text(
+        LEGACY_SERVER.replace(
+            "  host: 127.0.0.1\n", "  backend: cuda\n  host: 127.0.0.1\n"
+        )
+    )
+
+    with pytest.raises(ValidationError):
+        load_config(p)
+
+
+def test_windows_config_is_valid_and_local_only():
+    cfg = load_config(
+        Path(__file__).resolve().parents[1] / "config.windows.yaml"
+    )
+
+    assert cfg.server.backend == "onnx"
+    assert cfg.server.host == "127.0.0.1"
+    assert cfg.server.llm_model is None
+    assert cfg.server.stt_model == (
+        "sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"
+    )
+    assert cfg.server.stt_onnx_dir == (
+        "models/sherpa-onnx-nemo-parakeet-tdt-0.6b-v3-int8"
+    )

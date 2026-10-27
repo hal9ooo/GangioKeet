@@ -3,12 +3,11 @@ import time
 
 import mlx.core as mx
 
+from .engines import LLMDeadlineExceeded
 from .prompt import Profile, build_user_prompt
 from .routing import TEMPERATURE, compute_max_tokens
 
-
-class LLMDeadlineExceeded(Exception):
-    """The cooperative LLM deadline expired before generation completed."""
+__all__ = ["LLMCleaner", "LLMDeadlineExceeded"]
 
 
 class LLMCleaner:

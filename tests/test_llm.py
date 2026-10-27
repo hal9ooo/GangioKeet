@@ -2,8 +2,9 @@ import importlib
 import threading
 import time
 
-import mlx.core as mx
 import pytest
+
+mx = pytest.importorskip("mlx.core", reason="MLX is macOS-only")
 
 from dictation_server.llm import LLMCleaner, LLMDeadlineExceeded
 from dictation_server.routing import compute_max_tokens

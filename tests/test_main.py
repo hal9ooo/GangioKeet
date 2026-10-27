@@ -18,6 +18,10 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 INSTALLER = REPO_ROOT / "deploy/install_launchd.sh"
 TEMPLATE = REPO_ROOT / "deploy/com.gangio.mlx-dictation.plist"
 
+darwin_only = pytest.mark.skipif(
+    sys.platform != "darwin", reason="launchd installer is macOS-only"
+)
+
 
 def test_build_app_order_load_freeze_and_pipeline():
     cfg = load_config("config.yaml")
@@ -444,6 +448,7 @@ def test_launchd_plist_template():
     assert "api_key" not in plist["EnvironmentVariables"]
 
 
+@darwin_only
 def test_install_launchd_script_is_valid_and_idempotent():
     script = INSTALLER
     assert script.exists()
@@ -510,6 +515,7 @@ def run_installer(tmp_path, api_key, recording=None):
     return result, target, launchctl_log, bin_dir
 
 
+@darwin_only
 def test_installer_embeds_api_key_only_in_private_local_plist(tmp_path):
     api_key = "s3cr3t-&|;token"
     result, target, launchctl_log, bin_dir = run_installer(
@@ -536,6 +542,7 @@ def test_installer_embeds_api_key_only_in_private_local_plist(tmp_path):
     assert "bootstrap" in log
 
 
+@darwin_only
 def test_installer_omits_api_key_when_unset(tmp_path):
     result, target, _, _ = run_installer(tmp_path, None)
 
@@ -548,6 +555,7 @@ def test_installer_omits_api_key_when_unset(tmp_path):
     assert "GANGIOKEET_API_KEY" not in result.stderr
 
 
+@darwin_only
 def test_installer_adds_recording_flag_when_requested(tmp_path):
     result, target, _, _ = run_installer(
         tmp_path, None, recording="1"
@@ -562,6 +570,7 @@ def test_installer_adds_recording_flag_when_requested(tmp_path):
     assert "recording mode enabled" in result.stdout
 
 
+@darwin_only
 def test_installer_combines_recording_and_api_key(tmp_path):
     api_key = "test-token"
     result, target, _, _ = run_installer(
@@ -576,6 +585,7 @@ def test_installer_combines_recording_and_api_key(tmp_path):
     )
 
 
+@darwin_only
 def test_installer_rejects_invalid_recording_value(tmp_path):
     result, _, _, _ = run_installer(
         tmp_path, None, recording="maybe"
