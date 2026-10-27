@@ -46,6 +46,7 @@ public sealed class DictationController : IAsyncDisposable
     private ClientState _state = ClientState.Idle;
     private long _turnStarted;
     private TurnTiming? _turnTiming;
+    private CancellationTokenSource? _pasteAbort;
 
     public DictationController(
         IAudioCapture capture,
@@ -159,6 +160,7 @@ public sealed class DictationController : IAsyncDisposable
     {
         int generation = Interlocked.Increment(ref _generation);
         _ = generation;
+        try { _pasteAbort?.Cancel(); } catch (ObjectDisposedException) { }
         _turnTiming?.MarkPasteFailed("aborted");
 
         _audioBuffer.Clear();
@@ -298,6 +300,8 @@ public sealed class DictationController : IAsyncDisposable
         // elegge un altro durante il turno, il cambio vale dal turno successivo.
         _turnStarted = _time.GetTimestamp();
         _turnTiming = new TurnTiming(_time);
+        using CancellationTokenSource pasteAbort = new();
+        _pasteAbort = pasteAbort;
 
         IActiveDictationTurn? turn = null;
         try
@@ -349,7 +353,7 @@ public sealed class DictationController : IAsyncDisposable
 
             if (IsStale(generation)) return;
 
-            await HandleOutcomeAsync(outcome, generation).ConfigureAwait(false);
+            await HandleOutcomeAsync(outcome, generation, pasteAbort.Token).ConfigureAwait(false);
 
             if (outcome.Status == DictationStatus.Result
                 && !string.IsNullOrWhiteSpace(outcome.Result?.FinalText)
@@ -373,6 +377,7 @@ public sealed class DictationController : IAsyncDisposable
         }
         finally
         {
+            if (ReferenceEquals(_pasteAbort, pasteAbort)) _pasteAbort = null;
             if (_turnTiming is not null)
             {
                 _telemetry.RecordTiming(_turnStarted, _turnTiming.ReleaseToPasteMs, _turnTiming.FailureReason);
@@ -386,7 +391,7 @@ public sealed class DictationController : IAsyncDisposable
         }
     }
 
-    private async Task HandleOutcomeAsync(DictationOutcome outcome, int generation)
+    private async Task HandleOutcomeAsync(DictationOutcome outcome, int generation, CancellationToken pasteToken)
     {
         if (IsStale(generation)) return;
 
@@ -447,10 +452,11 @@ public sealed class DictationController : IAsyncDisposable
 
         _state = ClientState.Pasting;
         PasteOutcome pasteResult = await _paste
-            .PasteAsync(result.FinalText, target, CancellationToken.None)
+            .PasteAsync(result.FinalText, target, pasteToken)
             .ConfigureAwait(false);
 
         if (IsStale(generation)) return;
+        if (pasteResult.Status == PasteStatus.Cancelled || pasteToken.IsCancellationRequested) return;
 
         if (pasteResult.Status == PasteStatus.Pasted)
         {

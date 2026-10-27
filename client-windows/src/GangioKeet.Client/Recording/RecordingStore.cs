@@ -27,16 +27,23 @@ public sealed class RecordingStore : IRecordingWriter
 
     private readonly RecordingConfig _config;
     private readonly TimeProvider _time;
+    private readonly RecordingProvenance _provenance;
     private readonly SemaphoreSlim _manifestGate = new(1, 1);
 
-    public RecordingStore(RecordingConfig config, TimeProvider? time = null)
+    public RecordingStore(RecordingConfig config, TimeProvider? time = null,
+        RecordingProvenance? provenance = null)
     {
         _config = config;
         _time = time ?? TimeProvider.System;
+        _provenance = provenance ?? new RecordingProvenance("unknown", "", "", "personal");
         Directory = Path.GetFullPath(config.Directory);
     }
 
-    public bool Enabled => _config.Enabled;
+    public bool Enabled
+    {
+        get => _config.Enabled;
+        set => _config.Enabled = value;
+    }
     public string Directory { get; }
     public string AudioDirectory => Path.Combine(Directory, "audio");
     public string ManifestPath => Path.Combine(Directory, "manifest.jsonl");
@@ -94,7 +101,11 @@ public sealed class RecordingStore : IRecordingWriter
         [],
         string.IsNullOrWhiteSpace(result.RawText) && string.IsNullOrWhiteSpace(result.FinalText),
         result.Stt,
-        result.Cleaner);
+        result.Cleaner,
+        _provenance.PromptVersion,
+        _provenance.PromptSha256,
+        _provenance.PolicySha256,
+        _provenance.Split);
 
     private static void WriteWave(string path, ReadOnlySpan<byte> pcm)
     {
@@ -141,12 +152,60 @@ public sealed class RecordingStore : IRecordingWriter
                 ? [.. File.ReadAllLines(ManifestPath, Encoding.UTF8)]
                 : [];
             lines.Add(line);
-            await ReplaceManifestAsync(lines, ct).ConfigureAwait(false);
+            await ReplaceManifestCoreAsync(lines, ct).ConfigureAwait(false);
         }
         finally { _manifestGate.Release(); }
     }
 
+    public async Task DeleteAsync(IReadOnlyList<string> ids, CancellationToken ct)
+    {
+        if (ids.Count == 0 || !File.Exists(ManifestPath)) return;
+        await _manifestGate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            HashSet<string> selected = [.. ids];
+            List<string> kept = [];
+            List<string> removed = [];
+            foreach (string line in File.ReadAllLines(ManifestPath, Encoding.UTF8))
+            {
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                using JsonDocument entry = JsonDocument.Parse(line);
+                string id = entry.RootElement.GetProperty("id").GetString()!;
+                if (!selected.Contains(id))
+                {
+                    kept.Add(line);
+                    continue;
+                }
+                removed.Add(ResolvePath(entry.RootElement.GetProperty("audio_path").GetString()!));
+            }
+
+            foreach (string path in removed)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (File.Exists(path)) File.Delete(path);
+            }
+            await ReplaceManifestCoreAsync(kept, ct).ConfigureAwait(false);
+        }
+        finally { _manifestGate.Release(); }
+    }
+
+    public string ResolvePath(string relative)
+    {
+        string root = Path.TrimEndingDirectorySeparator(Directory) + Path.DirectorySeparatorChar;
+        string path = Path.GetFullPath(relative, Directory);
+        if (!path.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException("Recording path escapes the recording root.");
+        return path;
+    }
+
     public async Task ReplaceManifestAsync(IReadOnlyList<string> lines, CancellationToken ct)
+    {
+        await _manifestGate.WaitAsync(ct).ConfigureAwait(false);
+        try { await ReplaceManifestCoreAsync(lines, ct).ConfigureAwait(false); }
+        finally { _manifestGate.Release(); }
+    }
+
+    private async Task ReplaceManifestCoreAsync(IReadOnlyList<string> lines, CancellationToken ct)
     {
         System.IO.Directory.CreateDirectory(Directory);
         string temporary = ManifestPath + ".tmp-" + Guid.NewGuid().ToString("N");

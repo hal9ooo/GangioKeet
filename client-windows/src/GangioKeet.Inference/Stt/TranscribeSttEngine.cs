@@ -5,7 +5,8 @@ using GangioKeet.Inference.Native;
 namespace GangioKeet.Inference.Stt;
 
 public sealed class TranscribeSttEngine(ModelArtifact artifact, string modelRoot,
-    string nativeDirectory, string backend = "vulkan", ITranscribeApi? api = null) : ISttEngine
+    string nativeDirectory, string backend = "vulkan", ITranscribeApi? api = null,
+    string? runtimeLock = null) : ISttEngine
 {
     private readonly ITranscribeApi _api = api ?? new TranscribeApi();
     private readonly SemaphoreSlim _gate = new(1, 1);
@@ -29,6 +30,8 @@ public sealed class TranscribeSttEngine(ModelArtifact artifact, string modelRoot
             await Task.Run(() =>
             {
                 linked.Token.ThrowIfCancellationRequested();
+                if (runtimeLock is not null)
+                    NativeLibraryResolver.VerifyTranscribeRuntime(nativeDirectory, runtimeLock);
                 _api.Initialize(nativeDirectory);
                 linked.Token.ThrowIfCancellationRequested();
                 SafeTranscribeModel? model = null;

@@ -13,13 +13,28 @@ clipboard-preserving paste, and explicit recovery of the last failed dictation.
   endpoints can be listed under `endpoints:`: the client probes them and uses
   the fastest one (see **Endpoints and settings**).
 
+## Local Windows mode
+
+The default `inference.mode: local` runs ASR and cleanup in the client process.
+No Python server, HTTP listener, Ollama, CLI child process, endpoint probe or
+automatic remote fallback is started. The selected pair is read from
+`models/selected.json` and the native runtimes from `native/`; both are included
+in the single installer. The current measured pair is Qwen3-ASR-1.7B F16 +
+Gemma 4 E2B-it Q4_0 on Vulkan, provisional on the public corpus results in
+`../docs/benchmarks/local-monolith/selection.md`.
+
+`inference.mode: remote` preserves the existing Mac server path, including
+endpoint selection and probes. A local install never probes the network and a
+remote install keeps its old YAML until the user explicitly saves.
+
 ## Quick start
 
 1. Install the .NET 10 SDK.
 2. Copy `client_config.example.yaml` to
-   `%APPDATA%\GangioKeet\client_config.yaml` and set `server.host` to the Mac's
-   IP (or list more than one under `endpoints:`). If the server is behind a TLS
-   terminator, also set `server.scheme: https`.
+   `%APPDATA%\GangioKeet\client_config.yaml`. For the Mac server set
+   `inference.mode: remote`, then set `server.host` to the Mac's IP (or list
+   more than one under `endpoints:`). If the server is behind a TLS terminator,
+   also set `server.scheme: https`.
 3. If the server requires a token, set the environment variable named by
    `server.api_key_env` (recommended: `GANGIOKEET_API_KEY`). The token must
    **never** be written to the YAML file.
@@ -29,6 +44,14 @@ clipboard-preserving paste, and explicit recovery of the last failed dictation.
 dotnet build client-windows/GangioKeet.Client.sln
 dotnet run --project client-windows/src/GangioKeet.Client
 ```
+
+The example defaults to `inference.mode: local`. A source checkout does not
+contain the installed `native/` runtime or the selected model bytes, so local
+mode from `dotnet run` requires the `GANGIOKEET_TRANSCRIBE_DIR`,
+`GANGIOKEET_LLAMA_DIR` and `GANGIOKEET_RUNTIME_LOCK` overrides plus a
+`selected.json` whose model root contains the selected files. The packaged
+installer supplies that layout; for a source-only run, use the installer or set
+the overrides explicitly.
 
 The app starts in the tray (no main window). **Hold Caps Lock** to dictate and
 release to transcribe; double-tap for hands-free.
@@ -110,7 +133,11 @@ Strict schema: unknown keys are rejected. The file lives in
 
 ## Limits and security
 
-- **No on-disk history**: audio and transcripts live only in RAM. Daily logs in
+- **No on-disk history by default**: audio and transcripts live only in RAM
+  unless `recording.enabled` is explicitly turned on. Completed local
+  dictations are then written under `%LOCALAPPDATA%\GangioKeet\recordings` with
+  empty human references; the flag is off on new installs and the settings
+  window shows count, space and explicit deletion. Daily logs in
   `%LOCALAPPDATA%\GangioKeet\logs\` contain only codes and diagnostic messages,
   never audio, dictated text, window titles, or keys.
 - **Optional TLS**: `server.scheme: https` uses `https://` and `wss://`. The
@@ -183,15 +210,41 @@ dotnet test client-windows/GangioKeet.Client.sln --filter "Category=Integration"
 
 ## Publishing
 
+From the repository root, with Inno Setup 6.7.3 installed:
+
 ```powershell
-dotnet publish client-windows/src/GangioKeet.Client/GangioKeet.Client.csproj `
-  -c Release -r win-x64 --self-contained true -p:PublishSingleFile=true
+.\scripts\package_windows.ps1
 ```
+
+A portable compiler works without a system install: pass `-Iscc <path to
+ISCC.exe>` or set `GANGIOKEET_ISCC`. The script enforces the ISCC SHA-256 pinned
+in `installer/package-manifest.json`. It publishes the Windows client,
+copies only the selected pair and the pinned native runtimes, verifies every
+model/runtime hash and the shipped license files, and then builds
+`artifacts\installer\GangioKeet-Setup-0.1.0-local.exe`. It refuses to build an
+installer from a payload that fails `scripts/verify_windows_package.ps1`.
+`-SkipInstaller` verifies the payload without requiring Inno Setup. The payload
+contains no Python, eval runner, debug symbols, `candidates.json` or
+non-selected model candidates.
+
+The payload is larger than Inno Setup's 4.2 GB single-`Setup.exe` limit, so the
+installer uses Inno's disk-spanning mode: `GangioKeet-Setup-0.1.0-local.exe`
+plus one or more `GangioKeet-Setup-0.1.0-local-*.bin` slices. Keep all files in
+the same directory; the setup may ask for the next slice during installation.
+It is still one per-user installation package, with no service or task. The
+installed application is about 7.4 GB, plus the space needed for the installer
+files during setup.
+
+The installer is per-user and creates no service, scheduled task or firewall
+rule. Uninstall removes installed application files but leaves
+`%LOCALAPPDATA%\GangioKeet\recordings` untouched; deleting recordings is an
+explicit action in the settings window.
 
 The output contains `GangioKeet.Client.exe` plus native WPF/NAudio assets
 (`D3DCompiler_47_cor3.dll`, `PenImc_cor3.dll`, `PresentationNative_cor3.dll`,
-`vcruntime140_cor3.dll`, `wpfgfx_cor3.dll`): it is not a self-contained single
-file.
+`vcruntime140_cor3.dll`, `wpfgfx_cor3.dll`), the selected model files and the
+third-party license texts: it is a directory installed as one per-user
+application, not a single executable.
 
 ## Structure
 

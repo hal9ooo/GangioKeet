@@ -1,0 +1,24 @@
+Model weights shipped with the Windows package
+==============================================
+
+Both selected model artifacts are distributed under the Apache License 2.0.
+The full license text is in `APACHE-2.0.txt` in this directory.
+
+Qwen3-ASR-1.7B
+--------------
+Source checkpoint: Qwen/Qwen3-ASR-1.7B
+Revision: 0e0a596e3959c3f3f2ab7d443a5b6f0f4a4bba6f
+Artifact repository: handy-computer/Qwen3-ASR-1.7B-gguf
+File: qwen3_asr_1_7b/Qwen3-ASR-1.7B-F16.gguf
+SHA-256: edb09c29b8f73822c639168d5ef72aa2dccdf8b4e48fc4b8518885352ff62c71
+License: Apache License 2.0
+
+Gemma 4 E2B-it (QAT Q4_0)
+-------------------------
+Source checkpoint: google/gemma-4-E2B-it
+Artifact repository: google/gemma-4-E2B-it-qat-q4_0-gguf
+Revision: 675cff42a74c774d6cb76f76d8eacb49b48c9b93
+File: gemma4_e2b/gemma-4-E2B_q4_0-it.gguf
+SHA-256: fa401b55b07ee70a54c6dae3903c783a6e65064312529ea57175cb5f8dec6634
+License: Apache License 2.0; the upstream model card also links the Gemma 4
+license terms at https://ai.google.dev/gemma/docs/gemma_4_license

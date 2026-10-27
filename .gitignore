@@ -32,6 +32,9 @@ recordings/
 
 # Windows ONNX STT model (downloaded by scripts/fetch_stt_model.py)
 models/
+# Model license texts under the installer are small and must be tracked
+!client-windows/installer/licenses/models/
+!client-windows/installer/licenses/models/**
 *.tar.bz2
 
 # Native builds and local monolith evaluation artefacts

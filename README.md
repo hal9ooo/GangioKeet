@@ -24,6 +24,12 @@
 > **Status:** works on my machine. There is exactly one known user. If you are
 > not me, you are an early adopter, a mistake, or a very bored person.
 
+> **Local Windows mode (2026):** the Windows client can now run ASR and cleanup
+> in one process on the Radeon, with one per-user installer and no Python/HTTP
+> server. The measured pair is Qwen3-ASR-1.7B + Gemma 4 E2B-it; the older Mac
+> server remains available as an explicit remote mode. Selection and limits are
+> in `docs/benchmarks/local-monolith/selection.md`.
+
 ## Contents
 
 - [Why this exists](#why-this-exists)

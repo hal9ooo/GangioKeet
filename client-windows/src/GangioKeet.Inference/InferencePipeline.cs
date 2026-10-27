@@ -68,12 +68,12 @@ public sealed class InferencePipeline(ISttEngine stt, ITextCleaner cleaner, Clea
                 }
                 catch (OperationCanceledException) when (!linked.IsCancellationRequested && deadline.IsCancellationRequested)
                 {
-                    final = GlossaryNormalizer.Normalize(raw, policy);
+                    final = GlossaryNormalizer.Normalize(raw, policy, request.Profile);
                     warnings.Add("llm_timeout");
                 }
                 catch (Exception) when (!linked.IsCancellationRequested)
                 {
-                    final = GlossaryNormalizer.Normalize(raw, policy);
+                    final = GlossaryNormalizer.Normalize(raw, policy, request.Profile);
                     warnings.Add("llm_failed");
                 }
                 finally { llmMs = time.GetElapsedTime(start).TotalMilliseconds; }

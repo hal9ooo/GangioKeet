@@ -16,6 +16,7 @@ public enum PasteStatus
     BlockedUipi,
     ClipboardUnavailable,
     InjectionFailed,
+    Cancelled,
 }
 
 /// <summary>

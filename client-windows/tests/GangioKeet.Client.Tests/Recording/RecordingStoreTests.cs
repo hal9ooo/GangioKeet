@@ -27,9 +27,23 @@ public sealed class RecordingStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task DisablingStoreAfterStartupStopsSubsequentWrites()
+    {
+        RecordingConfig config = new() { Enabled = true, Directory = _root };
+        RecordingStore store = new(config);
+
+        store.Enabled = false;
+
+        Assert.False(store.Enabled);
+        Assert.Null(await store.RecordAsync(Pcm(4), Result(), Start, default));
+        Assert.False(File.Exists(store.ManifestPath));
+    }
+
+    [Fact]
     public async Task CompletedResultWritesExactWavAndManifestWithoutPersonalContext()
     {
-        RecordingStore store = new(new RecordingConfig { Enabled = true, Directory = _root });
+        RecordingStore store = new(new RecordingConfig { Enabled = true, Directory = _root },
+            provenance: new RecordingProvenance("conservative-local-v3", "prompt-sha", "policy-sha", "personal"));
         byte[] pcm = Pcm(32);
 
         string? id = await store.RecordAsync(pcm, Result(), Start, default);
@@ -45,6 +59,10 @@ public sealed class RecordingStoreTests : IDisposable
         Assert.Equal("", entry.RootElement.GetProperty("reference_final").GetString());
         Assert.Equal("unreviewed", entry.RootElement.GetProperty("reference_status").GetString());
         Assert.Equal("Come funziona?", entry.RootElement.GetProperty("final_text").GetString());
+        Assert.Equal("conservative-local-v3", entry.RootElement.GetProperty("prompt_version").GetString());
+        Assert.Equal("prompt-sha", entry.RootElement.GetProperty("prompt_sha256").GetString());
+        Assert.Equal("policy-sha", entry.RootElement.GetProperty("policy_sha256").GetString());
+        Assert.Equal("personal", entry.RootElement.GetProperty("split").GetString());
         Assert.Equal("model", entry.RootElement.GetProperty("stt_engine").GetProperty("model_id").GetString());
         Assert.False(entry.RootElement.TryGetProperty("selected_text", out _));
         Assert.False(entry.RootElement.TryGetProperty("context", out _));
@@ -74,6 +92,36 @@ public sealed class RecordingStoreTests : IDisposable
         Assert.Equal(1, (await storage.GetSummaryAsync()).Count);
         Assert.True(File.Exists(Path.Combine(_root, "audio", second! + ".wav")));
         Assert.False(File.Exists(Path.Combine(_root, "audio", first! + ".wav")));
+    }
+
+    [Fact]
+    public async Task ConcurrentAppendAndDeleteKeepManifestConsistent()
+    {
+        RecordingStore store = new(new RecordingConfig { Enabled = true, Directory = _root });
+        RecordingStorage storage = new(store);
+        string? first = await store.RecordAsync(Pcm(8), Result(), Start, default);
+        Assert.NotNull(first);
+
+        List<Task> work = [];
+        for (int i = 0; i < 12; i++)
+        {
+            work.Add(store.RecordAsync(Pcm(16 + i * 2), Result(), Start, default));
+            work.Add(storage.DeleteAsync([first!], default));
+        }
+        await Task.WhenAll(work);
+
+        List<string> lines = [.. File.ReadAllLines(store.ManifestPath)];
+        HashSet<string> ids = new(StringComparer.Ordinal);
+        foreach (string line in lines)
+        {
+            using JsonDocument entry = JsonDocument.Parse(line);
+            string id = entry.RootElement.GetProperty("id").GetString()!;
+            Assert.True(ids.Add(id), $"duplicate manifest id: {id}");
+            string audio = Path.Combine(_root,
+                entry.RootElement.GetProperty("audio_path").GetString()!.Replace('/', Path.DirectorySeparatorChar));
+            Assert.True(File.Exists(audio), $"manifest row points at missing audio: {id}");
+        }
+        Assert.DoesNotContain(first, ids);
     }
 
     [Fact]
@@ -123,8 +171,10 @@ public sealed class RecordingStoreTests : IDisposable
         byte[] pcm = Pcm(4);
 
         Assert.True(queue.TryEnqueue(pcm, Result(), Start));
+        await writer.Started;
         Assert.True(queue.TryEnqueue(Pcm(6), Result(), Start));
-        Assert.False(queue.TryEnqueue(Pcm(8), Result(), Start));
+        Assert.True(queue.TryEnqueue(Pcm(8), Result(), Start));
+        Assert.False(queue.TryEnqueue(Pcm(10), Result(), Start));
         Assert.Equal(1, queue.Dropped);
 
         pcm[0] = 99;
@@ -132,7 +182,7 @@ public sealed class RecordingStoreTests : IDisposable
         await queue.DrainAsync(default);
         await queue.DrainAsync(default);
 
-        Assert.Equal(2, writer.Calls);
+        Assert.Equal(3, writer.Calls);
         Assert.Equal(0, writer.Seen[0][0]);
         Assert.Equal(1, queue.Dropped);
     }
@@ -149,6 +199,22 @@ public sealed class RecordingStoreTests : IDisposable
         Assert.Equal(1, queue.Failed);
     }
 
+    [Fact]
+    public async Task DisabledQueueDoesNotCopyOrInvokeWriter()
+    {
+        bool enabled = true;
+        CountingWriter writer = new();
+        RecordingQueue queue = new(writer, capacity: 1, enabled: () => enabled);
+
+        enabled = false;
+        Assert.False(queue.TryEnqueue(Pcm(4), Result(), Start));
+        await queue.DrainAsync(default);
+
+        Assert.Equal(0, writer.Calls);
+        Assert.Equal(0, queue.Dropped);
+        Assert.Equal(0, queue.Failed);
+    }
+
     private static byte[] Pcm(int bytes) => Enumerable.Range(0, bytes).Select(x => (byte)x).ToArray();
 
     private static PipelineResult Result() => new("come funziona", "Come funziona?", 10, 20, 30,
@@ -162,11 +228,14 @@ public sealed class RecordingStoreTests : IDisposable
     private sealed class BlockingWriter : IRecordingWriter
     {
         private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _started = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public int Calls;
+        public Task Started => _started.Task;
         public List<byte[]> Seen { get; } = [];
         public async Task<string?> RecordAsync(ReadOnlyMemory<byte> pcm, PipelineResult result,
             StartMessage start, CancellationToken ct)
         {
+            _started.TrySetResult();
             await _release.Task;
             Seen.Add(pcm.ToArray());
             Calls++;
@@ -179,5 +248,16 @@ public sealed class RecordingStoreTests : IDisposable
     {
         public Task<string?> RecordAsync(ReadOnlyMemory<byte> pcm, PipelineResult result,
             StartMessage start, CancellationToken ct) => throw new IOException("disk full");
+    }
+
+    private sealed class CountingWriter : IRecordingWriter
+    {
+        public int Calls;
+        public Task<string?> RecordAsync(ReadOnlyMemory<byte> pcm, PipelineResult result,
+            StartMessage start, CancellationToken ct)
+        {
+            Calls++;
+            return Task.FromResult<string?>(Guid.NewGuid().ToString("N"));
+        }
     }
 }

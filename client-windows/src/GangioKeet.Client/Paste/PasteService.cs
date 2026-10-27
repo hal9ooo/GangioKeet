@@ -46,6 +46,11 @@ public sealed class PasteService
             return new PasteOutcome(PasteStatus.SkippedEmpty, TextLeftInClipboard: false);
         }
 
+        if (ct.IsCancellationRequested)
+        {
+            return new PasteOutcome(PasteStatus.Cancelled, TextLeftInClipboard: false);
+        }
+
         if (!_foreground.IsAlive(target))
         {
             return new PasteOutcome(PasteStatus.FocusLost, TextLeftInClipboard: false);
@@ -60,6 +65,10 @@ public sealed class PasteService
         try
         {
             return await PasteCoreAsync(text, target, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return new PasteOutcome(PasteStatus.Cancelled, TextLeftInClipboard: false);
         }
         finally
         {
@@ -100,6 +109,12 @@ public sealed class PasteService
         if (_elevation.IsInjectionBlocked(current))
         {
             return new PasteOutcome(PasteStatus.BlockedUipi, TextLeftInClipboard: true);
+        }
+
+        if (ct.IsCancellationRequested)
+        {
+            await RestoreAsync(snapshot, sequence).ConfigureAwait(false);
+            return new PasteOutcome(PasteStatus.Cancelled, TextLeftInClipboard: false);
         }
 
         string combo = IsTerminal(target.ProcessName) ? _config.TerminalCombo : _config.DefaultCombo;

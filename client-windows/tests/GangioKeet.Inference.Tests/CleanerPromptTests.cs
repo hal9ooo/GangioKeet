@@ -45,4 +45,14 @@ public sealed class CleanerPromptTests
         Assert.Equal("FastAPI, Home Assistant e llama.cpp; myfastapi", GlossaryNormalizer.Normalize(
             "fastapi, home   assistant e LLAMA.CPP; myfastapi", policy));
     }
+
+    [Fact]
+    public void FallbackDoesNotRecaseExecutableCommands()
+    {
+        CleanupPolicy policy = new() { CanonicalTerms = ["Docker", "FastAPI"] };
+
+        Assert.Equal("docker compose up", GlossaryNormalizer.Normalize("docker compose up", policy, "code"));
+        Assert.Equal("docker compose up", GlossaryNormalizer.Normalize("docker compose up", policy, "terminal"));
+        Assert.Equal("Docker", GlossaryNormalizer.Normalize("docker", policy, "chat"));
+    }
 }

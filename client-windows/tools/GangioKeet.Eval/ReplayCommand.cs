@@ -57,7 +57,8 @@ public sealed class ReplayCommand(string modelRoot, string nativeDirectory, stri
             if (phase != "cleaner")
             {
                 ModelArtifact artifact = models.Get(sttId!);
-                stt = sttFactory?.Invoke(artifact) ?? new TranscribeSttEngine(artifact, modelRoot, nativeDirectory, backend);
+                stt = sttFactory?.Invoke(artifact) ?? new TranscribeSttEngine(artifact, modelRoot,
+                    nativeDirectory, backend, runtimeLock: runtimeLock);
             }
             if (phase != "asr")
             {

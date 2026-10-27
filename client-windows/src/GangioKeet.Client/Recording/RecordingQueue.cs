@@ -14,16 +14,19 @@ public sealed class RecordingQueue : IRecordingSink, IAsyncDisposable
     private readonly Channel<Job> _channel;
     private readonly IRecordingWriter _writer;
     private readonly Action<string>? _warning;
+    private readonly Func<bool> _enabled;
     private readonly Task _worker;
     private int _dropped;
     private int _failed;
     private int _disposed;
 
-    public RecordingQueue(IRecordingWriter writer, int capacity = 4, Action<string>? warning = null)
+    public RecordingQueue(IRecordingWriter writer, int capacity = 4, Action<string>? warning = null,
+        Func<bool>? enabled = null)
     {
         if (capacity < 1) throw new ArgumentOutOfRangeException(nameof(capacity));
         _writer = writer;
         _warning = warning;
+        _enabled = enabled ?? (() => true);
         _channel = Channel.CreateBounded<Job>(new BoundedChannelOptions(capacity)
         {
             FullMode = BoundedChannelFullMode.Wait,
@@ -39,6 +42,7 @@ public sealed class RecordingQueue : IRecordingSink, IAsyncDisposable
 
     public bool TryEnqueue(ReadOnlyMemory<byte> pcm, PipelineResult result, StartMessage start)
     {
+        if (!_enabled()) return false;
         if (!_channel.Writer.TryWrite(new(pcm.ToArray(), result, start)))
         {
             Interlocked.Increment(ref _dropped);

@@ -64,7 +64,11 @@ public sealed partial class SettingsWindow : Window
         RemoteList.Visibility = local ? Visibility.Collapsed : Visibility.Visible;
         RemoteTelemetry.Visibility = local ? Visibility.Collapsed : Visibility.Visible;
         RemoteButtons.Visibility = local ? Visibility.Collapsed : Visibility.Visible;
-        if (local) UpdateLocal();
+        if (local)
+        {
+            UpdateLocal();
+            _ = RefreshRecordingsAsync();
+        }
 
         _timer = new DispatcherTimer(
             TimeSpan.FromMilliseconds(500),
@@ -80,6 +84,7 @@ public sealed partial class SettingsWindow : Window
     public ObservableCollection<EndpointRowViewModel> Rows { get; } = [];
     public bool UsesLocalServices => _selector is null;
     public bool IsLocalPanelVisible => LocalPanel.Visibility == Visibility.Visible;
+    public bool IsModeSelectorVisible => ModeCombo.Visibility == Visibility.Visible;
     public string LocalState => LocalStateText.Text;
     public string LocalPair => LocalPairText.Text;
 
@@ -268,7 +273,6 @@ public sealed partial class SettingsWindow : Window
         LocalStateText.Text = info.State;
         LocalPairText.Text = info.Pair;
         LocalErrorText.Text = info.Error ?? "";
-        _ = RefreshRecordingsAsync();
     }
 
     private async void RecordingCheck_Click(object sender, RoutedEventArgs e)
@@ -282,7 +286,8 @@ public sealed partial class SettingsWindow : Window
         }
         StatusText.Text = enabled
             ? "Registrazione attivata. Riavvia GangioKeet per iniziare a salvare."
-            : "Registrazione disattivata. I campioni esistenti restano sul disco.";
+            : "Registrazione disattivata subito. I campioni esistenti restano sul disco.";
+        if (_recordingStore is not null) _recordingStore.Enabled = enabled;
         await RefreshRecordingsAsync();
     }
 

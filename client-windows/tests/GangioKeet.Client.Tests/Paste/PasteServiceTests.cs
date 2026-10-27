@@ -70,9 +70,24 @@ public sealed class PasteServiceTests
     }
 
     [Fact]
-    public async Task EmptyClipboard_IsRestoredEmpty()
+    public async Task CancelledAfterClipboardWrite_DoesNotSendComboAndRestoresClipboard()
     {
-        FakeClipboard clipboard = new() { Text = null };
+        using CancellationTokenSource cts = new();
+        FakeClipboard clipboard = new() { Text = "vecchio", OnAfterSetText = cts.Cancel };
+        FakeInput input = new();
+        PasteService service = Build(clipboard, input, new FakeForeground(), new FakeElevation(), new FakeTimeProvider());
+
+        PasteOutcome outcome = await service.PasteAsync("nuovo", Notepad, cts.Token);
+
+        Assert.Equal(PasteStatus.Cancelled, outcome.Status);
+        Assert.Empty(input.Combos);
+        Assert.NotNull(clipboard.LastRestored);
+        Assert.Equal("vecchio", clipboard.LastRestored!.Text);
+    }
+
+    [Fact]
+    public async Task EmptyClipboard_IsRestoredEmpty()
+    {        FakeClipboard clipboard = new() { Text = null };
         PasteService service = Build(clipboard, new FakeInput(), new FakeForeground(), new FakeElevation(), new FakeTimeProvider());
 
         await service.PasteAsync("nuovo", Notepad, CancellationToken.None);
@@ -274,6 +289,7 @@ internal sealed class FakeClipboard : IClipboardService
     public int RestoreCalls { get; private set; }
 
     public bool BackupUnavailable { get; init; }
+    public Action? OnAfterSetText { get; set; }
 
     public Action? OnBeforeRestore { get; set; }
 
@@ -298,6 +314,7 @@ internal sealed class FakeClipboard : IClipboardService
         Sequence++;
         PublishedSequence = Sequence;
         Published.Set();
+        OnAfterSetText?.Invoke();
         return Sequence;
     }
 

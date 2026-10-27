@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "product": "GangioKeet",
+  "version": "0.1.0-local",
+  "build": {
+    "toolchain": ".NET SDK 10.0.403",
+    "runtime": "Microsoft.WindowsDesktop.App 10.0.14",
+    "target": "win-x64",
+    "self_contained": true,
+    "single_file": false
+  },
+  "installer": {
+    "tool": "Inno Setup",
+    "required_version": "6.7.3",
+    "iscc_sha256": "0a8757031b33777e4c9cbffee40f11a5062b36d25cbe144c1db73b6102b80ad7",
+    "installer_sha256": "9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732",
+    "disk_spanning": true,
+    "disk_slice_size_bytes": 2000000000,
+    "script": "client-windows/installer/GangioKeet.iss",
+    "mode": "per-user, no service, no scheduled task, no firewall rule"
+  },
+  "selection": {
+    "path": "models/selected.json",
+    "sha256": "e57502e28f87e89b17b398366aa4288623c21d882b6666583a304e3fdf6f8d73"
+  },
+  "runtime_lock": {
+    "path": "native/runtime-lock.json",
+    "sha256": "e7ff49f052c9a37b917d2e844f8185215cda8a60d01e1eaa5bf6e925b1436846"
+  },
+  "msvc_runtime": {
+    "version": "14.51.36247.0",
+    "files": [
+      {
+        "path": "msvcp140.dll",
+        "sha256": "7c26614e1d733892c2deac7e245ce115504b1d80592dd0a01b08e3e5a55f89ca"
+      },
+      {
+        "path": "vcruntime140.dll",
+        "sha256": "d1f4225df2cd877dbf130d5668a021dce3f94118455ff5ec952061c30afc9ce7"
+      },
+      {
+        "path": "vcruntime140_1.dll",
+        "sha256": "a7146c08f89fe5b04541ab507cdb59ff7b44534d4ba3c668a426c6450a03434e"
+      },
+      {
+        "path": "vcomp140.dll",
+        "sha256": "95d4ce4a6802d1e18b5e0e1722cc30ea72ca7e033f83828f05c0b7b993fe7cbf"
+      }
+    ]
+  },
+  "payload": {
+    "model_root": "models",
+    "models": [
+      "models/qwen3_asr_1_7b/Qwen3-ASR-1.7B-F16.gguf",
+      "models/gemma4_e2b/gemma-4-E2B_q4_0-it.gguf"
+    ],
+    "cleanup_policy": "cleanup.yaml",
+    "transcribe_runtime": "native/transcribe",
+    "llama_runtime": "native/llama",
+    "managed_llama": "LLamaSharp.dll",
+    "licenses": [
+      "LICENSE",
+      "THIRD_PARTY_NOTICES.md",
+      "native/transcribe/licenses",
+      "licenses/llama",
+      "licenses/dotnet",
+      "licenses/msvc",
+      "licenses/models"
+    ]
+  },
+  "exclusions": [
+    "GangioKeet.Eval",
+    "Python, pytest and the .venv",
+    "non-selected model candidates and candidates.json",
+    "debug symbols (*.pdb)",
+    "developer native build logs and reports"
+  ],
+  "personal_data": {
+    "recordings_directory": "%LOCALAPPDATA%/GangioKeet/recordings",
+    "installer_never_deletes": true,
+    "unreviewed_references_are_not_benchmarks": true
+  }
+}

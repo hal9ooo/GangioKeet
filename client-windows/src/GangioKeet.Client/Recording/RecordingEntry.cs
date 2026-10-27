@@ -14,6 +14,12 @@ public interface IRecordingSink
     bool TryEnqueue(ReadOnlyMemory<byte> pcm, PipelineResult result, StartMessage start);
 }
 
+public sealed record RecordingProvenance(
+    string PromptVersion,
+    string PromptSha256,
+    string PolicySha256,
+    string Split = "personal");
+
 public sealed record RecordingEntry(
     string Schema,
     string Id,
@@ -42,4 +48,8 @@ public sealed record RecordingEntry(
     IReadOnlyList<string> TechnicalTerms,
     bool IsSilence,
     EngineIdentity SttEngine,
-    EngineIdentity? CleanerEngine);
+    EngineIdentity? CleanerEngine,
+    string PromptVersion,
+    string PromptSha256,
+    string PolicySha256,
+    string Split);

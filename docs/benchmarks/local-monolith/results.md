@@ -108,9 +108,12 @@ Gate reale Qwen+Gemma:
 
 Il test opt-in `LocalLifecycleTests` carica la coppia reale e misura
 `StopAsync`; viene eseguito solo con `RUN_LOCAL_LIFECYCLE=1` e non fa parte
-della suite portabile. Esecuzione reale del 2026-10-27: stop in **845,2 ms**
-(dopo caricamento e warm-up riusciti), sotto il budget di 5 s. Il test non
-chiude processi estranei e non apre porte di ascolto.
+della suite portabile. Esecuzioni reali del 2026-10-27: stop dopo caricamento e
+warm-up riusciti in **1.479,0 ms** (una misura precedente: 845,2 ms); stop
+durante il caricamento nativo, dopo che `transcribe.dll` è stato caricato, in
+**3.927,7 ms**. Entrambi restano sotto il budget di 5 s. Il test misura solo lo
+stop: l'assenza di listener e processi figli è verificata dalla composizione
+locale e dalla scansione del payload, non da questo test.
 
 ## Domande, voce personale e limiti
 

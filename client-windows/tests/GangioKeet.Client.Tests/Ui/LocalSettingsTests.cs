@@ -1,4 +1,5 @@
 using System.Windows;
+using GangioKeet.Client.Configuration;
 using GangioKeet.Client.Platform;
 using GangioKeet.Client.Protocol;
 using GangioKeet.Client.Ui;
@@ -27,6 +28,32 @@ public sealed class LocalSettingsTests
             Assert.True(window.IsLocalPanelVisible);
             Assert.Equal("Ready", window.LocalState);
             Assert.Contains("qwen3_asr_1_7b", window.LocalPair);
+            window.Close();
+        });
+
+        Assert.Null(failure);
+    }
+
+    [Fact]
+    public void RemoteWindowStillOffersTheModeSelector()
+    {
+        Exception? failure = RunOnStaThread(() =>
+        {
+            string path = Path.Combine(Path.GetTempPath(), $"gangio-settings-{Guid.NewGuid():N}.yaml");
+            EndpointSelector selector = new(
+                [new EndpointConfig { Name = "a", Role = "primary", Host = "127.0.0.1", Port = 8000 }], 10);
+            EndpointProbe probe = new(new HttpClient(), null, TimeProvider.System);
+            SettingsWindow window = new(
+                selector,
+                probe,
+                new TelemetryStore(),
+                path,
+                onSaved: _ => { },
+                localInfo: () => new LocalSettingsInfo("remote", "vulkan", "-", "Stopped", null),
+                onModeSaved: _ => { });
+
+            Assert.True(window.IsModeSelectorVisible);
+            Assert.False(window.IsLocalPanelVisible);
             window.Close();
         });
 

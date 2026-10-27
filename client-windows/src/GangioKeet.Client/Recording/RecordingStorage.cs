@@ -18,7 +18,7 @@ public sealed class RecordingStorage(RecordingStore store)
             if (entry.RootElement.TryGetProperty("audio_path", out JsonElement relative)
                 && relative.GetString() is string path)
             {
-                string audio = Resolve(path);
+                string audio = store.ResolvePath(path);
                 if (File.Exists(audio)) bytes += new FileInfo(audio).Length;
             }
         }
@@ -38,40 +38,6 @@ public sealed class RecordingStorage(RecordingStore store)
         return Task.FromResult<IReadOnlyList<string>>(ids);
     }
 
-    public async Task DeleteAsync(IReadOnlyList<string> ids, CancellationToken ct)
-    {
-        if (ids.Count == 0 || !File.Exists(store.ManifestPath)) return;
-        HashSet<string> selected = [.. ids];
-        List<string> kept = [];
-        List<string> removed = [];
-        foreach (string line in File.ReadLines(store.ManifestPath))
-        {
-            if (string.IsNullOrWhiteSpace(line)) continue;
-            using JsonDocument entry = JsonDocument.Parse(line);
-            string id = entry.RootElement.GetProperty("id").GetString()!;
-            if (!selected.Contains(id))
-            {
-                kept.Add(line);
-                continue;
-            }
-            string path = entry.RootElement.GetProperty("audio_path").GetString()!;
-            removed.Add(Resolve(path));
-        }
-
-        foreach (string path in removed)
-        {
-            ct.ThrowIfCancellationRequested();
-            if (File.Exists(path)) File.Delete(path);
-        }
-        await store.ReplaceManifestAsync(kept, ct).ConfigureAwait(false);
-    }
-
-    private string Resolve(string relative)
-    {
-        string root = Path.TrimEndingDirectorySeparator(store.Directory) + Path.DirectorySeparatorChar;
-        string path = Path.GetFullPath(relative, store.Directory);
-        if (!path.StartsWith(root, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException("Recording path escapes the recording root.");
-        return path;
-    }
+    public Task DeleteAsync(IReadOnlyList<string> ids, CancellationToken ct)
+        => store.DeleteAsync(ids, ct);
 }

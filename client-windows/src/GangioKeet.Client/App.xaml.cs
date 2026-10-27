@@ -169,11 +169,13 @@ public partial class App : Application
             _localSttId = setup.SttId;
             _localCleanerId = setup.CleanerId;
             _localBackend = setup.Backend;
-            _recordingStore = new RecordingStore(config.Recording);
+            _recordingStore = new RecordingStore(config.Recording,
+                provenance: new RecordingProvenance(setup.PromptVersion, setup.PromptSha256, setup.PolicySha256));
             if (config.Recording.Enabled)
             {
                 _recordingQueue = new RecordingQueue(_recordingStore, warning: warning =>
-                    _logger?.Write("recording", warning));
+                    _logger?.Write("recording", warning),
+                    enabled: () => _recordingStore.Enabled);
             }
             _runtime = new AppRuntime(setup.Pipeline, _recordingQueue);
             backend = new LocalDictationBackend(setup.Pipeline, () => _runtime.IsReady, _recordingQueue);
@@ -273,7 +275,8 @@ public partial class App : Application
         SettingsWindow window = _selector is null || _probe is null
             ? new(null, null, _telemetry, ConfigLoader.DefaultPath, _ => { }, _logger,
                 LocalInfo, OnModeSaved, _recordingStore)
-            : new(_selector, _probe, _telemetry, ConfigLoader.DefaultPath, OnEndpointsSaved, _logger);
+            : new(_selector, _probe, _telemetry, ConfigLoader.DefaultPath, OnEndpointsSaved, _logger,
+                LocalInfo, OnModeSaved);
 
         window.Closed += (_, _) => _settings = null;
         _settings = window;
