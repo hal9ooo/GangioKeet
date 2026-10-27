@@ -27,6 +27,7 @@ public partial class App : Application
 
     private ClientConfig? _config;
     private DictationController? _controller;
+    private TelemetryStore? _telemetry;
     private RecoveryStore? _recovery;
     private HealthMonitor? _health;
     private TrayController? _tray;
@@ -117,6 +118,11 @@ public partial class App : Application
 
         _capture = new WasapiAudioCapture(config.Audio);
 
+        EndpointSelector endpointSelector = new(
+            config.Endpoints!,
+            config.Server.SwitchMarginPercent);
+        _telemetry = new TelemetryStore();
+
         _controller = new DictationController(
             _capture,
             CreateSession,
@@ -127,6 +133,8 @@ public partial class App : Application
             _pill,
             sound,
             config,
+            endpointSelector,
+            _telemetry,
             time);
 
         _hooks = new LowLevelInputHooks(

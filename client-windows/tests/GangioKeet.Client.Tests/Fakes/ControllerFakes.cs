@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using GangioKeet.Client.Audio;
+using GangioKeet.Client.Configuration;
 using GangioKeet.Client.Context;
 using GangioKeet.Client.Controller;
 using GangioKeet.Client.Protocol;
@@ -66,10 +67,15 @@ internal sealed class FakeSession : IDictationSession
     public int AbortCalls { get; private set; }
     public int DisposeCalls { get; private set; }
     public bool Aborted { get; private set; }
+    public Uri? LastUri { get; private set; }
+    public string? LastToken { get; private set; }
 
     public async Task<SessionConnectOutcome> ConnectAndStartAsync(
         Uri uri, StartMessage start, string? token, TimeSpan connectTimeout, CancellationToken ct)
     {
+        LastUri = uri;
+        LastToken = token;
+
         if (ConnectGate is not null)
         {
             await ConnectGate.Task.WaitAsync(connectTimeout, ct);
@@ -127,9 +133,38 @@ internal sealed class FakeSession : IDictationSession
     }
 }
 
-internal sealed class FakeRecoveryStore
+internal sealed class MutableResolver : IEndpointResolver
 {
-    public RecoveryItem? Current { get; set; }
+    private readonly object _gate = new();
+    private EndpointConfig _active;
+
+    public MutableResolver(EndpointConfig active)
+    {
+        _active = active;
+    }
+
+    public EndpointConfig Active
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _active;
+            }
+        }
+    }
+
+    public void Set(EndpointConfig active)
+    {
+        lock (_gate)
+        {
+            _active = active;
+        }
+    }
+}
+
+internal sealed class FakeRecoveryStore
+{    public RecoveryItem? Current { get; set; }
     public int OfferCalls { get; private set; }
     public int DiscardCalls { get; private set; }
     public bool RemoveResult { get; set; } = true;

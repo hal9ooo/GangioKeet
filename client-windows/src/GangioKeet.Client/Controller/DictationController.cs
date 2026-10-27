@@ -26,6 +26,8 @@ public sealed class DictationController : IAsyncDisposable
     private readonly IPillView _pill;
     private readonly ISoundPlayer _sound;
     private readonly ClientConfig _config;
+    private readonly IEndpointResolver _endpoints;
+    private readonly TelemetryStore _telemetry;
     private readonly TimeProvider _time;
     private readonly RamAudioBuffer _audioBuffer;
 
@@ -44,6 +46,8 @@ public sealed class DictationController : IAsyncDisposable
     private DictationProfile _profile;
     private string _wireProfile = "default";
     private ClientState _state = ClientState.Idle;
+    private long _turnStarted;
+    private EndpointConfig? _turnEndpoint;
 
     public DictationController(
         IAudioCapture capture,
@@ -55,6 +59,8 @@ public sealed class DictationController : IAsyncDisposable
         IPillView pill,
         ISoundPlayer sound,
         ClientConfig config,
+        IEndpointResolver endpoints,
+        TelemetryStore telemetry,
         TimeProvider time)
     {
         _capture = capture;
@@ -66,6 +72,8 @@ public sealed class DictationController : IAsyncDisposable
         _pill = pill;
         _sound = sound;
         _config = config;
+        _endpoints = endpoints;
+        _telemetry = telemetry;
         _time = time;
         _audioBuffer = new RamAudioBuffer();
 
@@ -206,7 +214,10 @@ public sealed class DictationController : IAsyncDisposable
         {
             using HttpClient http = new();
             RestDictationClient rest = new(http, _time);
-            Uri baseUri = ServerEndpoint.HttpBase(_config.Server);
+            EndpointConfig endpoint = _endpoints.Active;
+            Uri baseUri = ServerEndpoint.HttpBase(endpoint);
+
+            _telemetry.RecordRetry();
 
             DictationOutcome outcome = await rest.TranscribeAsync(
                 baseUri,
@@ -291,13 +302,19 @@ public sealed class DictationController : IAsyncDisposable
         _audioBuffer.Clear();
         ClearPendingAudio();
 
+        // L'endpoint è fissato qui, una volta per dettatura: se il monitor ne
+        // elegge un altro durante il turno, il cambio vale dal turno successivo.
+        EndpointConfig endpoint = _endpoints.Active;
+        _turnEndpoint = endpoint;
+        _turnStarted = _time.GetTimestamp();
+
         IDictationSession? session = null;
         try
         {
             session = _sessionFactory();
             _session = session;
 
-            Uri uri = ServerEndpoint.WebSocket(_config.Server);
+            Uri uri = ServerEndpoint.WebSocket(endpoint);
             string? token = ApiCredential.Resolve(_config.Server.ApiKeyEnv, Environment.GetEnvironmentVariable);
 
             StartMessage start = new(
@@ -305,6 +322,7 @@ public sealed class DictationController : IAsyncDisposable
                 WindowTitle: target.WindowTitle,
                 Profile: _wireProfile);
 
+            long connectStarted = _time.GetTimestamp();
             Task<SessionConnectOutcome> connectTask = session.ConnectAndStartAsync(
                 uri, start, token,
                 TimeSpan.FromSeconds(_config.Server.ConnectTimeoutSeconds),
@@ -313,6 +331,7 @@ public sealed class DictationController : IAsyncDisposable
             Task captureTask = StartCaptureAsync();
 
             SessionConnectOutcome connect = await connectTask.ConfigureAwait(false);
+            TimeSpan connectElapsed = _time.GetElapsedTime(connectStarted);
             await captureTask.ConfigureAwait(false);
 
             if (IsStale(generation)) return;
@@ -346,6 +365,18 @@ public sealed class DictationController : IAsyncDisposable
             if (IsStale(generation)) return;
 
             await HandleOutcomeAsync(outcome, generation).ConfigureAwait(false);
+
+            if (outcome.Status == DictationStatus.Result
+                && !string.IsNullOrWhiteSpace(outcome.Result?.FinalText)
+                && !IsStale(generation))
+            {
+                _telemetry.RecordDictation(
+                    success: true,
+                    _time.GetElapsedTime(_turnStarted),
+                    connectElapsed,
+                    endpoint.Name,
+                    errorCode: null);
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -483,6 +514,13 @@ public sealed class DictationController : IAsyncDisposable
 
         _pill.Show(PillState.Error, message, _profile);
         _state = ClientState.Idle;
+
+        _telemetry.RecordDictation(
+            success: false,
+            _time.GetElapsedTime(_turnStarted),
+            connect: null,
+            _turnEndpoint?.Name ?? "sconosciuto",
+            errorCode: code);
     }
 
     private void OfferResultForRecovery(ResultMessage result, ForegroundWindowInfo? target, string code)

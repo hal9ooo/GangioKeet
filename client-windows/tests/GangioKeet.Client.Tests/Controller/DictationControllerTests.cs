@@ -279,8 +279,95 @@ public sealed class DictationControllerTests
         Assert.Null(h.Capture.LastDeviceId);
     }
 
-    private static async Task WaitUntilAsync(Func<bool> condition, int timeoutMs = 5000)
+    [Fact]
+    public async Task Session_UsesEndpointPinnedAtStart()
     {
+        MutableResolver resolver = new(Endpoint("a", "10.0.0.1"));
+        Harness h = new(endpointResolver: resolver);
+        FakeSession session = new() { ConnectGate = new() };
+        h.Sessions.Enqueue(session);
+
+        h.Controller.Start();
+        await WaitUntilAsync(() => h.Capture.StartCalls == 1);
+
+        resolver.Set(Endpoint("b", "10.0.0.2"));
+        session.ConnectGate!.SetResult();
+
+        await WaitUntilAsync(() => h.Controller.State == ClientState.Recording);
+
+        Assert.Equal("ws://10.0.0.1:8000/ws/dictate", session.LastUri!.AbsoluteUri);
+    }
+
+    [Fact]
+    public async Task NextDictation_UsesNewActive()
+    {
+        MutableResolver resolver = new(Endpoint("a", "10.0.0.1"));
+        Harness h = new(endpointResolver: resolver);
+        FakeSession first = new();
+        FakeSession second = new();
+        h.Sessions.Enqueue(first);
+        h.Sessions.Enqueue(second);
+
+        h.Controller.Start();
+        await WaitUntilAsync(() => h.Controller.State == ClientState.Recording);
+        first.PublishResult("uno");
+        await WaitUntilAsync(() => h.Controller.State == ClientState.Idle);
+
+        resolver.Set(Endpoint("b", "10.0.0.2"));
+
+        h.Controller.Start();
+        await WaitUntilAsync(() => h.Controller.State == ClientState.Recording);
+
+        Assert.Equal("ws://10.0.0.1:8000/ws/dictate", first.LastUri!.AbsoluteUri);
+        Assert.Equal("ws://10.0.0.2:8000/ws/dictate", second.LastUri!.AbsoluteUri);
+    }
+
+    [Fact]
+    public async Task Success_RecordsTelemetryForThePinnedEndpoint()
+    {
+        Harness h = new(endpointResolver: new MutableResolver(Endpoint("casa", "10.0.0.1")));
+        FakeSession session = new();
+        h.Sessions.Enqueue(session);
+
+        h.Controller.Start();
+        await WaitUntilAsync(() => h.Controller.State == ClientState.Recording);
+        session.PublishResult("ciao");
+        await WaitUntilAsync(() => h.Controller.State == ClientState.Idle);
+
+        TelemetrySnapshot snapshot = h.Telemetry.Snapshot();
+
+        Assert.Equal(1, snapshot.Successes);
+        Assert.Equal("casa", snapshot.LastEndpoint);
+        Assert.NotNull(snapshot.LastDictationMs);
+        Assert.NotNull(snapshot.LastConnectMs);
+        Assert.Null(snapshot.LastError);
+    }
+
+    [Fact]
+    public async Task ConnectFailure_RecordsTelemetryFailure()
+    {
+        Harness h = new(endpointResolver: new MutableResolver(Endpoint("casa", "10.0.0.1")));
+        h.Sessions.Enqueue(new FakeSession { Connected = false });
+
+        h.Controller.Start();
+        await WaitUntilAsync(() => h.Telemetry.Snapshot().Failures == 1);
+
+        TelemetrySnapshot snapshot = h.Telemetry.Snapshot();
+
+        Assert.Equal(1, snapshot.Failures);
+        Assert.Equal("connect_failed", snapshot.LastError);
+        Assert.Equal("casa", snapshot.LastEndpoint);
+    }
+
+    private static EndpointConfig Endpoint(string name, string host) => new()
+    {
+        Name = name,
+        Role = name == "a" ? "primary" : "secondary",
+        Host = host,
+        Port = 8000,
+    };
+
+    private static async Task WaitUntilAsync(Func<bool> condition, int timeoutMs = 5000)    {
         using CancellationTokenSource cts = new(timeoutMs);
         while (!condition())
         {
@@ -297,13 +384,15 @@ public sealed class DictationControllerTests
         public FakeClipboardService Clipboard { get; } = new();
         public FakeInputSimulator Input { get; } = new();
         public RecoveryStore Recovery { get; }
+        public TelemetryStore Telemetry { get; } = new();
         public Queue<FakeSession> Sessions { get; } = new();
         public DictationController Controller { get; }
 
         public Harness(
             bool elevationBlocked = false,
             bool elevationBlockedAfterFirstCheck = false,
-            string? configInputDevice = null)
+            string? configInputDevice = null,
+            IEndpointResolver? endpointResolver = null)
         {
             Recovery = new RecoveryStore(Time, TimeSpan.FromSeconds(600));
 
@@ -339,6 +428,8 @@ public sealed class DictationControllerTests
                 Pill,
                 Sound,
                 config,
+                endpointResolver ?? new MutableResolver(Endpoint("a", "10.0.0.1")),
+                Telemetry,
                 Time);
         }
 
