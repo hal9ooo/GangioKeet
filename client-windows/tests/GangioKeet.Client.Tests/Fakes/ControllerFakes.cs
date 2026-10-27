@@ -133,6 +133,31 @@ internal sealed class FakeSession : IDictationSession
     }
 }
 
+internal sealed class FakeDictationBackend : IDictationBackend
+{
+    public int RetryCalls { get; private set; }
+    public ReadOnlyMemory<byte> LastRetryPcm { get; private set; }
+    public StartMessage? LastRetryStart { get; private set; }
+    public DictationOutcome RetryOutcome { get; set; } = new(
+        DictationStatus.Result,
+        new ResultMessage("raw", "testo ritentato", false, new DictationMetrics(1, 2, 3), []),
+        null);
+
+    public IActiveDictationTurn CreateTurn(StartMessage start) =>
+        throw new NotSupportedException("This fake is used only for retry routing.");
+
+    public Task<DictationOutcome> RetryAsync(
+        ReadOnlyMemory<byte> pcm,
+        StartMessage start,
+        CancellationToken ct)
+    {
+        RetryCalls++;
+        LastRetryPcm = pcm;
+        LastRetryStart = start;
+        return Task.FromResult(RetryOutcome);
+    }
+}
+
 internal sealed class MutableResolver : IEndpointResolver
 {
     private readonly object _gate = new();

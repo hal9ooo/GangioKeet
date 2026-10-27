@@ -1,4 +1,3 @@
-using System.Net.Http;
 using GangioKeet.Client.Audio;
 using GangioKeet.Client.Configuration;
 using GangioKeet.Client.Context;
@@ -18,7 +17,7 @@ namespace GangioKeet.Client.Controller;
 public sealed class DictationController : IAsyncDisposable
 {
     private readonly IAudioCapture _capture;
-    private readonly Func<IDictationSession> _sessionFactory;
+    private readonly IDictationBackend _backend;
     private readonly PasteService _paste;
     private readonly RecoveryStore _recovery;
     private readonly IForegroundWindowService _foreground;
@@ -26,7 +25,6 @@ public sealed class DictationController : IAsyncDisposable
     private readonly IPillView _pill;
     private readonly ISoundPlayer _sound;
     private readonly ClientConfig _config;
-    private readonly IEndpointResolver _endpoints;
     private readonly TelemetryStore _telemetry;
     private readonly TimeProvider _time;
     private readonly RamAudioBuffer _audioBuffer;
@@ -39,7 +37,7 @@ public sealed class DictationController : IAsyncDisposable
     private int _generation;
     private int _disposed;
 
-    private volatile IDictationSession? _session;
+    private volatile IActiveDictationTurn? _turn;
     private bool _captureStarted;
     private bool _connected;
     private ForegroundWindowInfo? _target;
@@ -47,11 +45,10 @@ public sealed class DictationController : IAsyncDisposable
     private string _wireProfile = "default";
     private ClientState _state = ClientState.Idle;
     private long _turnStarted;
-    private EndpointConfig? _turnEndpoint;
 
     public DictationController(
         IAudioCapture capture,
-        Func<IDictationSession> sessionFactory,
+        IDictationBackend backend,
         PasteService paste,
         RecoveryStore recovery,
         IForegroundWindowService foreground,
@@ -59,12 +56,11 @@ public sealed class DictationController : IAsyncDisposable
         IPillView pill,
         ISoundPlayer sound,
         ClientConfig config,
-        IEndpointResolver endpoints,
         TelemetryStore telemetry,
         TimeProvider time)
     {
         _capture = capture;
-        _sessionFactory = sessionFactory;
+        _backend = backend;
         _paste = paste;
         _recovery = recovery;
         _foreground = foreground;
@@ -72,7 +68,6 @@ public sealed class DictationController : IAsyncDisposable
         _pill = pill;
         _sound = sound;
         _config = config;
-        _endpoints = endpoints;
         _telemetry = telemetry;
         _time = time;
         _audioBuffer = new RamAudioBuffer();
@@ -133,14 +128,14 @@ public sealed class DictationController : IAsyncDisposable
     /// </summary>
     public async Task StopAsync(CancellationToken ct)
     {
-        IDictationSession? session = _session;
-        if (session is null) return;
+        IActiveDictationTurn? turn = _turn;
+        if (turn is null) return;
         if (_state is not (ClientState.Recording or ClientState.Connecting)) return;
 
         try
         {
             await StopCaptureAsync(ct).ConfigureAwait(false);
-            await session.FinishAsync(ct).ConfigureAwait(false);
+            await turn.FinishAsync(ct).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -161,7 +156,7 @@ public sealed class DictationController : IAsyncDisposable
         _audioBuffer.Clear();
         ClearPendingAudio();
 
-        IDictationSession? session = _session;
+        IActiveDictationTurn? turn = _turn;
         try
         {
             await StopCaptureAsync(ct).ConfigureAwait(false);
@@ -170,17 +165,17 @@ public sealed class DictationController : IAsyncDisposable
         {
         }
 
-        if (session is not null)
+        if (turn is not null)
         {
             try
             {
-                await session.AbortAsync(ct).ConfigureAwait(false);
+                await turn.AbortAsync(ct).ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
             }
 
-            await DisposeSessionAsync(session).ConfigureAwait(false);
+            await DisposeTurnAsync(turn).ConfigureAwait(false);
         }
 
         _pill.Hide();
@@ -212,21 +207,10 @@ public sealed class DictationController : IAsyncDisposable
 
         try
         {
-            using HttpClient http = new();
-            RestDictationClient rest = new(http, _time);
-            EndpointConfig endpoint = _endpoints.Active;
-            Uri baseUri = ServerEndpoint.HttpBase(endpoint);
-
             _telemetry.RecordRetry();
-
-            DictationOutcome outcome = await rest.TranscribeAsync(
-                baseUri,
-                item.Pcm,
-                item.Start.Profile,
-                ApiCredential.Resolve(_config.Server.ApiKeyEnv, Environment.GetEnvironmentVariable),
-                TimeSpan.FromSeconds(_config.Server.UploadTimeoutSeconds),
-                TimeSpan.FromSeconds(_config.Server.RestResponseTimeoutSeconds),
-                ct).ConfigureAwait(false);
+            DictationOutcome outcome = await _backend
+                .RetryAsync(item.Pcm, item.Start, ct)
+                .ConfigureAwait(false);
 
             if (outcome.Status == DictationStatus.Result
                 && !string.IsNullOrWhiteSpace(outcome.Result!.FinalText))
@@ -280,11 +264,11 @@ public sealed class DictationController : IAsyncDisposable
 
         Interlocked.Increment(ref _generation);
 
-        IDictationSession? session = _session;
-        if (session is not null)
+        IActiveDictationTurn? turn = _turn;
+        if (turn is not null)
         {
-            await session.AbortAsync(CancellationToken.None).ConfigureAwait(false);
-            await DisposeSessionAsync(session).ConfigureAwait(false);
+            await turn.AbortAsync(CancellationToken.None).ConfigureAwait(false);
+            await DisposeTurnAsync(turn).ConfigureAwait(false);
         }
 
         _captureStarted = false;
@@ -304,51 +288,43 @@ public sealed class DictationController : IAsyncDisposable
 
         // L'endpoint è fissato qui, una volta per dettatura: se il monitor ne
         // elegge un altro durante il turno, il cambio vale dal turno successivo.
-        EndpointConfig endpoint = _endpoints.Active;
-        _turnEndpoint = endpoint;
         _turnStarted = _time.GetTimestamp();
 
-        IDictationSession? session = null;
+        IActiveDictationTurn? turn = null;
         try
         {
-            session = _sessionFactory();
-            _session = session;
-
-            Uri uri = ServerEndpoint.WebSocket(endpoint);
-            string? token = ApiCredential.Resolve(_config.Server.ApiKeyEnv, Environment.GetEnvironmentVariable);
-
             StartMessage start = new(
                 AppName: "GangioKeet.Client",
                 WindowTitle: target.WindowTitle,
                 Profile: _wireProfile);
 
+            turn = _backend.CreateTurn(start);
+            _turn = turn;
+
             long connectStarted = _time.GetTimestamp();
-            Task<SessionConnectOutcome> connectTask = session.ConnectAndStartAsync(
-                uri, start, token,
-                TimeSpan.FromSeconds(_config.Server.ConnectTimeoutSeconds),
-                CancellationToken.None);
+            Task<TurnStartOutcome> startTask = turn.StartAsync(CancellationToken.None);
 
             Task captureTask = StartCaptureAsync();
 
-            SessionConnectOutcome connect = await connectTask.ConfigureAwait(false);
+            TurnStartOutcome connect = await startTask.ConfigureAwait(false);
             TimeSpan connectElapsed = _time.GetElapsedTime(connectStarted);
             await captureTask.ConfigureAwait(false);
 
             if (IsStale(generation)) return;
 
-            if (!connect.Connected)
+            if (!connect.Ready)
             {
                 await HandleFailureAsync(
                     generation,
-                    connect.Failure?.Code ?? "connect_failed",
-                    "Server non raggiungibile",
+                    connect.Error?.Code ?? "start_failed",
+                    connect.Error?.Message ?? "Avvio dettatura non riuscito",
                     offerRecovery: true).ConfigureAwait(false);
                 return;
             }
 
             // Backlog pre-start: i chunk catturati durante l'handshake entrano nella sessione
             // prima dei chunk live, nello stesso ordine di arrivo.
-            FlushPendingAudioToSession();
+            FlushPendingAudioToTurn();
 
             _state = ClientState.Recording;
             _pill.Show(PillState.Recording, "Registrazione…", _profile);
@@ -360,7 +336,7 @@ public sealed class DictationController : IAsyncDisposable
                 return;
             }
 
-            DictationOutcome outcome = await session.Completion.ConfigureAwait(false);
+            DictationOutcome outcome = await turn.Completion.ConfigureAwait(false);
 
             if (IsStale(generation)) return;
 
@@ -374,7 +350,7 @@ public sealed class DictationController : IAsyncDisposable
                     success: true,
                     _time.GetElapsedTime(_turnStarted),
                     connectElapsed,
-                    endpoint.Name,
+                    turn.BackendName,
                     errorCode: null);
             }
         }
@@ -388,9 +364,9 @@ public sealed class DictationController : IAsyncDisposable
         }
         finally
         {
-            if (session is not null)
+            if (turn is not null)
             {
-                await DisposeSessionAsync(session).ConfigureAwait(false);
+                await DisposeTurnAsync(turn).ConfigureAwait(false);
             }
         }
     }
@@ -490,12 +466,12 @@ public sealed class DictationController : IAsyncDisposable
 
         await StopCaptureAsync(CancellationToken.None).ConfigureAwait(false);
 
-        IDictationSession? session = _session;
-        if (session is not null)
+        IActiveDictationTurn? turn = _turn;
+        if (turn is not null)
         {
             try
             {
-                await session.AbortAsync(CancellationToken.None).ConfigureAwait(false);
+                await turn.AbortAsync(CancellationToken.None).ConfigureAwait(false);
             }
             catch (Exception)
             {
@@ -519,7 +495,7 @@ public sealed class DictationController : IAsyncDisposable
             success: false,
             _time.GetElapsedTime(_turnStarted),
             connect: null,
-            _turnEndpoint?.Name ?? "sconosciuto",
+            turn?.BackendName ?? "sconosciuto",
             errorCode: code);
     }
 
@@ -600,9 +576,9 @@ public sealed class DictationController : IAsyncDisposable
         }
     }
 
-    private async Task DisposeSessionAsync(IDictationSession session)
+    private async Task DisposeTurnAsync(IActiveDictationTurn turn)
     {
-        if (!ReferenceEquals(Interlocked.CompareExchange(ref _session, null, session), session))
+        if (!ReferenceEquals(Interlocked.CompareExchange(ref _turn, null, turn), turn))
         {
             // Un altro flusso lo ha già rimosso e disposto.
             return;
@@ -615,7 +591,7 @@ public sealed class DictationController : IAsyncDisposable
 
         try
         {
-            await session.DisposeAsync().ConfigureAwait(false);
+            await turn.DisposeAsync().ConfigureAwait(false);
         }
         catch (Exception)
         {
@@ -623,17 +599,17 @@ public sealed class DictationController : IAsyncDisposable
         }
     }
 
-    private void FlushPendingAudioToSession()
+    private void FlushPendingAudioToTurn()
     {
-        IDictationSession? session = _session;
-        if (session is null) return;
+        IActiveDictationTurn? turn = _turn;
+        if (turn is null) return;
 
         lock (_audioGate)
         {
             _connected = true;
             foreach (byte[] chunk in _pendingAudio)
             {
-                if (!session.TryEnqueueAudio(chunk))
+                if (!turn.TryEnqueueAudio(chunk))
                 {
                     _pendingAudio.Clear();
                     _ = HandleFailureAsync(
@@ -667,7 +643,7 @@ public sealed class DictationController : IAsyncDisposable
         byte[] owned = chunk.ToArray();
         _audioBuffer.TryAppend(owned);
 
-        IDictationSession? session = _session;
+        IActiveDictationTurn? turn = _turn;
         bool enqueueNow;
         lock (_audioGate)
         {
@@ -677,10 +653,10 @@ public sealed class DictationController : IAsyncDisposable
                 return;
             }
 
-            enqueueNow = session is not null;
+            enqueueNow = turn is not null;
         }
 
-        if (enqueueNow && session is not null && !session.TryEnqueueAudio(owned))
+        if (enqueueNow && turn is not null && !turn.TryEnqueueAudio(owned))
         {
             int generation = Interlocked.Increment(ref _generation);
             _ = HandleFailureAsync(generation, "backpressure", "Buffer saturo", offerRecovery: true);

@@ -164,9 +164,10 @@ public partial class App : Application
             TimeSpan.FromSeconds(config.Server.HealthCheckIntervalSeconds),
             TimeSpan.FromSeconds(config.Server.HealthCheckTimeoutSeconds));
 
+        RemoteDictationBackend backend = new(CreateSession, _selector, config, time);
         _controller = new DictationController(
             _capture,
-            CreateSession,
+            backend,
             paste,
             _recovery,
             new Win32ForegroundWindowService(),
@@ -174,7 +175,6 @@ public partial class App : Application
             _pill,
             sound,
             config,
-            _selector,
             _telemetry,
             time);
 

@@ -213,6 +213,21 @@ public sealed class DictationControllerTests
     }
 
     [Fact]
+    public async Task Retry_WithoutResultDelegatesToInjectedBackend()
+    {
+        FakeDictationBackend backend = new();
+        Harness h = new(backend: backend);
+        h.OfferAudio(new byte[] { 1, 2, 3, 4 });
+
+        await h.Controller.RetryLastAsync(CancellationToken.None);
+
+        Assert.Equal(1, backend.RetryCalls);
+        Assert.Equal(new byte[] { 1, 2, 3, 4 }, backend.LastRetryPcm.ToArray());
+        Assert.Equal("testo ritentato", h.Clipboard.Text);
+        Assert.Null(h.Recovery.GetCurrent());
+    }
+
+    [Fact]
     public async Task AbortDuringRecording_IgnoresALateResultAndNeverPastes()
     {
         Harness h = new();
@@ -392,7 +407,8 @@ public sealed class DictationControllerTests
             bool elevationBlocked = false,
             bool elevationBlockedAfterFirstCheck = false,
             string? configInputDevice = null,
-            IEndpointResolver? endpointResolver = null)
+            IEndpointResolver? endpointResolver = null,
+            IDictationBackend? backend = null)
         {
             Recovery = new RecoveryStore(Time, TimeSpan.FromSeconds(600));
 
@@ -418,9 +434,16 @@ public sealed class DictationControllerTests
                 BlockedAfterFirstCheck = elevationBlockedAfterFirstCheck,
             };
 
+            backend ??= new RemoteDictationBackend(
+                () => Sessions.Count > 0 ? Sessions.Dequeue() : new FakeSession(),
+                endpointResolver ?? new MutableResolver(Endpoint("a", "10.0.0.1")),
+                config,
+                Time,
+                () => new HttpClient());
+
             Controller = new DictationController(
                 Capture,
-                () => Sessions.Count > 0 ? Sessions.Dequeue() : new FakeSession(),
+                backend,
                 paste,
                 Recovery,
                 new FakeForegroundWindowService { Window = Window },
@@ -428,7 +451,6 @@ public sealed class DictationControllerTests
                 Pill,
                 Sound,
                 config,
-                endpointResolver ?? new MutableResolver(Endpoint("a", "10.0.0.1")),
                 Telemetry,
                 Time);
         }
@@ -442,6 +464,18 @@ public sealed class DictationControllerTests
                 new StartMessage("GangioKeet.Client", Window.WindowTitle, "default"),
                 Window,
                 "paste_failed",
+                Time.GetUtcNow().DateTime.AddSeconds(600)));
+        }
+
+        public void OfferAudio(byte[] pcm)
+        {
+            Recovery.Offer(new RecoveryItem(
+                Guid.NewGuid(),
+                pcm,
+                null,
+                new StartMessage("GangioKeet.Client", Window.WindowTitle, "chat"),
+                Window,
+                "connect_failed",
                 Time.GetUtcNow().DateTime.AddSeconds(600)));
         }
     }
