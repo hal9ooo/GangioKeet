@@ -10,7 +10,8 @@ namespace GangioKeet.Eval;
 
 public sealed class ReplayCommand(string modelRoot, string nativeDirectory, string llamaDirectory,
     string runtimeLock, CleanupPolicy policy, int passes = 3, string backend = "vulkan",
-    Func<ModelArtifact, ISttEngine>? sttFactory = null, Func<ModelArtifact, ITextCleaner>? cleanerFactory = null)
+    Func<ModelArtifact, ISttEngine>? sttFactory = null, Func<ModelArtifact, ITextCleaner>? cleanerFactory = null,
+    int? cancelAfterMs = null)
 {
     public async Task<int> RunAsync(string catalog, string manifest, string? sttId, string? cleanerId,
         string phase, string output, CancellationToken ct)
@@ -20,6 +21,9 @@ public sealed class ReplayCommand(string modelRoot, string nativeDirectory, stri
         ITextCleaner? cleaner = null;
         InferencePipeline? pipeline = null;
         double coldStartMs = 0;
+        double disposeMs = 0;
+        Stopwatch cold = Stopwatch.StartNew();
+        CancellationTokenSource? turnCancellation = null;
         int exit = 0;
         string status = "completed";
         string? errorType = null;
@@ -50,7 +54,6 @@ public sealed class ReplayCommand(string modelRoot, string nativeDirectory, stri
                     throw new InvalidDataException("Audio PCM hash mismatch.");
                 return wav;
             }
-            Stopwatch cold = Stopwatch.StartNew();
             if (phase != "cleaner")
             {
                 ModelArtifact artifact = models.Get(sttId!);
@@ -78,11 +81,18 @@ public sealed class ReplayCommand(string modelRoot, string nativeDirectory, stri
                 await cleaner.CleanAsync(clips[0]["raw_text"].GetString()!, "default", ct);
             }
             coldStartMs = cold.Elapsed.TotalMilliseconds;
+            CancellationToken runToken = ct;
+            if (cancelAfterMs is int milliseconds)
+            {
+                turnCancellation = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                turnCancellation.CancelAfter(milliseconds);
+                runToken = turnCancellation.Token;
+            }
             for (int pass = 1; pass <= passes; pass++)
             {
                 foreach (Dictionary<string, JsonElement> clip in clips)
                 {
-                    ct.ThrowIfCancellationRequested();
+                    runToken.ThrowIfCancellationRequested();
                     Dictionary<string, object?> row = clip.ToDictionary(x => x.Key, x => (object?)x.Value);
                     row["pass"] = pass;
                     row["warm"] = true;
@@ -94,7 +104,7 @@ public sealed class ReplayCommand(string modelRoot, string nativeDirectory, stri
                     {
                         if (pipeline is not null)
                         {
-                            PipelineResult result = await pipeline.ProcessAsync(new(wav!.Pcm, profile), ct);
+                            PipelineResult result = await pipeline.ProcessAsync(new(wav!.Pcm, profile), runToken);
                             row["raw_text"] = result.RawText; row["final_text"] = result.FinalText;
                             row["stt_ms"] = result.SttMs; row["llm_ms"] = result.LlmMs;
                             row["total_ms"] = result.TotalMs; row["warnings"] = result.Warnings;
@@ -102,14 +112,14 @@ public sealed class ReplayCommand(string modelRoot, string nativeDirectory, stri
                         }
                         else if (stt is not null)
                         {
-                            SpeechTranscript result = await stt.TranscribeAsync(wav!.Pcm, ct);
+                            SpeechTranscript result = await stt.TranscribeAsync(wav!.Pcm, runToken);
                             row["raw_text"] = result.Text; row["final_text"] = null;
                             row["stt_ms"] = timer.Elapsed.TotalMilliseconds; row["llm_ms"] = 0;
                             row["stt_engine"] = result.Engine; row["warnings"] = Array.Empty<string>();
                         }
                         else
                         {
-                            using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                            using CancellationTokenSource deadline = CancellationTokenSource.CreateLinkedTokenSource(runToken);
                             deadline.CancelAfter(policy.LlmTimeout);
                             CleanedText result = await cleaner!.CleanAsync(clip["raw_text"].GetString()!, profile, deadline.Token);
                             deadline.Token.ThrowIfCancellationRequested();
@@ -117,12 +127,12 @@ public sealed class ReplayCommand(string modelRoot, string nativeDirectory, stri
                             row["llm_ms"] = timer.Elapsed.TotalMilliseconds; row["stt_ms"] = 0;
                             row["warnings"] = Array.Empty<string>();
                         }
-                        ct.ThrowIfCancellationRequested();
+                        runToken.ThrowIfCancellationRequested();
                         row["status"] = "completed";
                     }
-                    catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+                    catch (OperationCanceledException) when (!runToken.IsCancellationRequested)
                     { row["status"] = "failed"; row["warnings"] = new[] { "llm_timeout" }; row["final_text"] = null; }
-                    catch (Exception error) when (!ct.IsCancellationRequested)
+                    catch (Exception error) when (!runToken.IsCancellationRequested)
                     { row["status"] = "failed"; row["error_type"] = error.GetType().Name; row["final_text"] = null; }
                     row["total_ms"] = timer.Elapsed.TotalMilliseconds;
                     rows.Add(row);
@@ -134,18 +144,28 @@ public sealed class ReplayCommand(string modelRoot, string nativeDirectory, stri
         catch (Exception error) { exit = 2; status = "failed"; errorType = error.GetType().FullName; Console.Error.WriteLine(error.Message); }
         finally
         {
-            if (pipeline is not null) await pipeline.DisposeAsync();
-            else
+            Stopwatch shutdown = Stopwatch.StartNew();
+            try
             {
-                try { if (cleaner is not null) await cleaner.DisposeAsync(); }
-                finally { if (stt is not null) await stt.DisposeAsync(); }
+                if (pipeline is not null) await pipeline.DisposeAsync();
+                else
+                {
+                    try { if (cleaner is not null) await cleaner.DisposeAsync(); }
+                    finally { if (stt is not null) await stt.DisposeAsync(); }
+                }
+            }
+            finally
+            {
+                disposeMs = shutdown.Elapsed.TotalMilliseconds;
+                turnCancellation?.Dispose();
             }
         }
         string[] nativeModules = Process.GetCurrentProcess().Modules.Cast<ProcessModule>()
             .Where(x => new[] { "ggml", "lgml", "llama", "transcribe" }.Any(prefix => x.ModuleName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
             .Select(x => x.FileName).Order().ToArray();
         await ReportWriter.WriteAsync(output, new { schema_version = 1, phase, stt_id = sttId, cleaner_id = cleanerId,
-            status, error_type = errorType, manifest_sha256_utf8_lf = manifestSha, passes, cold_start_ms = coldStartMs,
+            status, error_type = errorType, manifest_sha256_utf8_lf = manifestSha, passes, cancel_after_ms = cancelAfterMs,
+            cold_start_ms = coldStartMs, elapsed_ms = cold.Elapsed.TotalMilliseconds, dispose_ms = disposeMs,
             policy_sha256 = policy.Sha256, prompt_version = CleanerPrompt.Version, prompt_sha256 = CleanerPrompt.Sha256, backend,
             clips = rows, loaded_native_modules = nativeModules, peak_working_set_bytes = Process.GetCurrentProcess().PeakWorkingSet64 }, CancellationToken.None);
         Console.WriteLine("Report: " + Path.GetFullPath(output));

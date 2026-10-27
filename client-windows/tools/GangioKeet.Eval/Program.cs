@@ -34,7 +34,9 @@ public static class Program
                     Required("--native-dir"), Required("--llama-dir"), Required("--runtime-lock"),
                     CleanupPolicy.Load(Required("--cleanup-policy")),
                     options.TryGetValue("--passes", out string? repeat) ? int.Parse(repeat) : 3,
-                    options.GetValueOrDefault("--backend", "vulkan"));
+                    options.GetValueOrDefault("--backend", "vulkan"),
+                    cancelAfterMs: options.TryGetValue("--cancel-after-ms", out string? cancel)
+                        ? int.Parse(cancel) : null);
                 return await replay.RunAsync(Required("--catalog"), Required("--manifest"),
                     options.GetValueOrDefault("--stt"), options.GetValueOrDefault("--cleaner"),
                     Required("--phase"), Required("--output"), cts.Token);

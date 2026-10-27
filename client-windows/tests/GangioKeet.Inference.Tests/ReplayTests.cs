@@ -42,6 +42,26 @@ public sealed class ReplayTests : IDisposable
         Assert.Equal("ciao", report.RootElement.GetProperty("clips")[0].GetProperty("raw_text").GetString());
     }
 
+    [Fact]
+    public async Task CancelAfterWarmupStopsTheTurnAndDisposesBothEngines()
+    {
+        BlockingEngines engines = new();
+        ReplayCommand command = new(_root, _root, _root, Path.Combine(_root, "unused-lock.json"),
+            new CleanupPolicy(), passes: 1, cancelAfterMs: 50,
+            sttFactory: _ => engines, cleanerFactory: _ => engines);
+        string output = Path.Combine(_root, "cancelled.json");
+
+        Assert.Equal(3, await command.RunAsync(Catalog(), Manifest(audio: true), "example", "example",
+            "pipeline", output, default));
+
+        using JsonDocument report = JsonDocument.Parse(File.ReadAllText(output));
+        Assert.Equal("cancelled", report.RootElement.GetProperty("status").GetString());
+        Assert.Equal(0, report.RootElement.GetProperty("clips").GetArrayLength());
+        Assert.Equal(50, report.RootElement.GetProperty("cancel_after_ms").GetInt32());
+        Assert.True(engines.CleanerCancelObserved);
+        Assert.True(engines.Disposed);
+    }
+
     private ReplayCommand Command(FakeEngines engines, int passes) => new(_root, _root, _root,
         Path.Combine(_root, "unused-lock.json"), new CleanupPolicy(), passes,
         sttFactory: _ => engines, cleanerFactory: _ => engines);
@@ -86,5 +106,36 @@ public sealed class ReplayTests : IDisposable
         public Task<CleanedText> CleanAsync(string raw, string profile, CancellationToken ct)
         { CleanerCalls++; return Task.FromResult(new CleanedText("Ciao?", Identity)); }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    private sealed class BlockingEngines : ISttEngine, ITextCleaner
+    {
+        private static readonly EngineIdentity Identity = new("fake", "r", "h", "v", "vulkan", "F16", "fake");
+        private int _cleanCalls;
+        public int CleanerCalls => _cleanCalls;
+        public bool CleanerCancelObserved;
+        public bool Disposed;
+
+        Task ISttEngine.LoadAsync(CancellationToken ct) => Task.CompletedTask;
+        Task ITextCleaner.LoadAsync(CancellationToken ct) => Task.CompletedTask;
+
+        public Task<SpeechTranscript> TranscribeAsync(ReadOnlyMemory<byte> pcm, CancellationToken ct)
+            => Task.FromResult(new SpeechTranscript("come funziona", Identity));
+
+        public async Task<CleanedText> CleanAsync(string raw, string profile, CancellationToken ct)
+        {
+            if (Interlocked.Increment(ref _cleanCalls) == 1)
+                return new CleanedText("Come funziona?", Identity);
+            using CancellationTokenRegistration registration =
+                ct.Register(() => CleanerCancelObserved = true);
+            await Task.Delay(Timeout.Infinite, ct);
+            return new CleanedText("late", Identity);
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            Disposed = true;
+            return ValueTask.CompletedTask;
+        }
     }
 }

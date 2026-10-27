@@ -20,7 +20,7 @@ New-Item -ItemType Directory -Path $ReportDirectory -Force | Out-Null
 function Invoke-Replay([string]$Label, [string]$Phase, [string]$InputManifest,
     [string]$Stt, [string]$Cleaner, [string]$Backend = 'vulkan') {
     $Report = Join-Path $ReportDirectory "$Label.json"
-    $Cli = @($Runner, 'replay') + $Common + @('--phase', $Phase, '--manifest', $InputManifest,
+    $Cli = @('replay') + $Common + @('--phase', $Phase, '--manifest', $InputManifest,
         '--passes', "$Passes", '--backend', $Backend, '--output', $Report)
     if ($Stt) { $Cli += @('--stt', $Stt) }
     if ($Cleaner) { $Cli += @('--cleaner', $Cleaner) }
@@ -28,7 +28,8 @@ function Invoke-Replay([string]$Label, [string]$Phase, [string]$InputManifest,
     # Native diagnostic stderr must not become a terminating PowerShell error.
     $PreviousPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
-    & dotnet @Cli *> (Join-Path $ReportDirectory "$Label.log")
+    if ([IO.Path]::GetExtension($Runner) -eq '.dll') { & dotnet $Runner @Cli *> (Join-Path $ReportDirectory "$Label.log") }
+    else { & $Runner @Cli *> (Join-Path $ReportDirectory "$Label.log") }
     $Result = $LASTEXITCODE
     $ErrorActionPreference = $PreviousPreference
     if ($Result -ne 0) { throw "Replay $Label failed with exit $Result; inspect its JSON/log." }
