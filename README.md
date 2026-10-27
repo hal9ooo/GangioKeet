@@ -256,7 +256,9 @@ curl -s "http://$(tailscale ip -4):8000/health"
 ```
 
 On the Windows client, set `server.host` to the Mac's Tailscale IP (or its
-MagicDNS name). Tailnet traffic is encrypted by WireGuard, but the server still
+MagicDNS name). If you also want the direct LAN address at home, list both under
+`endpoints:`: the client probes them and uses the fastest. Tailnet traffic is
+encrypted by WireGuard, but the server still
 does not implement TLS: **do not expose it to the Internet**. I like you, but
 not that much. With auth enabled the token stays inside the tunnel; without an
 API key, any device on the tailnet can use STT and the LLM.
@@ -270,7 +272,7 @@ API key, any device on the tailnet can use STT and the LLM.
 | Abort | **Esc** |
 | Change microphone | Use the microphone submenu in the tray |
 | Recover the last dictation | Use the recovery actions in the tray (retry, copy, discard) |
-| Configuration | Open the configuration from the tray (`%APPDATA%\GangioKeet\client_config.yaml`) |
+| Configuration | Tray → **Impostazioni…** (or edit `%APPDATA%\GangioKeet\client_config.yaml`) |
 | Pill | Bottom center; `ui.pill_position: cursor` puts it near the pointer |
 
 The text is **pasted**, not sent: no automatic Enter. This is a feature, not a
@@ -384,7 +386,8 @@ strict and unknown keys are rejected. The main sections:
 
 | Section | What it contains |
 |---|---|
-| `server` | `host`, `scheme` (`http` default / `https`), `port`, `transport` (`websocket`/`rest`), timeouts, `rest_fallback`, `api_key_env` |
+| `server` | `host`, `scheme` (`http` default / `https`), `port`, `transport` (`websocket`/`rest`), timeouts, `rest_fallback`, health probe interval/timeout, switch margin, `api_key_env` |
+| `endpoints` | optional named endpoints (`name`, `role`, `host`, `scheme`, `port`): the client uses the lowest median latency; `server.host`/`scheme`/`port` apply only when this section is absent |
 | `hotkey` | `mode` (`push_to_talk`/`toggle`), `key` (`capslock` default, f1–f24, mouse_x1), `abort_key` (escape) |
 | `audio` | `input_device` (`null` = Windows default), sample rate 16000, mono, 100 ms chunks |
 | `paste` | `ctrl+v`/`ctrl+shift+v`, terminal apps, clipboard delay, refocus |

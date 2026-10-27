@@ -9,15 +9,17 @@ clipboard-preserving paste, and explicit recovery of the last failed dictation.
 - Stack: C# / .NET 10, WPF, NAudio 3.3, YamlDotNet 17, Hardcodet.NotifyIcon.Wpf 2.
 - Server: primary WebSocket `ws://<MAC_IP>:8000/ws/dictate`, REST fallback
   `POST http://<MAC_IP>:8000/v1/audio/transcriptions`. With
-  `server.scheme: https` the client uses `wss://` and `https://`.
+  `server.scheme: https` the client uses `wss://` and `https://`. Several
+  endpoints can be listed under `endpoints:`: the client probes them and uses
+  the fastest one (see **Endpoints and settings**).
 
 ## Quick start
 
 1. Install the .NET 10 SDK.
 2. Copy `client_config.example.yaml` to
    `%APPDATA%\GangioKeet\client_config.yaml` and set `server.host` to the Mac's
-   IP. If the server is behind a TLS terminator, also set
-   `server.scheme: https`.
+   IP (or list more than one under `endpoints:`). If the server is behind a TLS
+   terminator, also set `server.scheme: https`.
 3. If the server requires a token, set the environment variable named by
    `server.api_key_env` (recommended: `GANGIOKEET_API_KEY`). The token must
    **never** be written to the YAML file.
@@ -39,7 +41,8 @@ Strict schema: unknown keys are rejected. The file lives in
 
 | Section | Main entries |
 |---|---|
-| `server` | host, scheme (`http` default / `https`), port, transport (`websocket`/`rest`), connect/response/upload timeouts, rest_fallback, health interval, api_key_env |
+| `server` | host, scheme (`http` default / `https`), port, transport (`websocket`/`rest`), connect/response/upload timeouts, rest_fallback, health interval 30 s and timeout 2 s, switch margin 25, api_key_env. host/scheme/port apply only when `endpoints` is absent |
+| `endpoints` | optional named endpoints: `name`, `role` (at most one `primary`), `host`, `scheme`, `port`; unique names and host:port |
 | `hotkey` | mode (`push_to_talk`/`toggle`), key (`capslock` default, f1–f24, mouse_x1), abort_key (escape), double_tap_max_ms 250, double_tap_gap_ms 350 |
 | `audio` | input_device (WASAPI endpoint ID or `null` for the default), sample_rate 16000, channels 1, chunk_duration_ms 100, ready_timeout_seconds 3 |
 | `paste` | default_combo `ctrl+v`, terminal_combo `ctrl+shift+v`, terminal_apps, clipboard_restore_delay_ms 200, refocus_before_paste |
@@ -47,6 +50,39 @@ Strict schema: unknown keys are rejected. The file lives in
 | `context_profiles` | exe → profile mappings (`code`, `terminal`, `chat`, `email`, `document`) |
 | `browser_profiles` | browsers and page-title rules, priority email → chat → code → document |
 | `recovery` | retention_seconds 600 |
+
+## Endpoints and settings
+
+- List several STT endpoints under `endpoints:` (for example the direct LAN IP
+  at home and Tailscale on the move). The legacy `server.host`/`scheme`/`port`
+  keep working: when `endpoints:` is absent they become a single endpoint
+  named "Server".
+- Every 30 s (`server.health_check_interval_seconds`) each endpoint gets a
+  lightweight `/health` probe with a 2 s timeout
+  (`server.health_check_timeout_seconds`). The active endpoint is the one with
+  the lowest **median of the last 5 successful RTTs**; ties within 1 ms go to
+  the primary.
+- Hysteresis (`server.switch_margin_percent`, 25) means a challenger must be at
+  least 25% faster than the current endpoint to take over, so near-equal
+  endpoints do not flap. If every endpoint is offline, the active one stays
+  put.
+- The endpoint is **pinned for the whole dictation**: a switch decided while a
+  turn is running applies from the next one, never mid-sentence.
+- RTT history is keyed by `scheme://host:port`: renaming an endpoint keeps its
+  history, changing host or port resets it.
+- **Settings** opens from the tray menu ("Impostazioni…") or by double-clicking
+  the tray icon. Each row has name, role, host, port, scheme, a live
+  green/yellow/red dot, median RTT, `/ready` state and the last error; buttons
+  add and remove rows.
+- **Verifica adesso** probes the rows as typed, including unsaved edits: it
+  does not change the active endpoint and writes nothing; the results stay
+  visible while the window is open.
+- **Salva** validates names, hosts, ports and duplicate host:port (inline
+  error, save refused), writes only the `endpoints:` block, and applies
+  immediately: the monitor re-probes at once, no restart. Promoting a row to
+  `primary` demotes the previous one.
+- Read-only telemetry: last dictation duration, handshake time, OK/error/retry
+  counters, last endpoint and last error.
 
 ## How it works
 
@@ -132,6 +168,18 @@ dotnet test client-windows/GangioKeet.Client.sln --filter "Category=Integration"
 - `ui.pill_position: "cursor"` shows it near the pointer.
 - On monitors with different DPI or negative origins, the position is clamped
   to the current monitor's work area.
+- While recording, the status text is replaced by a 20-bar quantized waveform:
+  samples every 50 ms, fast attack and gradual release, flat after about
+  400 ms of silence. It reads the level the capture already computes, so it
+  never touches the audio path, and the pill does not resize. The text comes
+  back as soon as the turn ends.
+
+## Splash
+
+- At startup a 640×344 cover appears centered, fades/scales in, and closes
+  after 3 s. It is not activatable, does not show in the taskbar, and does not
+  delay startup: the tray icon is already up while it is visible.
+- If the configuration is invalid, the splash closes before the error dialog.
 
 ## Publishing
 
@@ -151,15 +199,15 @@ file.
 client-windows/
   src/GangioKeet.Client/
     Audio/            WASAPI capture, chunker, buffer, levels
-    Configuration/    strict YAML schema, credential from environment
+    Configuration/    strict YAML schema incl. endpoints, credential from environment
     Context/          profiles, foreground window, UIPI
     Controller/       dictation orchestration (generation ID, recovery)
     Hotkey/           PTT/double-tap/toggle gestures, global hooks, suppression
     Paste/            clipboard snapshot, SendInput, paste transaction
     Platform/         single-instance, autostart, logger, reload, privacy
-    Protocol/         wire DTOs, WS transport, session, REST, health
+    Protocol/         wire DTOs, WS transport, session, REST, probe, selection, monitor
     Recovery/         single slot with expiry
-    Ui/               non-activatable pill, synthetic sounds, tray
+    Ui/               pill + waveform, splash, settings window, tray
   tests/GangioKeet.Client.Tests/
 ```
 

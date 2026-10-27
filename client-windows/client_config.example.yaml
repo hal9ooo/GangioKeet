@@ -4,8 +4,26 @@
 # The API token is never stored here: set the environment variable named by
 # server.api_key_env (recommended: GANGIOKEET_API_KEY); unset api_key_env means "no token".
 
+# Endpoint multipli (facoltativo). Se questo blocco c'è, ha la precedenza sulle
+# chiavi server.host/scheme/port, che servono solo a sintetizzare un endpoint
+# "Server" quando endpoints: manca. Vince la latenza mediana più bassa; il
+# cambio vale dalla dettatura successiva, mai a metà di quella in corso.
+# Regole: almeno un endpoint, nomi unici, al massimo un "primary", niente
+# host:porta duplicati.
+# endpoints:
+#   - name: "Casa"                    # etichetta libera, unica
+#     role: "primary"                 # primary | secondary
+#     host: "192.168.1.167"           # IPv4, IPv6 o hostname; senza schema né porta
+#     scheme: "http"                  # http | https
+#     port: 8000
+#   - name: "Tailscale"
+#     role: "secondary"
+#     host: "100.101.102.103"
+#     scheme: "http"
+#     port: 8000
+
 server:
-  host: "192.168.1.167"               # IP del Mac (verificato raggiungibile: /health OK)
+  host: "192.168.1.167"               # solo se endpoints: manca; IP del Mac (verificato: /health OK)
   scheme: "http"                      # http | https; https usa anche wss per il WebSocket
   port: 8000
   transport: "websocket"              # websocket | rest
@@ -15,6 +33,8 @@ server:
   rest_response_timeout_seconds: 20.0 # attesa della risposta REST dopo l'upload
   rest_fallback: true                 # WS fallita alla pressione -> buffer RAM + POST REST allo stop
   health_check_interval_seconds: 30   # ping /health periodico per lo stato nel tray
+  health_check_timeout_seconds: 2.0   # timeout del probe /health di ogni endpoint
+  switch_margin_percent: 25           # isteresi: cambio attivo solo se il nuovo è >=25% più veloce
   api_key_env: null                   # es. "GANGIOKEET_API_KEY"; il token vive solo nell'ambiente
 
 hotkey:
