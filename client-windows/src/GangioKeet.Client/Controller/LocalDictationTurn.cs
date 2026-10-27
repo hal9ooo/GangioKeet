@@ -1,5 +1,6 @@
 using System.Buffers;
 using GangioKeet.Client.Protocol;
+using GangioKeet.Client.Recording;
 using GangioKeet.Inference;
 
 namespace GangioKeet.Client.Controller;
@@ -9,6 +10,7 @@ public sealed class LocalDictationTurn : IActiveDictationTurn
     private readonly IInferencePipeline _pipeline;
     private readonly StartMessage _start;
     private readonly Func<bool> _isReady;
+    private readonly IRecordingSink? _recordings;
     private readonly int _maxBytes;
     private readonly object _gate = new();
     private readonly CancellationTokenSource _abort = new();
@@ -20,10 +22,10 @@ public sealed class LocalDictationTurn : IActiveDictationTurn
     public string BackendName => "Locale";
     public Task<DictationOutcome> Completion => _completion.Task;
 
-    public LocalDictationTurn(IInferencePipeline pipeline, StartMessage start, int maxBytes = 67108864, Func<bool>? isReady = null)
+    public LocalDictationTurn(IInferencePipeline pipeline, StartMessage start, int maxBytes = 67108864, Func<bool>? isReady = null, IRecordingSink? recordings = null)
     {
         if (maxBytes < 2) throw new ArgumentOutOfRangeException(nameof(maxBytes));
-        _pipeline = pipeline; _start = start; _maxBytes = maxBytes; _isReady = isReady ?? (() => true);
+        _pipeline = pipeline; _start = start; _maxBytes = maxBytes; _isReady = isReady ?? (() => true); _recordings = recordings;
         _audio = new(Math.Min(maxBytes, 16384));
     }
 
@@ -87,6 +89,7 @@ public sealed class LocalDictationTurn : IActiveDictationTurn
         {
             _abort.Token.ThrowIfCancellationRequested();
             PipelineResult result = await _pipeline.ProcessAsync(new(pcm, _start.Profile), _abort.Token).ConfigureAwait(false);
+            _recordings?.TryEnqueue(pcm, result, _start);
             lock (_gate)
             {
                 if (_aborted) PublishAborted();

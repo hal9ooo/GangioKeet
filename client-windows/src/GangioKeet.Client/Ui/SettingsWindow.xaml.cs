@@ -6,6 +6,7 @@ using System.Windows.Threading;
 using GangioKeet.Client.Configuration;
 using GangioKeet.Client.Platform;
 using GangioKeet.Client.Protocol;
+using GangioKeet.Client.Recording;
 
 namespace GangioKeet.Client.Ui;
 
@@ -24,6 +25,9 @@ public sealed partial class SettingsWindow : Window
     private readonly FileLogger? _logger;
     private readonly Func<LocalSettingsInfo>? _localInfo;
     private readonly Action<string>? _onModeSaved;
+    private readonly RecordingStore? _recordingStore;
+    private readonly RecordingStorage? _recordingStorage;
+    private bool _recordingRefresh;
     private readonly DispatcherTimer _timer;
 
     private TimeSpan _probeTimeout = TimeSpan.FromSeconds(2);
@@ -37,7 +41,8 @@ public sealed partial class SettingsWindow : Window
         Action<IReadOnlyList<EndpointConfig>> onSaved,
         FileLogger? logger = null,
         Func<LocalSettingsInfo>? localInfo = null,
-        Action<string>? onModeSaved = null)
+        Action<string>? onModeSaved = null,
+        RecordingStore? recordingStore = null)
     {
         _selector = selector;
         _probe = probe;
@@ -47,6 +52,8 @@ public sealed partial class SettingsWindow : Window
         _logger = logger;
         _localInfo = localInfo;
         _onModeSaved = onModeSaved;
+        _recordingStore = recordingStore;
+        _recordingStorage = recordingStore is null ? null : new RecordingStorage(recordingStore);
 
         InitializeComponent();
         RowsList.ItemsSource = Rows;
@@ -116,6 +123,7 @@ public sealed partial class SettingsWindow : Window
                 ? ConfigLoader.Load(_configPath)
                 : ConfigLoader.CreateDefaults();
             LoadFromConfig(config);
+            RecordingCheck.IsChecked = config.Recording.Enabled;
             SaveButton.IsEnabled = true;
             StatusText.Text = "";
         }
@@ -260,6 +268,61 @@ public sealed partial class SettingsWindow : Window
         LocalStateText.Text = info.State;
         LocalPairText.Text = info.Pair;
         LocalErrorText.Text = info.Error ?? "";
+        _ = RefreshRecordingsAsync();
+    }
+
+    private async void RecordingCheck_Click(object sender, RoutedEventArgs e)
+    {
+        bool enabled = RecordingCheck.IsChecked == true;
+        if (!ConfigWriter.SetRecordingEnabled(_configPath, enabled))
+        {
+            RecordingCheck.IsChecked = !enabled;
+            StatusText.Text = "Salvataggio del flag registrazione non riuscito.";
+            return;
+        }
+        StatusText.Text = enabled
+            ? "Registrazione attivata. Riavvia GangioKeet per iniziare a salvare."
+            : "Registrazione disattivata. I campioni esistenti restano sul disco.";
+        await RefreshRecordingsAsync();
+    }
+
+    private async void DeleteRecordings_Click(object sender, RoutedEventArgs e)
+    {
+        if (_recordingStorage is null) return;
+        List<string> ids = [.. RecordingList.SelectedItems.Cast<string>()];
+        if (ids.Count == 0)
+        {
+            StatusText.Text = "Seleziona almeno un campione da eliminare.";
+            return;
+        }
+        try
+        {
+            await _recordingStorage.DeleteAsync(ids, CancellationToken.None);
+            StatusText.Text = $"Eliminati {ids.Count} campioni.";
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or InvalidDataException)
+        {
+            StatusText.Text = "Eliminazione non riuscita: " + error.Message;
+        }
+        await RefreshRecordingsAsync();
+    }
+
+    private async Task RefreshRecordingsAsync()
+    {
+        if (_recordingStorage is null || _recordingRefresh) return;
+        _recordingRefresh = true;
+        try
+        {
+            (int count, long bytes) = await _recordingStorage.GetSummaryAsync();
+            IReadOnlyList<string> ids = await _recordingStorage.ListIdsAsync();
+            RecordingSummaryText.Text = $"{count} campioni · {bytes / (1024.0 * 1024.0):0.0} MB";
+            RecordingList.ItemsSource = ids;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
+        {
+            RecordingSummaryText.Text = "Campioni non leggibili: " + error.Message;
+        }
+        finally { _recordingRefresh = false; }
     }
 
     private void Refresh()

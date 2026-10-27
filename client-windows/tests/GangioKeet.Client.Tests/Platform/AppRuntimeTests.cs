@@ -1,4 +1,6 @@
 using GangioKeet.Client.Platform;
+using GangioKeet.Client.Protocol;
+using GangioKeet.Client.Recording;
 using GangioKeet.Inference;
 using Xunit;
 
@@ -87,6 +89,25 @@ public sealed class AppRuntimeTests
     }
 
     [Fact]
+    public async Task StopDrainsPendingRecordings()
+    {
+        FakePipeline pipeline = new();
+        ImmediateRecordingWriter writer = new();
+        RecordingQueue queue = new(writer);
+        await using AppRuntime runtime = new(pipeline, queue);
+        Task starting = runtime.StartAsync(default);
+        pipeline.ReleaseWarmup();
+        await starting;
+        Assert.True(queue.TryEnqueue(new byte[4], new PipelineResult("raw", "Final.", 1, 1, 2,
+            [], new EngineIdentity("fake", "r", "h", "v", "vulkan", "F16", "fake"), null),
+            new GangioKeet.Client.Protocol.StartMessage("app", "title", "chat")));
+
+        await runtime.StopAsync(default);
+
+        Assert.Equal(1, writer.Calls);
+    }
+
+    [Fact]
     public async Task StopIsIdempotentAndDisposesOnce()
     {
         FakePipeline pipeline = new();
@@ -99,6 +120,17 @@ public sealed class AppRuntimeTests
 
         Assert.Equal(1, pipeline.DisposeCalls);
         Assert.Equal(RuntimeState.Stopped, runtime.State);
+    }
+
+    private sealed class ImmediateRecordingWriter : IRecordingWriter
+    {
+        public int Calls;
+        public Task<string?> RecordAsync(ReadOnlyMemory<byte> pcm, PipelineResult result,
+            StartMessage start, CancellationToken ct)
+        {
+            Calls++;
+            return Task.FromResult<string?>("id");
+        }
     }
 
     private sealed class FakePipeline : IInferencePipeline

@@ -1,4 +1,5 @@
 using GangioKeet.Client.Controller;
+using GangioKeet.Client.Recording;
 using GangioKeet.Client.Protocol;
 using GangioKeet.Inference;
 using Xunit;
@@ -59,6 +60,22 @@ public sealed class LocalTurnTests
     }
 
     [Fact]
+    public async Task CompletedTurnEnqueuesRecordingWithoutChangingTheResult()
+    {
+        Pipeline pipeline = new();
+        FakeSink sink = new();
+        await using LocalDictationTurn turn = new(pipeline, Start, recordings: sink);
+        await turn.StartAsync(default);
+        Assert.True(turn.TryEnqueueAudio(new byte[] { 1, 2, 3, 4 }));
+        DictationOutcome outcome = await turn.FinishAsync(default);
+
+        Assert.Equal(DictationStatus.Result, outcome.Status);
+        Assert.Equal(1, sink.Calls);
+        Assert.Equal(new byte[] { 1, 2, 3, 4 }, sink.Pcm);
+        Assert.Equal("Come funziona?", sink.Result!.FinalText);
+    }
+
+    [Fact]
     public async Task LocalRetryUsesOnlySharedPipeline()
     {
         Pipeline pipeline = new();
@@ -79,6 +96,21 @@ public sealed class LocalTurnTests
         Assert.Equal("local_not_ready", outcome.Error!.Code);
         Assert.DoesNotContain("Server", outcome.Error.Message);
         Assert.Equal(0, pipeline.Calls);
+    }
+
+    private sealed class FakeSink : IRecordingSink
+    {
+        public int Calls;
+        public byte[] Pcm = [];
+        public PipelineResult? Result;
+
+        public bool TryEnqueue(ReadOnlyMemory<byte> pcm, PipelineResult result, StartMessage start)
+        {
+            Calls++;
+            Pcm = pcm.ToArray();
+            Result = result;
+            return true;
+        }
     }
 
     private sealed class Pipeline : IInferencePipeline

@@ -1,3 +1,4 @@
+using GangioKeet.Client.Recording;
 using GangioKeet.Inference;
 
 namespace GangioKeet.Client.Platform;
@@ -10,13 +11,18 @@ namespace GangioKeet.Client.Platform;
 public sealed class AppRuntime : IAsyncDisposable
 {
     private readonly IInferencePipeline _pipeline;
+    private readonly RecordingQueue? _recordings;
     private readonly CancellationTokenSource _lifetime = new();
     private readonly object _gate = new();
     private Task? _startTask;
     private Task? _stopTask;
     private RuntimeState _state = RuntimeState.Loading;
 
-    public AppRuntime(IInferencePipeline pipeline) => _pipeline = pipeline;
+    public AppRuntime(IInferencePipeline pipeline, RecordingQueue? recordings = null)
+    {
+        _pipeline = pipeline;
+        _recordings = recordings;
+    }
 
     public IInferencePipeline Pipeline => _pipeline;
 
@@ -87,6 +93,11 @@ public sealed class AppRuntime : IAsyncDisposable
 
         try
         {
+            if (_recordings is not null)
+            {
+                await _recordings.DrainAsync(CancellationToken.None).ConfigureAwait(false);
+            }
+
             // DisposeAsync waits for an active native decode before releasing
             // the model. Do not pass a cancellation token here: a stop request
             // must not abandon memory still used by the native call.

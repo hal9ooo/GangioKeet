@@ -10,6 +10,7 @@ using GangioKeet.Client.Paste;
 using GangioKeet.Client.Platform;
 using GangioKeet.Client.Protocol;
 using GangioKeet.Client.Recovery;
+using GangioKeet.Client.Recording;
 using GangioKeet.Client.Ui;
 using Hardcodet.Wpf.TaskbarNotification;
 
@@ -45,6 +46,8 @@ public partial class App : Application
     private HttpClient? _monitorHttp;
     private CancellationTokenSource? _monitorCts;
     private AppRuntime? _runtime;
+    private RecordingStore? _recordingStore;
+    private RecordingQueue? _recordingQueue;
     private string? _localSttId;
     private string? _localCleanerId;
     private string? _localBackend;
@@ -166,8 +169,14 @@ public partial class App : Application
             _localSttId = setup.SttId;
             _localCleanerId = setup.CleanerId;
             _localBackend = setup.Backend;
-            _runtime = new AppRuntime(setup.Pipeline);
-            backend = new LocalDictationBackend(setup.Pipeline, () => _runtime.IsReady);
+            _recordingStore = new RecordingStore(config.Recording);
+            if (config.Recording.Enabled)
+            {
+                _recordingQueue = new RecordingQueue(_recordingStore, warning: warning =>
+                    _logger?.Write("recording", warning));
+            }
+            _runtime = new AppRuntime(setup.Pipeline, _recordingQueue);
+            backend = new LocalDictationBackend(setup.Pipeline, () => _runtime.IsReady, _recordingQueue);
             _ = StartLocalRuntimeAsync(_runtime);
         }
         else
@@ -263,7 +272,7 @@ public partial class App : Application
 
         SettingsWindow window = _selector is null || _probe is null
             ? new(null, null, _telemetry, ConfigLoader.DefaultPath, _ => { }, _logger,
-                LocalInfo, OnModeSaved)
+                LocalInfo, OnModeSaved, _recordingStore)
             : new(_selector, _probe, _telemetry, ConfigLoader.DefaultPath, OnEndpointsSaved, _logger);
 
         window.Closed += (_, _) => _settings = null;
@@ -422,6 +431,10 @@ public partial class App : Application
         if (_runtime is not null)
         {
             await _runtime.StopAsync(CancellationToken.None).ConfigureAwait(false);
+        }
+        if (_recordingQueue is not null)
+        {
+            await _recordingQueue.DisposeAsync().ConfigureAwait(false);
         }
 
         if (_controller is not null)
