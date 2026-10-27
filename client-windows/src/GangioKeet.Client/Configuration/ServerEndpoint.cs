@@ -11,4 +11,10 @@ public static class ServerEndpoint
 
     public static Uri WebSocket(ServerConfig server) =>
         new($"{(server.Scheme == "https" ? "wss" : "ws")}://{server.Host}:{server.Port}/ws/dictate");
+
+    public static Uri HttpBase(EndpointConfig endpoint) =>
+        new($"{endpoint.Scheme}://{endpoint.HostForUri}:{endpoint.Port}");
+
+    public static Uri WebSocket(EndpointConfig endpoint) =>
+        new($"{(endpoint.Scheme == "https" ? "wss" : "ws")}://{endpoint.HostForUri}:{endpoint.Port}/ws/dictate");
 }
