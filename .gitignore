@@ -33,8 +33,6 @@ recordings/
 # Windows ONNX STT model (downloaded by scripts/fetch_stt_model.py)
 models/*
 !models/mac-candidates.json
-!models/mac-selected.json*
-!models/mac-candidates.json
 !models/mac-selected.json
 # Model license texts under the installer are small and must be tracked
 !client-windows/installer/licenses/models/

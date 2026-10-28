@@ -90,4 +90,7 @@ def test_shared_cleanup_policy_matches_config_and_hash():
     config = load_config(ROOT / "config.yaml")
     assert policy["canonical_terms"] == config.glossary.canonical_terms
     assert policy["phonetic_overrides"] == config.glossary.phonetic_overrides
-    assert policy["llm_timeout_seconds"] == config.timeouts.llm_seconds
+    # The cleanup policy's timeout belongs to the native Windows cleaner.
+    # The Mac server has its own operational timeout, intentionally longer.
+    assert policy["llm_timeout_seconds"] == 5
+    assert config.timeouts.llm_seconds == 180.0
