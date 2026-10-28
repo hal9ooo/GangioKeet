@@ -1,6 +1,6 @@
 # Selezione stack Mac — M1 8 GB
 
-Data: 2026-10-28. Stato: **gate fallito sul candidato primario; decisione sospesa**.
+Data: 2026-10-28. Stato: **gate fallito sul candidato primario; si mantiene lo stack Mac attuale**.
 
 ## Hardware e criterio
 
@@ -27,29 +27,36 @@ Pesi: Qwen 1,60 GB + Gemma 2,64 GB = 4,24 GB.
 
 La dettatura breve funziona e rispetta il budget dei 4 s, ma il picco Metal è già all'87% del working set. Con 20 s di audio il processo supera la memoria disponibile e la GPU fallisce. Il caso 10–30 s è quindi **non supportato** da questa coppia su 8 GB.
 
-## Evidenza di fallback (non ancora una scelta)
+## Fallback misurato a caldo
 
 ### Parakeet TDT v3 + Gemma 4 E2B QAT text-only
 
-- Pesi: Parakeet ~1,26 GB attivi + Gemma ~2,64 GB; dopo il caricamento: 3,89 GB attivi / 3,89 GB peak.
-- 20 s con PCM sintetico ripetuto: nessun OOM, Metal peak 4,80 GB.
-- Misura a freddo: STT 23,6 s, cleaner 139 s. Il primo run include compilazione shader e va rimisurato a caldo; il dato non è conclusivo e non dimostra il budget dei 4 s.
-- Conserva cleaner e pipeline Windows, ma **non** lo STT Qwen3-ASR.
+- Pesi: Parakeet ~1,26 GB attivi + Gemma ~2,64 GB; dopo il caricamento: 3,89 GB attivi, 3,89 GB peak.
+- Metal peak durante le prove: **4,82 GB** su 5,73 GB di working set; nessun OOM.
+- 4 s, 5 ripetizioni: p50 **1,60 s**, max 2,66 s; nessun timeout.
+- 20 s, 3 ripetizioni: p50 **6,66 s**, max 8,63 s; **2/3 cleaner in timeout a 5 s** (una prova completa in 5,96 s).
+- 60 s: cleaner in timeout a 5 s; STT 9,67 s; nessun testo ripulito.
+- Conserva cleaner, prompt e pipeline Windows; **non** lo STT Qwen3-ASR. Per le dettature lunghe il cleaner non è affidabile.
 
 ### Stack Mac attuale: Parakeet + Qwen3-1.7B-4bit
 
-- È la baseline già funzionante sul Mac; il README riporta Metal peak ~3,1 GB e 1,04 s totali su 3,9 s.
-- Non è lo stack Windows: cleaner Qwen3-1.7B invece di Gemma 4 E2B, con qualità delle domande inferiore nella selezione Windows (1/6 vs 6/6).
+- Metal peak: **3,62 GB** su 5,73 GB di working set; nessun OOM.
+- 4 s, 5 ripetizioni: p50 **1,83 s**, max 1,84 s; nessun timeout.
+- 20 s, 3 ripetizioni: p50 **6,27 s**, max 6,52 s; cleaner 4,56–4,99 s, **nessun timeout**.
+- 60 s: cleaner in timeout a 5 s; STT 3,99 s; nessun testo ripulito.
+- È la baseline già funzionante sul Mac; non è lo stack Windows: cleaner Qwen3-1.7B invece di Gemma 4 E2B, con qualità delle domande inferiore nella selezione Windows (1/6 vs 6/6).
 
 ## Decisione
 
-Il candidato primario è **respinto** per il target 8 GB: non completa 20 s e non può essere dichiarato equivalente a Windows. Non è stata scelta una coppia alternativa in silenzio.
+Il candidato primario è **respinto** per il target 8 GB: non completa 20 s e non può essere dichiarato equivalente a Windows. Il fallback Parakeet + Gemma **non regge** le dettature lunghe: a 20 s va in timeout 2 volte su 3 e a 60 s il cleaner non completa; lo stack attuale è più veloce e più stabile, ma non ha la qualità delle domande di Gemma.
 
-Opzioni da discutere:
+Raccomandazione: **tenere lo stack locale attuale** (Parakeet + Qwen3-1.7B) e allineare prompt/pipeline, a meno che la priorità assoluta sia la qualità delle domande e si accetti che le dettature lunghe restino senza revisione LLM. Per avere lo stack Windows completo fino a 60 s serve un Mac con più memoria (16 GB+).
 
-1. **Parakeet + Gemma QAT** — massima vicinanza alla pipeline Windows (cleaner e prompt), STT diverso; richiede benchmark a caldo di 20/60 s e verifica dei 4 s.
-2. **Qwen3-ASR + Qwen3-1.7B** — conserva lo STT, cleaner diverso; memoria probabilmente compatibile, qualità delle domande da misurare.
-3. **Stack Mac attuale** — Parakeet + Qwen3-1.7B; allineare solo prompt/pipeline, nessuna parità di modelli.
+Opzioni:
+
+1. **Stack Mac attuale** — Parakeet + Qwen3-1.7B; prompt/pipeline allineati, nessuna parità di modelli. È la scelta consigliata per stabilità e latenza.
+2. **Parakeet + Gemma QAT** — cleaner Windows, STT diverso; ok sulle frasi brevi, inaffidabile su 20 s e 60 s.
+3. **Qwen3-ASR + Qwen3-1.7B** — conserva lo STT, cleaner diverso; memoria probabilmente compatibile, qualità delle domande da misurare.
 4. **Ottimizzazioni di memoria** (chunking Qwen3-ASR, scaricare lo STT prima del cleaner, KV cache quantizzata) — richiede lavoro aggiuntivo e cambia la pipeline; nessuna garanzia sui 4 s.
 5. **Accettare swap/lentezza** — sconsigliato: il 20 s va in OOM e il 60 s non è stato completato.
 
