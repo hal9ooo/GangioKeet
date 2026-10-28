@@ -17,11 +17,11 @@ namespace GangioKeet.Client.Ui;
 /// </summary>
 public sealed partial class SettingsWindow : Window
 {
-    private readonly EndpointSelector? _selector;
-    private readonly EndpointProbe? _probe;
+    private EndpointSelector? _selector;
+    private EndpointProbe? _probe;
     private readonly TelemetryStore? _telemetry;
     private readonly string _configPath;
-    private readonly Action<IReadOnlyList<EndpointConfig>> _onSaved;
+    private Action<IReadOnlyList<EndpointConfig>> _onSaved;
     private readonly FileLogger? _logger;
     private readonly Func<LocalSettingsInfo>? _localInfo;
     private readonly Action<string>? _onModeSaved;
@@ -58,17 +58,7 @@ public sealed partial class SettingsWindow : Window
         InitializeComponent();
         RowsList.ItemsSource = Rows;
 
-        bool local = _selector is null;
-        LocalPanel.Visibility = local ? Visibility.Visible : Visibility.Collapsed;
-        RemoteHeader.Visibility = local ? Visibility.Collapsed : Visibility.Visible;
-        RemoteList.Visibility = local ? Visibility.Collapsed : Visibility.Visible;
-        RemoteTelemetry.Visibility = local ? Visibility.Collapsed : Visibility.Visible;
-        RemoteButtons.Visibility = local ? Visibility.Collapsed : Visibility.Visible;
-        if (local)
-        {
-            UpdateLocal();
-            _ = RefreshRecordingsAsync();
-        }
+        ApplyModeView(_selector is null ? "local" : "remote");
 
         _timer = new DispatcherTimer(
             TimeSpan.FromMilliseconds(500),
@@ -253,17 +243,46 @@ public sealed partial class SettingsWindow : Window
         StatusText.Text = "Salvato. Il monitor riprova subito gli endpoint.";
     }
 
+    public void SetEndpointServices(
+        EndpointSelector? selector,
+        EndpointProbe? probe,
+        Action<IReadOnlyList<EndpointConfig>>? onSaved = null)
+    {
+        _selector = selector;
+        _probe = probe;
+        if (onSaved is not null)
+        {
+            _onSaved = onSaved;
+        }
+    }
+
+    public void ApplyModeView(string mode)
+    {
+        bool local = string.Equals(mode, "local", StringComparison.OrdinalIgnoreCase);
+        LocalPanel.Visibility = local ? Visibility.Visible : Visibility.Collapsed;
+        RemoteHeader.Visibility = local ? Visibility.Collapsed : Visibility.Visible;
+        RemoteList.Visibility = local ? Visibility.Collapsed : Visibility.Visible;
+        RemoteTelemetry.Visibility = local ? Visibility.Collapsed : Visibility.Visible;
+        RemoteButtons.Visibility = local ? Visibility.Collapsed : Visibility.Visible;
+        if (local)
+        {
+            UpdateLocal();
+            _ = RefreshRecordingsAsync();
+        }
+    }
+
     private void ModeCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (_initializing || _onModeSaved is null || ModeCombo.SelectedItem is not ComboBoxItem item
+        if (_initializing || ModeCombo.SelectedItem is not ComboBoxItem item
             || item.Tag is not string mode) return;
         if (!ConfigWriter.SetInferenceMode(_configPath, mode))
         {
             StatusText.Text = "Salvataggio modalità non riuscito: configurazione invariata.";
             return;
         }
-        _onModeSaved(mode);
-        StatusText.Text = "Modalità salvata. Riavvia GangioKeet per applicarla.";
+        ApplyModeView(mode);
+        _onModeSaved?.Invoke(mode);
+        StatusText.Text = $"Modalità {mode} applicata a caldo.";
     }
 
     private void UpdateLocal()

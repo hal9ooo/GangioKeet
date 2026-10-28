@@ -84,7 +84,7 @@ public static class ConfigLoader
         return config;
     }
 
-    private static void EnsureEndpoints(ClientConfig config)
+    internal static void EnsureEndpoints(ClientConfig config)
     {
         if (config.Inference.Mode == "local") { config.Endpoints ??= []; return; }
         config.Endpoints ??=

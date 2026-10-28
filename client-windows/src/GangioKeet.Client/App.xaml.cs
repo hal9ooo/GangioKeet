@@ -297,8 +297,100 @@ public partial class App : Application
     private void OnModeSaved(string mode)
     {
         if (_config is null) return;
-        _config.Inference.Mode = mode;
         _logger?.Write("inference_mode_saved", mode);
+        _ = SwitchInferenceModeAsync(mode);
+    }
+
+    public async Task SwitchInferenceModeAsync(string targetMode)
+    {
+        if (_config is null || _controller is null) return;
+        _config.Inference.Mode = targetMode;
+
+        if (string.Equals(targetMode, "local", StringComparison.OrdinalIgnoreCase))
+        {
+            if (_monitorCts is not null)
+            {
+                _monitorCts.Cancel();
+                _monitorCts.Dispose();
+                _monitorCts = null;
+            }
+            _monitor = null;
+
+            if (_runtime is null)
+            {
+                LocalInferenceSetup setup = LocalInferenceFactory.Create(_config);
+                _localSttId = setup.SttId;
+                _localCleanerId = setup.CleanerId;
+                _localBackend = setup.Backend;
+                _recordingStore ??= new RecordingStore(_config.Recording,
+                    provenance: new RecordingProvenance(setup.PromptVersion, setup.PromptSha256, setup.PolicySha256));
+                _recordingQueue ??= new RecordingQueue(_recordingStore, warning: warning =>
+                    _logger?.Write("recording", warning),
+                    enabled: () => _recordingStore?.Enabled == true);
+                _runtime = new AppRuntime(setup.Pipeline, _recordingQueue);
+            }
+
+            var localBackend = new LocalDictationBackend(_runtime.Pipeline, () => _runtime.IsReady, _recordingQueue);
+            _controller.SetBackend(localBackend);
+            _ = StartLocalRuntimeAsync(_runtime);
+            _settings?.SetEndpointServices(null, null);
+            _logger?.Write("switched_to_local", "Local runtime active and controller backend swapped");
+        }
+        else // remote
+        {
+            if (_runtime is not null)
+            {
+                try
+                {
+                    await _runtime.StopAsync(CancellationToken.None).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    _logger?.Write("local_runtime_stop_error", ex.Message);
+                }
+                _runtime = null;
+            }
+
+            TimeProvider time = TimeProvider.System;
+            _monitorHttp ??= new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
+            _probe ??= new EndpointProbe(
+                _monitorHttp,
+                ApiCredential.Resolve(_config.Server.ApiKeyEnv, Environment.GetEnvironmentVariable),
+                time);
+
+            if (_config.Endpoints is null || _config.Endpoints.Count == 0)
+            {
+                ConfigLoader.EnsureEndpoints(_config);
+            }
+            if (_config.Endpoints is null || _config.Endpoints.Count == 0)
+            {
+                _config.Endpoints = [new EndpointConfig { Host = _config.Server.Host, Port = _config.Server.Port, Role = "primary", Name = "Mac Server" }];
+            }
+
+            if (_selector is null)
+            {
+                _selector = new EndpointSelector(_config.Endpoints, _config.Server.SwitchMarginPercent);
+            }
+            else
+            {
+                _selector.Reset(_config.Endpoints);
+            }
+
+            _monitor = new EndpointMonitor(
+                _probe,
+                _selector,
+                time,
+                TimeSpan.FromSeconds(_config.Server.HealthCheckIntervalSeconds),
+                TimeSpan.FromSeconds(_config.Server.HealthCheckTimeoutSeconds));
+
+            _monitorCts = new CancellationTokenSource();
+            _ = _monitor.RunAsync(_monitorCts.Token);
+
+            var remoteBackend = new RemoteDictationBackend(CreateSession, _selector, _config, time);
+            _controller.SetBackend(remoteBackend);
+            _settings?.SetEndpointServices(_selector, _probe, OnEndpointsSaved);
+            _logger?.Write("switched_to_remote", "Remote monitor active and controller backend swapped");
+        }
     }
 
     private void OnEndpointsSaved(IReadOnlyList<EndpointConfig> endpoints)
