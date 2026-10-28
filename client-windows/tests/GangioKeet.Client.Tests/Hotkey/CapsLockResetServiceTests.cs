@@ -32,7 +32,26 @@ public sealed class CapsLockResetServiceTests
     }
 
     [Fact]
-    public void ResetIfActive_WhenActive_SendsKeyAndReturnsTrue()
+    public void ResetIfActive_WhenActiveAndKeyResetSucceeds_SendsKeyAndReturnsTrue()
+    {
+        int sendCount = 0;
+        bool state = true;
+        var service = new CapsLockResetService(
+            stateReader: () => state,
+            keySender: () =>
+            {
+                sendCount++;
+                state = false;
+            });
+
+        bool result = service.ResetIfActive();
+
+        Assert.True(result);
+        Assert.Equal(1, sendCount);
+    }
+
+    [Fact]
+    public void ResetIfActive_WhenActiveButKeyResetFails_ReturnsFalse()
     {
         int sendCount = 0;
         var service = new CapsLockResetService(
@@ -41,7 +60,7 @@ public sealed class CapsLockResetServiceTests
 
         bool result = service.ResetIfActive();
 
-        Assert.True(result);
+        Assert.False(result);
         Assert.Equal(1, sendCount);
     }
 }

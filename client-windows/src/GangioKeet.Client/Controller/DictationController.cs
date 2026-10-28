@@ -144,7 +144,9 @@ public sealed class DictationController : IAsyncDisposable
         if (_state != ClientState.Idle) return;
         if (!_backend.IsReady)
         {
+            int generation = Interlocked.Increment(ref _generation);
             _pill.Show(PillState.Error, "Modelli locali non pronti", null);
+            _ = HidePillAfterAsync(TimeSpan.FromMilliseconds(2500), generation);
             return;
         }
 

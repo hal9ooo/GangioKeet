@@ -38,10 +38,11 @@ $selected = Get-Content -LiteralPath $SelectionPath -Raw | ConvertFrom-Json
 if (-not (Test-Path -LiteralPath (Join-Path $Root 'GangioKeet.Client.exe') -PathType Leaf)) {
     Add-Error 'missing: GangioKeet.Client.exe'
 }
-foreach ($model in @($selected.stt, $selected.cleaner)) {
-    foreach ($file in $model.files) {
-        Check-File "models/$($file.path)" $file.sha256
-    }
+# GGUF models are provisioned on demand; verify they do not ship in the installer package.
+$modelsRoot = Join-Path $Root 'models'
+$ggufFiles = @(Get-ChildItem -LiteralPath $modelsRoot -Recurse -File -Filter '*.gguf' -ErrorAction SilentlyContinue)
+if ($ggufFiles.Count -gt 0) {
+    Add-Error 'Heavy GGUF model files must not ship in the installer payload; models are provisioned on demand.'
 }
 Check-File 'models/selected.json' (Get-FileHash -LiteralPath $SelectionPath -Algorithm SHA256).Hash
 Check-File 'cleanup.yaml' (Get-FileHash -LiteralPath $CleanupPath -Algorithm SHA256).Hash
@@ -95,19 +96,12 @@ if (Test-Path -LiteralPath $noticesPath -PathType Leaf) {
     }
 }
 
-$allowedModels = [Collections.Generic.HashSet[string]]::new([StringComparer]::OrdinalIgnoreCase)
-$allowedModels.Add('selected.json') | Out-Null
-foreach ($model in @($selected.stt, $selected.cleaner)) {
-    foreach ($file in $model.files) { $allowedModels.Add($file.path) | Out-Null }
-}
-$modelsRoot = Join-Path $Root 'models'
 foreach ($file in Get-ChildItem -LiteralPath $modelsRoot -Recurse -File -ErrorAction SilentlyContinue) {
     $relative = $file.FullName.Substring($modelsRoot.Length).TrimStart('\', '/').Replace('\', '/')
-    if (-not $allowedModels.Contains($relative)) {
+    if ($relative -ne 'selected.json') {
         Add-Error "unselected model artifact must not ship: models/$relative"
     }
 }
-
 $lock = Get-Content -LiteralPath $LockPath -Raw | ConvertFrom-Json
 foreach ($runtime in $lock.runtimes) {
     $subdirectory = if ($runtime.id -eq 'transcribe-vulkan') { 'transcribe' }

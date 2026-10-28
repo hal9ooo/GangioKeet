@@ -48,6 +48,14 @@ public partial class App : Application
     private AppRuntime? _runtime;
     private RecordingStore? _recordingStore;
     private RecordingQueue? _recordingQueue;
+    private readonly IModelProvisioner _modelProvisioner;
+
+    public App() : this(null) { }
+
+    internal App(IModelProvisioner? modelProvisioner = null)
+    {
+        _modelProvisioner = modelProvisioner ?? new ModelProvisioner();
+    }
     private string? _localSttId;
     private string? _localCleanerId;
     private string? _localBackend;
@@ -180,6 +188,7 @@ public partial class App : Application
         }
         else
         {
+            _recordingStore = new RecordingStore(config.Recording, provenance: null);
             _monitorHttp = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
             _probe = new EndpointProbe(
                 _monitorHttp,
@@ -253,6 +262,21 @@ public partial class App : Application
     {
         try
         {
+            _logger?.Write("local_runtime", "Ensuring local models are present and valid...");
+            string selectionPath = _config?.Inference.ModelSelectionPath ?? "models/selected.json";
+            await _modelProvisioner.EnsureModelsAsync(selectionPath, progress: new Progress<ModelProvisionProgress>(p =>
+            {
+                if (p.Status == ModelProvisionStatus.Downloading && p.TotalBytes.HasValue && p.TotalBytes > 0)
+                {
+                    double pct = (double)p.BytesTransferred / p.TotalBytes.Value;
+                    _logger?.Write("model_download", $"{p.ModelId} ({p.RelativePath}): {pct:P0}");
+                }
+                else
+                {
+                    _logger?.Write("model_download", $"{p.ModelId} ({p.RelativePath}): {p.Status}");
+                }
+            })).ConfigureAwait(false);
+
             await runtime.StartAsync(CancellationToken.None).ConfigureAwait(true);
             _logger?.Write("local_runtime", runtime.State.ToString());
         }
@@ -322,9 +346,10 @@ public partial class App : Application
                 _localSttId = setup.SttId;
                 _localCleanerId = setup.CleanerId;
                 _localBackend = setup.Backend;
-                _recordingStore ??= new RecordingStore(_config.Recording,
+                _recordingStore = new RecordingStore(_config.Recording,
                     provenance: new RecordingProvenance(setup.PromptVersion, setup.PromptSha256, setup.PolicySha256));
-                _recordingQueue ??= new RecordingQueue(_recordingStore, warning: warning =>
+                _settings?.SetRecordingStore(_recordingStore);
+                _recordingQueue = new RecordingQueue(_recordingStore, warning: warning =>
                     _logger?.Write("recording", warning),
                     enabled: () => _recordingStore?.Enabled == true);
                 _runtime = new AppRuntime(setup.Pipeline, _recordingQueue);
@@ -338,18 +363,36 @@ public partial class App : Application
         }
         else // remote
         {
-            if (_runtime is not null)
+            var oldRuntime = _runtime;
+            _runtime = null;
+            _recordingQueue = null;
+
+            if (oldRuntime is not null)
             {
-                try
+                _ = Task.Run(async () =>
                 {
-                    await _runtime.StopAsync(CancellationToken.None).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    _logger?.Write("local_runtime_stop_error", ex.Message);
-                }
-                _runtime = null;
+                    while (_controller.State != ClientState.Idle)
+                    {
+                        await Task.Delay(50).ConfigureAwait(false);
+                    }
+                    try
+                    {
+                        await oldRuntime.StopAsync(CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger?.Write("local_runtime_stop_error", ex.Message);
+                    }
+                });
             }
+
+            if (_monitorCts is not null)
+            {
+                _monitorCts.Cancel();
+                _monitorCts.Dispose();
+                _monitorCts = null;
+            }
+            _monitor = null;
 
             TimeProvider time = TimeProvider.System;
             _monitorHttp ??= new HttpClient { Timeout = Timeout.InfiniteTimeSpan };

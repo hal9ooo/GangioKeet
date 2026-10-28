@@ -14,8 +14,7 @@ public interface ICapsLockResetService
 public sealed class CapsLockResetService : ICapsLockResetService
 {
     private const int VkCapital = 0x14;
-    private const byte ScanCodeCapital = 0x45;
-    private const uint KeyEventExtendedKey = 0x0001;
+    private const byte ScanCodeCapital = 0x3A; // Scan code standard Win32 per Caps Lock
     private const uint KeyEventKeyUp = 0x0002;
 
     private readonly Func<bool> _stateReader;
@@ -37,7 +36,7 @@ public sealed class CapsLockResetService : ICapsLockResetService
         }
 
         _keySender();
-        return true;
+        return !_stateReader();
     }
 
     private static bool DefaultIsCapsLockActive()
@@ -47,8 +46,8 @@ public sealed class CapsLockResetService : ICapsLockResetService
 
     private static void DefaultSendCapsLockToggle()
     {
-        keybd_event((byte)VkCapital, ScanCodeCapital, KeyEventExtendedKey, UIntPtr.Zero);
-        keybd_event((byte)VkCapital, ScanCodeCapital, KeyEventExtendedKey | KeyEventKeyUp, UIntPtr.Zero);
+        keybd_event((byte)VkCapital, ScanCodeCapital, 0, UIntPtr.Zero);
+        keybd_event((byte)VkCapital, ScanCodeCapital, KeyEventKeyUp, UIntPtr.Zero);
     }
 
     [DllImport("user32.dll", CharSet = CharSet.Auto, ExactSpelling = true)]

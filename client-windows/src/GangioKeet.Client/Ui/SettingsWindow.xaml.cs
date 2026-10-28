@@ -25,8 +25,8 @@ public sealed partial class SettingsWindow : Window
     private readonly FileLogger? _logger;
     private readonly Func<LocalSettingsInfo>? _localInfo;
     private readonly Action<string>? _onModeSaved;
-    private readonly RecordingStore? _recordingStore;
-    private readonly RecordingStorage? _recordingStorage;
+    private RecordingStore? _recordingStore;
+    private RecordingStorage? _recordingStorage;
     private bool _recordingRefresh;
     private readonly DispatcherTimer _timer;
 
@@ -243,6 +243,16 @@ public sealed partial class SettingsWindow : Window
         StatusText.Text = "Salvato. Il monitor riprova subito gli endpoint.";
     }
 
+    public void SetRecordingStore(RecordingStore? store)
+    {
+        _recordingStore = store;
+        _recordingStorage = store is null ? null : new RecordingStorage(store);
+        if (_recordingStore is not null)
+        {
+            RecordingCheck.IsChecked = _recordingStore.Enabled;
+        }
+    }
+
     public void SetEndpointServices(
         EndpointSelector? selector,
         EndpointProbe? probe,
@@ -253,6 +263,11 @@ public sealed partial class SettingsWindow : Window
         if (onSaved is not null)
         {
             _onSaved = onSaved;
+        }
+
+        if (selector is not null)
+        {
+            ReloadFromDisk();
         }
     }
 

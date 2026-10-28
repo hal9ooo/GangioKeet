@@ -37,17 +37,8 @@ $selected = Get-Content -LiteralPath $SelectionPath -Raw | ConvertFrom-Json
 New-Item -ItemType Directory -Path (Join-Path $Payload 'models') -Force | Out-Null
 Copy-Item -LiteralPath $SelectionPath -Destination (Join-Path $Payload 'models/selected.json') -Force
 Copy-Item -LiteralPath $CleanupPath -Destination (Join-Path $Payload 'cleanup.yaml') -Force
-foreach ($model in @($selected.stt, $selected.cleaner)) {
-    foreach ($file in $model.files) {
-        $source = Join-Path $ModelRoot $file.path
-        $destination = Join-Path $Payload ('models/' + $file.path)
-        if (-not (Test-Path -LiteralPath $source -PathType Leaf)) { throw "model file missing: $source" }
-        $actual = (Get-FileHash -LiteralPath $source -Algorithm SHA256).Hash.ToLowerInvariant()
-        if ($actual -ne $file.sha256.ToLowerInvariant()) { throw "model hash mismatch: $file.path" }
-        New-Item -ItemType Directory -Path (Split-Path $destination) -Force | Out-Null
-        Copy-Item -LiteralPath $source -Destination $destination -Force
-    }
-}
+# Models are downloaded on demand on first app launch via ModelProvisioner;
+# do not bundle 7+ GB GGUF files in the installer payload.
 
 $lock = Get-Content -LiteralPath $LockPath -Raw | ConvertFrom-Json
 foreach ($runtime in $lock.runtimes) {
@@ -117,7 +108,8 @@ $iscc = if ($Iscc) { $Iscc }
         @(
             'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
             'C:\Program Files\Inno Setup 6\ISCC.exe',
-            (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe')
+            (Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 6\ISCC.exe'),
+            (Join-Path $env:TEMP 'opencode\inno6\ISCC.exe')
         ) | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
     }
 if (-not $iscc -or -not (Test-Path -LiteralPath $iscc -PathType Leaf)) {
@@ -142,11 +134,10 @@ if (-not (Test-Path -LiteralPath $stagedInstaller -PathType Leaf)) {
 }
 $stagedSlices = @(Get-ChildItem -LiteralPath $stagingDirectory -File -Filter "$installerBase-*.bin" |
     Sort-Object Name)
-if ($stagedSlices.Count -eq 0) {
-    throw 'Disk spanning is enabled but no installer data slices were produced.'
-}
-foreach ($slice in $stagedSlices) {
-    if ($slice.Length -le 0) { throw "Installer data slice is empty: $($slice.Name)" }
+if ($stagedSlices.Count -gt 0) {
+    foreach ($slice in $stagedSlices) {
+        if ($slice.Length -le 0) { throw "Installer data slice is empty: $($slice.Name)" }
+    }
 }
 $stagedFiles = @(Get-Item -LiteralPath $stagedInstaller) + $stagedSlices
 
