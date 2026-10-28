@@ -27,6 +27,12 @@ public sealed class SplashWindowTests
         Assert.Null(failure);
     }
 
+    [Fact]
+    public void Payoff_MentionsLocalGpusAndUnemployedMacs()
+    {
+        Assert.Equal("A one-user project putting unemployed Macs and local GPUs to work.", SplashWindow.Payoff);
+    }
+
     private static Exception? RunOnStaThread(Action action)
     {
         Exception? captured = null;
