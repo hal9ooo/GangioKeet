@@ -11,6 +11,11 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
   <ItemGroup>
+    <Content Include="..\..\..\shared\prompts\conservative-local-v3.txt"
+             Link="shared\prompts\conservative-local-v3.txt"
+             CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+  <ItemGroup>
     <ProjectReference Include="../../src/GangioKeet.Inference/GangioKeet.Inference.csproj" />
     <ProjectReference Include="../../tools/GangioKeet.Eval/GangioKeet.Eval.csproj" />
   </ItemGroup>

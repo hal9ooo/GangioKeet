@@ -9,7 +9,7 @@ public sealed class LlamaTextCleaner(ITextGenerator generator, CleanupPolicy pol
         string prompt = CleanerPrompt.Render(raw, profile, policy.Glossary);
         ct.ThrowIfCancellationRequested();
         int maxTokens = Math.Clamp(raw.Length * 2 + 64, 128, 4096);
-        GeneratedText generated = await generator.GenerateAsync(CleanerPrompt.System, prompt, maxTokens, ct).ConfigureAwait(false);
+        GeneratedText generated = await generator.GenerateAsync(CleanerPrompt.RenderedSystem, prompt, maxTokens, ct).ConfigureAwait(false);
         ct.ThrowIfCancellationRequested();
         IReadOnlyList<string> warnings = OutputPolicy.Validate(raw, generated.Text);
         if (generated.Truncated || warnings.Count > 0)

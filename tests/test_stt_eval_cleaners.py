@@ -176,8 +176,9 @@ class _FakeLLM:
     instances = []
     clean_mode = "ok"
 
-    def __init__(self, model_id):
+    def __init__(self, model_id, glossary=None):
         self.model_id = model_id
+        self.glossary = glossary
         self.frozen = False
         self.cleaned = []
         _FakeLLM.instances.append(self)

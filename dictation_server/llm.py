@@ -3,6 +3,7 @@ import time
 
 import mlx.core as mx
 
+from .config import GlossaryConfig
 from .engines import LLMDeadlineExceeded
 from .prompt import Profile, build_user_prompt
 from .routing import TEMPERATURE, compute_max_tokens
@@ -13,8 +14,13 @@ __all__ = ["LLMCleaner", "LLMDeadlineExceeded"]
 class LLMCleaner:
     """mlx-lm cleaner with a frozen system-prompt KV cache."""
 
-    def __init__(self, model_id: str):
+    def __init__(
+        self, model_id: str, glossary: GlossaryConfig | None = None
+    ):
         self.model_id = model_id
+        self.glossary = glossary or GlossaryConfig(
+            canonical_terms=[], phonetic_overrides={}
+        )
         self.model = None
         self.tokenizer = None
         self.frozen = False
@@ -147,7 +153,9 @@ class LLMCleaner:
         self._deadline = deadline
         try:
             self._check_deadline()
-            user_prompt = build_user_prompt(raw_text, profile)
+            user_prompt = build_user_prompt(
+                raw_text, profile, self.glossary
+            )
             n_input_tokens = len(self._encode(raw_text))
             output = self._generate(
                 user_prompt, compute_max_tokens(n_input_tokens)
