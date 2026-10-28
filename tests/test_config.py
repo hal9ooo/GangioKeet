@@ -93,8 +93,8 @@ def test_legacy_config_gets_reliability_defaults(tmp_path: Path):
     assert cfg.timeouts.upload_seconds == 10.0
     assert cfg.timeouts.decode_seconds == 5.0
     assert cfg.timeouts.queue_seconds == 2.0
-    assert cfg.timeouts.processing_seconds == 10.0
-    assert cfg.timeouts.llm_seconds == 5.0
+    assert cfg.timeouts.processing_seconds == 240.0
+    assert cfg.timeouts.llm_seconds == 180.0
 
     assert cfg.security.api_key_env is None
 

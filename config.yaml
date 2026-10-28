@@ -15,8 +15,8 @@ timeouts:
   upload_seconds: 10.0
   decode_seconds: 5.0
   queue_seconds: 2.0
-  processing_seconds: 10.0
-  llm_seconds: 5.0
+  processing_seconds: 240.0
+  llm_seconds: 180.0
 
 security:
   api_key_env: null

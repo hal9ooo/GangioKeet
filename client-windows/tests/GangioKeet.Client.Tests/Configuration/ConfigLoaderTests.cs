@@ -37,9 +37,9 @@ public sealed class ConfigLoaderTests
         Assert.Equal(8000, config.Server.Port);
         Assert.Equal("websocket", config.Server.Transport);
         Assert.Equal(2.0, config.Server.ConnectTimeoutSeconds);
-        Assert.Equal(15.0, config.Server.ResponseTimeoutSeconds);
+        Assert.Equal(180.0, config.Server.ResponseTimeoutSeconds);
         Assert.Equal(5.0, config.Server.UploadTimeoutSeconds);
-        Assert.Equal(20.0, config.Server.RestResponseTimeoutSeconds);
+        Assert.Equal(240.0, config.Server.RestResponseTimeoutSeconds);
         Assert.True(config.Server.RestFallback);
         Assert.Equal(30.0, config.Server.HealthCheckIntervalSeconds);
         Assert.Null(config.Server.ApiKeyEnv);
@@ -184,9 +184,9 @@ public sealed class ConfigLoaderTests
         Assert.Equal("http", config.Server.Scheme);
         Assert.Equal(8000, config.Server.Port);
         Assert.Equal(2.0, config.Server.ConnectTimeoutSeconds);
-        Assert.Equal(15.0, config.Server.ResponseTimeoutSeconds);
+        Assert.Equal(180.0, config.Server.ResponseTimeoutSeconds);
         Assert.Equal(5.0, config.Server.UploadTimeoutSeconds);
-        Assert.Equal(20.0, config.Server.RestResponseTimeoutSeconds);
+        Assert.Equal(240.0, config.Server.RestResponseTimeoutSeconds);
         Assert.Equal(30.0, config.Server.HealthCheckIntervalSeconds);
         Assert.Equal("capslock", config.Hotkey.Key);
         Assert.Equal("escape", config.Hotkey.AbortKey);
