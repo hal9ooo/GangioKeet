@@ -9,7 +9,6 @@ from .audio import SAMPLE_RATE
 from .config import AppConfig
 from .engines import LLM, LLMDeadlineExceeded, STT
 from .glossary import normalize_canonical_terms
-from .routing import should_run_llm
 
 logger = logging.getLogger(__name__)
 
@@ -100,22 +99,16 @@ class Pipeline:
             try:
                 if pcm:
                     stt_start = time.perf_counter()
-                    raw_text = await self._run_blocking(
-                        self.stt.transcribe, pcm
-                    )
+                    raw_text = (
+                        await self._run_blocking(self.stt.transcribe, pcm)
+                    ).strip()
                     stt_ms = (time.perf_counter() - stt_start) * 1000.0
 
                     if bypass_llm:
                         final_text = raw_text
                         fast_path = True
-                    elif not should_run_llm(
-                        raw_text,
-                        self.cfg.routing,
-                        self.cfg.glossary.phonetic_overrides,
-                    ):
-                        final_text = normalize_canonical_terms(
-                            raw_text, self.cfg.glossary.canonical_terms
-                        )
+                    elif not raw_text:
+                        final_text = ""
                         fast_path = True
                     else:
                         fast_path = False
@@ -138,7 +131,9 @@ class Pipeline:
                                 self.cfg.timeouts.llm_seconds,
                             )
                             final_text = normalize_canonical_terms(
-                                raw_text, self.cfg.glossary.canonical_terms
+                                raw_text,
+                                self.cfg.glossary.canonical_terms,
+                                profile,
                             )
                             warnings.append("llm_timeout")
                         except Exception as exc:
@@ -149,7 +144,9 @@ class Pipeline:
                                 self.cfg.timeouts.llm_seconds,
                             )
                             final_text = normalize_canonical_terms(
-                                raw_text, self.cfg.glossary.canonical_terms
+                                raw_text,
+                                self.cfg.glossary.canonical_terms,
+                                profile,
                             )
                             warnings.append("llm_failed")
                         finally:

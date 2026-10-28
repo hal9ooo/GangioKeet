@@ -61,13 +61,13 @@ public sealed class ServerConfig
     public double ConnectTimeoutSeconds { get; set; } = 2.0;
 
     [YamlMember(Alias = "response_timeout_seconds")]
-    public double ResponseTimeoutSeconds { get; set; } = 15.0;
+    public double ResponseTimeoutSeconds { get; set; } = 180.0;
 
     [YamlMember(Alias = "upload_timeout_seconds")]
     public double UploadTimeoutSeconds { get; set; } = 5.0;
 
     [YamlMember(Alias = "rest_response_timeout_seconds")]
-    public double RestResponseTimeoutSeconds { get; set; } = 20.0;
+    public double RestResponseTimeoutSeconds { get; set; } = 240.0;
 
     [YamlMember(Alias = "rest_fallback")]
     public bool RestFallback { get; set; } = true;

@@ -111,9 +111,9 @@ class PipelineFinalizer:
             local = provenance.cached_snapshot(
                 self.model_id, self.revision
             )
-            llm = LLMCleaner(str(local))
+            llm = LLMCleaner(str(local), self.cfg.glossary)
             llm.load()
-            llm.freeze(build_system_prompt(self.cfg.glossary))
+            llm.freeze(build_system_prompt())
             self._llm = llm
             self._loop = asyncio.new_event_loop()
             self._pipeline = Pipeline(self._echo, llm, self.cfg)
@@ -152,7 +152,7 @@ class PipelineFinalizer:
                 self.warnings = ["llm_failed"]
             self.fast_path = False
             return normalize_canonical_terms(
-                raw_text, self.cfg.glossary.canonical_terms
+                raw_text, self.cfg.glossary.canonical_terms, profile
             )
 
         self._echo.text = raw_text

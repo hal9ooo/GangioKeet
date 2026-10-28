@@ -1,3 +1,4 @@
 *.sh text eol=lf
 *.plist text eol=lf
 *.py text eol=lf
+shared/prompts/conservative-local-v3.txt text eol=crlf

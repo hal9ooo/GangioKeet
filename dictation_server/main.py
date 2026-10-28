@@ -38,7 +38,7 @@ def _build_llm(cfg: AppConfig) -> LLM:
 
     from .llm import LLMCleaner
 
-    return LLMCleaner(cfg.server.llm_model)
+    return LLMCleaner(cfg.server.llm_model, cfg.glossary)
 
 
 def configure_logging(level: int = logging.INFO) -> None:
@@ -84,7 +84,7 @@ def build_app(
 
     stt.load()
     llm.load()
-    llm.freeze(build_system_prompt(cfg.glossary))
+    llm.freeze(build_system_prompt())
 
     return create_app(cfg, Pipeline(stt, llm, cfg), auth=auth)
 

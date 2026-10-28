@@ -372,7 +372,7 @@ def test_rest_text_adds_warning_header_only_when_warnings_exist(cfg):
         },
     )
     assert clean.status_code == 200
-    assert clean.text == "ciao"
+    assert clean.text == "[default] ciao"
     assert "x-gangiokeet-warnings" not in clean.headers
 
 
@@ -384,7 +384,7 @@ def test_ws_result_adds_warnings_and_fallback_keeps_fast_path_false(cfg):
     )
 
     with client.websocket_connect("/ws/dictate") as ws:
-        send_start(ws, profile="code")
+        send_start(ws, profile="chat")
         ws.send_bytes(make_silence(0.2))
         ws.send_json({"type": "stop"})
         result = ws.receive_json()

@@ -62,17 +62,32 @@ async def test_fast_path_skips_llm():
 
 
 @pytest.mark.asyncio
-async def test_automatic_fast_path_skips_llm():
+async def test_two_word_phrase_calls_cleaner():
     class ShortSTT(FakeSTT):
         def transcribe(self, audio):
             self.seen.append(audio)
-            return "ciao come stai"
+            return "come funziona"
 
-    llm = FakeLLM()
+    class AnswerLLM(FakeLLM):
+        def clean(self, raw_text, profile, *, deadline=None):
+            self.calls.append((raw_text, profile))
+            return "Come funziona?"
+
+    llm = AnswerLLM()
     p = Pipeline(ShortSTT(), llm, load_config(CONFIG_PATH))
-    r = await p.process(make_silence(0.5))
+    r = await p.process(make_silence(0.5), profile="chat")
+    assert r.fast_path is False
+    assert r.final_text == "Come funziona?"
+    assert llm.calls == [("come funziona", "chat")]
+
+
+@pytest.mark.asyncio
+async def test_empty_transcript_skips_cleaner():
+    llm = FakeLLM()
+    p = Pipeline(ScriptedSTT(""), llm, load_config(CONFIG_PATH))
+    r = await p.process(make_silence(0.5), profile="chat")
+    assert r.final_text == ""
     assert r.fast_path is True
-    assert r.final_text == "ciao come stai"
     assert llm.calls == []
 
 
@@ -243,7 +258,7 @@ async def test_llm_failure_falls_back_to_normalized_raw():
         ScriptedSTT("fast a pi su docker"), llm, load_config(CONFIG_PATH)
     )
 
-    r = await p.process(make_silence(0.5), profile="code")
+    r = await p.process(make_silence(0.5), profile="chat")
 
     assert r.raw_text == "fast a pi su docker"
     assert r.final_text == "fast a pi su Docker"
@@ -251,6 +266,20 @@ async def test_llm_failure_falls_back_to_normalized_raw():
     assert r.warnings == ["llm_failed"]
     assert len(llm.calls) == 1
     assert r.metrics.llm_ms > 0
+
+
+@pytest.mark.asyncio
+async def test_code_profile_does_not_normalize_glossary():
+    class DeadlineLLM(FakeLLM):
+        def clean(self, raw_text, profile, *, deadline=None):
+            self.calls.append((raw_text, profile))
+            raise LLMDeadlineExceeded("deadline exceeded")
+
+    llm = DeadlineLLM()
+    p = Pipeline(ScriptedSTT("fastapi su docker"), llm, load_config(CONFIG_PATH))
+    r = await p.process(make_silence(0.5), profile="code")
+    assert r.final_text == "fastapi su docker"
+    assert r.warnings == ["llm_timeout"]
 
 
 @pytest.mark.asyncio
@@ -265,7 +294,7 @@ async def test_llm_deadline_falls_back_to_normalized_raw():
         ScriptedSTT("fast a pi su docker"), llm, load_config(CONFIG_PATH)
     )
 
-    r = await p.process(make_silence(0.5), profile="code")
+    r = await p.process(make_silence(0.5), profile="chat")
 
     assert r.raw_text == "fast a pi su docker"
     assert r.final_text == "fast a pi su Docker"
@@ -297,7 +326,7 @@ async def test_llm_fallback_logs_one_warning_without_dictation(
     p = Pipeline(ScriptedSTT(raw_text), llm, load_config(CONFIG_PATH))
 
     with caplog.at_level(logging.WARNING, logger="dictation_server.pipeline"):
-        r = await p.process(make_silence(0.5), profile="code")
+        r = await p.process(make_silence(0.5), profile="chat")
 
     fallback_logs = [
         record
@@ -331,7 +360,7 @@ async def test_think_guardrail_failure_never_returns_think_or_regenerates():
         ScriptedSTT("fast a pi su docker"), llm, load_config(CONFIG_PATH)
     )
 
-    r = await p.process(make_silence(0.5), profile="code")
+    r = await p.process(make_silence(0.5), profile="chat")
 
     assert "<think>" not in r.final_text
     assert r.final_text == "fast a pi su Docker"
@@ -399,7 +428,7 @@ async def test_llm_path_passes_absolute_monotonic_deadline():
 
 
 @pytest.mark.asyncio
-async def test_short_canonical_term_uses_fast_path_with_canonical_casing():
+async def test_short_canonical_term_always_uses_cleaner():
     llm = FakeLLM()
     p = Pipeline(
         ScriptedSTT("usa docker ora"), llm, load_config(CONFIG_PATH)
@@ -408,11 +437,11 @@ async def test_short_canonical_term_uses_fast_path_with_canonical_casing():
     r = await p.process(make_silence(0.5), profile="chat")
 
     assert r.raw_text == "usa docker ora"
-    assert r.final_text == "usa Docker ora"
-    assert r.fast_path is True
-    assert r.metrics.llm_ms == 0
+    assert r.final_text == "[chat] usa docker ora"
+    assert r.fast_path is False
+    assert r.metrics.llm_ms > 0
     assert r.warnings == []
-    assert llm.calls == []
+    assert llm.calls == [("usa docker ora", "chat")]
 
 
 @pytest.mark.asyncio

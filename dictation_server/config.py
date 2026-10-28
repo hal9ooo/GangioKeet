@@ -33,6 +33,8 @@ class ServerConfig(_StrictModel):
 
 
 class RoutingConfig(_StrictModel):
+    # Deprecated: the pipeline now always cleans non-empty transcripts. Kept
+    # in the schema so existing local configs remain loadable.
     fast_path_max_words: int = 5
     self_correction_triggers: list[str]
 
@@ -75,8 +77,8 @@ class TimeoutsConfig(_StrictModel):
     upload_seconds: float = 10.0
     decode_seconds: float = 5.0
     queue_seconds: float = 2.0
-    processing_seconds: float = 10.0
-    llm_seconds: float = 5.0
+    processing_seconds: float = 240.0
+    llm_seconds: float = 180.0
 
     @model_validator(mode="after")
     def _check_positive(self) -> "TimeoutsConfig":

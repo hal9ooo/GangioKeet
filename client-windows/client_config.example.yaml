@@ -40,9 +40,9 @@ server:
   port: 8000
   transport: "websocket"              # websocket | rest
   connect_timeout_seconds: 2.0        # guardrail 3.6: capire subito se il Mac è raggiungibile
-  response_timeout_seconds: 15.0      # guardrail 3.6: attesa tra stop e result
+  response_timeout_seconds: 180.0     # attesa tra stop e result: il cleaner locale può essere lento
   upload_timeout_seconds: 5.0         # timeout del POST REST dei chunk (fallback)
-  rest_response_timeout_seconds: 20.0 # attesa della risposta REST dopo l'upload
+  rest_response_timeout_seconds: 240.0 # attesa della risposta REST dopo l'upload
   rest_fallback: true                 # WS fallita alla pressione -> buffer RAM + POST REST allo stop
   health_check_interval_seconds: 30   # ping /health periodico per lo stato nel tray
   health_check_timeout_seconds: 2.0   # timeout del probe /health di ogni endpoint

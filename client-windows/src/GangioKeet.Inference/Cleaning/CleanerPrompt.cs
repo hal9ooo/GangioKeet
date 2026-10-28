@@ -4,8 +4,12 @@ public static class CleanerPrompt
 {
     // Baseline: dictation_server/prompt.py at 25167fc; local v1.
     public const string Version = "conservative-local-v3";
+    // The measured Windows prompt uses CRLF. The source blob is normally
+    // checked out with LF on macOS, so normalize before hashing/sending.
+    public static string RenderedSystem =>
+        System.Replace("\r\n", "\n").Replace("\n", "\r\n");
     public static string Sha256 => Convert.ToHexStringLower(global::System.Security.Cryptography.SHA256.HashData(
-        global::System.Text.Encoding.UTF8.GetBytes(System)));
+        global::System.Text.Encoding.UTF8.GetBytes(RenderedSystem)));
     public const string System = BaselineSystem + """
 
 

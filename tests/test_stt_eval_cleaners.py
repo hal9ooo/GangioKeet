@@ -176,8 +176,9 @@ class _FakeLLM:
     instances = []
     clean_mode = "ok"
 
-    def __init__(self, model_id):
+    def __init__(self, model_id, glossary=None):
         self.model_id = model_id
+        self.glossary = glossary
         self.frozen = False
         self.cleaned = []
         _FakeLLM.instances.append(self)
@@ -261,7 +262,7 @@ def test_pipeline_finalizer_forced_timeout_falls_back(fake_cleaner_modules):
     )
     finalizer.load()
 
-    output = finalizer.finalize("usa docker", "code", force_cleaner=True)
+    output = finalizer.finalize("usa docker", "chat", force_cleaner=True)
 
     assert output == "usa Docker"
     assert finalizer.warnings == ["llm_timeout"]
