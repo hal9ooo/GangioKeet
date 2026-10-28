@@ -549,7 +549,7 @@ def test_rest_response_format_text_returns_plain_text(cfg):
     )
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/plain")
-    assert r.text == "ciao"
+    assert r.text == "[default] ciao"
 
 
 def test_rest_json_shape(cfg):
@@ -560,9 +560,9 @@ def test_rest_json_shape(cfg):
     )
     body = r.json()
     assert r.status_code == 200
-    assert body["text"] == "ciao"
+    assert body["text"] == "[default] ciao"
     assert body["raw_text"] == "ciao"
-    assert body["fast_path"] is True
+    assert body["fast_path"] is False
     assert set(body["metrics"]) == {"stt_ms", "llm_ms", "total_ms"}
 
 

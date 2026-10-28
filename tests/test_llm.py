@@ -6,8 +6,12 @@ import pytest
 
 mx = pytest.importorskip("mlx.core", reason="MLX is macOS-only")
 
-from dictation_server.llm import LLMCleaner, LLMDeadlineExceeded
-from dictation_server.routing import compute_max_tokens
+from dictation_server.llm import (
+    LLMCleaner,
+    LLMDeadlineExceeded,
+    LLMOutputRejected,
+)
+from dictation_server.routing import estimate_max_tokens
 
 
 class FakeLLM(LLMCleaner):
@@ -40,9 +44,7 @@ def test_clean_uses_guardrails_and_strips():
     assert out == "pulito"
     user_prompt, max_tokens = llm.calls[0]
     assert "<raw_dictation>ehm ciao buona sera</raw_dictation>" in user_prompt
-    assert max_tokens == compute_max_tokens(
-        len(llm._encode("ehm ciao buona sera"))
-    )
+    assert max_tokens == estimate_max_tokens("ehm ciao buona sera")
 
 
 def test_freeze_runs_once_across_requests():
@@ -70,6 +72,57 @@ def test_clean_rejects_thinking_output():
     llm.freeze("system rules")
     with pytest.raises(RuntimeError, match="think"):
         llm.clean("ciao", "chat")
+
+
+def test_truncated_output_is_rejected():
+    class TruncatedLLM(FakeLLM):
+        def _generate(self, user_prompt, max_tokens):
+            self.last_truncated = True
+            return "pulito"
+
+    llm = TruncatedLLM()
+    llm.freeze("system rules")
+    with pytest.raises(LLMOutputRejected, match="token_limit"):
+        llm.clean("ciao", "default")
+
+
+def test_empty_output_is_rejected():
+    class EmptyLLM(FakeLLM):
+        def _generate(self, user_prompt, max_tokens):
+            return "   "
+
+    llm = EmptyLLM()
+    llm.freeze("system rules")
+    with pytest.raises(LLMOutputRejected, match="empty_output"):
+        llm.clean("ciao", "default")
+
+
+def test_prompt_tags_are_rejected():
+    class TaggedLLM(FakeLLM):
+        def _generate(self, user_prompt, max_tokens):
+            return "<glossary>leak</glossary>"
+
+    llm = TaggedLLM()
+    llm.freeze("system rules")
+    with pytest.raises(LLMOutputRejected, match="prompt_or_thinking_tags"):
+        llm.clean("ciao", "default")
+
+
+def test_expanded_output_is_rejected():
+    class ExpandedLLM(FakeLLM):
+        def _generate(self, user_prompt, max_tokens):
+            return "x" * 600
+
+    llm = ExpandedLLM()
+    llm.freeze("system rules")
+    with pytest.raises(LLMOutputRejected, match="expanded_output"):
+        llm.clean("ciao", "default")
+
+
+def test_max_tokens_matches_windows_formula():
+    assert estimate_max_tokens("come funziona") == 128
+    assert estimate_max_tokens("x" * 100) == 264
+    assert estimate_max_tokens("x" * 5000) == 4096
 
 
 def test_deadline_error_is_distinct_from_generic_failures():

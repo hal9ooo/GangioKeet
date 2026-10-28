@@ -152,7 +152,7 @@ class PipelineFinalizer:
                 self.warnings = ["llm_failed"]
             self.fast_path = False
             return normalize_canonical_terms(
-                raw_text, self.cfg.glossary.canonical_terms
+                raw_text, self.cfg.glossary.canonical_terms, profile
             )
 
         self._echo.text = raw_text

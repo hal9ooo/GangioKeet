@@ -33,6 +33,8 @@ class ServerConfig(_StrictModel):
 
 
 class RoutingConfig(_StrictModel):
+    # Deprecated: the pipeline now always cleans non-empty transcripts. Kept
+    # in the schema so existing local configs remain loadable.
     fast_path_max_words: int = 5
     self_correction_triggers: list[str]
 

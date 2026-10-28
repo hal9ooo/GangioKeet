@@ -93,3 +93,20 @@ def test_empty_inputs_are_unchanged():
 def test_already_canonical_text_is_stable():
     text = "Docker, GitHub e Proxmox VE"
     assert normalize_canonical_terms(text, CANONICAL_TERMS) == text
+
+
+def test_code_and_terminal_profiles_do_not_recase_commands():
+    assert (
+        normalize_canonical_terms("docker compose up", CANONICAL_TERMS, "code")
+        == "docker compose up"
+    )
+    assert (
+        normalize_canonical_terms(
+            "docker compose up", CANONICAL_TERMS, "terminal"
+        )
+        == "docker compose up"
+    )
+    assert (
+        normalize_canonical_terms("docker", CANONICAL_TERMS, "chat")
+        == "Docker"
+    )

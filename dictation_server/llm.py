@@ -5,10 +5,15 @@ import mlx.core as mx
 
 from .config import GlossaryConfig
 from .engines import LLMDeadlineExceeded
+from .output_policy import validate_output
 from .prompt import Profile, build_user_prompt
-from .routing import TEMPERATURE, compute_max_tokens
+from .routing import TEMPERATURE, estimate_max_tokens
 
-__all__ = ["LLMCleaner", "LLMDeadlineExceeded"]
+__all__ = ["LLMCleaner", "LLMDeadlineExceeded", "LLMOutputRejected"]
+
+
+class LLMOutputRejected(RuntimeError):
+    """The cleaner produced empty, truncated or unsafe output."""
 
 
 class LLMCleaner:
@@ -27,6 +32,7 @@ class LLMCleaner:
         self.cache_prefix_len = 0
         self.prefill_calls = 0
         self.last_ttft_ms = 0.0
+        self.last_truncated = False
         self._frozen_cache = None
         self._system_prompt = ""
         self._sys_tokens: list[int] = []
@@ -117,6 +123,7 @@ class LLMCleaner:
 
         generated: list[int] = []
         self.last_ttft_ms = 0.0
+        self.last_truncated = False
         # Diagnostic TTFT: excludes the per-request cache clone and chat
         # template rendering above, which remain counted in llm_ms.
         started = time.perf_counter()
@@ -138,6 +145,7 @@ class LLMCleaner:
             if len(generated) >= max_tokens:
                 break
             generated.append(token)
+        self.last_truncated = len(generated) >= max_tokens
         return self.tokenizer.decode(generated)
 
     def clean(
@@ -156,13 +164,15 @@ class LLMCleaner:
             user_prompt = build_user_prompt(
                 raw_text, profile, self.glossary
             )
-            n_input_tokens = len(self._encode(raw_text))
             output = self._generate(
-                user_prompt, compute_max_tokens(n_input_tokens)
+                user_prompt, estimate_max_tokens(raw_text)
             ).strip()
         finally:
             self._deadline = None
 
-        if "<think>" in output or "</think>" in output:
-            raise RuntimeError("LLM output contains thinking tags")
+        if self.last_truncated:
+            raise LLMOutputRejected("token_limit")
+        errors = validate_output(raw_text, output)
+        if errors:
+            raise LLMOutputRejected(",".join(errors))
         return output

@@ -12,7 +12,9 @@ def _term_pattern(term: str) -> str:
     return _LEFT_BOUNDARY + r"\s+".join(parts) + _RIGHT_BOUNDARY
 
 
-def normalize_canonical_terms(text: str, canonical_terms: list[str]) -> str:
+def normalize_canonical_terms(
+    text: str, canonical_terms: list[str], profile: str | None = None
+) -> str:
     """Apply deterministic canonical casing to whole words and phrases.
 
     Matching is case-insensitive and the longest terms are replaced first so a
@@ -21,6 +23,8 @@ def normalize_canonical_terms(text: str, canonical_terms: list[str]) -> str:
     not resolve phonetic spellings; those remain an LLM responsibility.
     """
     if not text or not canonical_terms:
+        return text
+    if profile in {"code", "terminal"}:
         return text
 
     terms = list(

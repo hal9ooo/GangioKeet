@@ -262,7 +262,7 @@ def test_pipeline_finalizer_forced_timeout_falls_back(fake_cleaner_modules):
     )
     finalizer.load()
 
-    output = finalizer.finalize("usa docker", "code", force_cleaner=True)
+    output = finalizer.finalize("usa docker", "chat", force_cleaner=True)
 
     assert output == "usa Docker"
     assert finalizer.warnings == ["llm_timeout"]
