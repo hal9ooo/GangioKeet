@@ -4,6 +4,9 @@ import json
 import shutil
 from pathlib import Path
 
+import pytest
+pytest.importorskip("huggingface_hub")
+
 from dictation_server.model_manifest import load_candidates
 from scripts import fetch_mlx_models
 

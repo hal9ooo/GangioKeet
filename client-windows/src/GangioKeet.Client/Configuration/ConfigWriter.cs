@@ -10,6 +10,9 @@ namespace GangioKeet.Client.Configuration;
 /// </summary>
 public static class ConfigWriter
 {
+    public static bool SetModelSelectionPath(string path, string selectionPath) =>
+        SetSectionScalar(path, "inference", "model_selection_path", $"\"{selectionPath.Replace('\\', '/')}\"");
+
     public static bool SetInferenceMode(string path, string mode) => mode is "local" or "remote"
         && SetSectionScalar(path, "inference", "mode", mode);
 

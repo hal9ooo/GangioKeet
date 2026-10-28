@@ -35,6 +35,32 @@ public sealed class LocalSettingsTests
     }
 
     [Fact]
+    public void LocalMode_ShowsLocalPanel_EvenWhenSelectorIsPresent()
+    {
+        Exception? failure = RunOnStaThread(() =>
+        {
+            string path = Path.Combine(Path.GetTempPath(), $"gangio-settings-{Guid.NewGuid():N}.yaml");
+            File.WriteAllText(path, "endpoints:\n  - name: \"Mac\"\n    role: \"primary\"\n    host: \"192.168.1.62\"\n    scheme: \"http\"\n    port: 8000\ninference:\n  mode: local\n");
+            EndpointSelector selector = new(
+                [new EndpointConfig { Name = "Mac", Role = "primary", Host = "192.168.1.62", Port = 8000 }], 10);
+            EndpointProbe probe = new(new HttpClient(), null, TimeProvider.System);
+            SettingsWindow window = new(
+                selector,
+                probe,
+                new TelemetryStore(),
+                path,
+                onSaved: _ => { },
+                localInfo: () => new LocalSettingsInfo("local", "vulkan", "qwen3_asr_1_7b + gemma4_e2b", "Ready", null),
+                onModeSaved: _ => { });
+
+            Assert.True(window.IsLocalPanelVisible);
+            window.Close();
+        });
+
+        Assert.Null(failure);
+    }
+
+    [Fact]
     public void RemoteWindowStillOffersTheModeSelector()
     {
         Exception? failure = RunOnStaThread(() =>

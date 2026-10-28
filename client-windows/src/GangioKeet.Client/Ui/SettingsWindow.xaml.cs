@@ -25,6 +25,7 @@ public sealed partial class SettingsWindow : Window
     private readonly FileLogger? _logger;
     private readonly Func<LocalSettingsInfo>? _localInfo;
     private readonly Action<string>? _onModeSaved;
+    private Action<string>? _onModelPairSaved;
     private RecordingStore? _recordingStore;
     private RecordingStorage? _recordingStorage;
     private bool _recordingRefresh;
@@ -42,7 +43,8 @@ public sealed partial class SettingsWindow : Window
         FileLogger? logger = null,
         Func<LocalSettingsInfo>? localInfo = null,
         Action<string>? onModeSaved = null,
-        RecordingStore? recordingStore = null)
+        RecordingStore? recordingStore = null,
+        Action<string>? onModelPairSaved = null)
     {
         _selector = selector;
         _probe = probe;
@@ -54,11 +56,13 @@ public sealed partial class SettingsWindow : Window
         _onModeSaved = onModeSaved;
         _recordingStore = recordingStore;
         _recordingStorage = recordingStore is null ? null : new RecordingStorage(recordingStore);
+        _onModelPairSaved = onModelPairSaved;
 
         InitializeComponent();
         RowsList.ItemsSource = Rows;
 
-        ApplyModeView(_selector is null ? "local" : "remote");
+        string initialMode = localInfo?.Invoke().Mode ?? (_selector is null ? "local" : "remote");
+        ApplyModeView(initialMode);
 
         _timer = new DispatcherTimer(
             TimeSpan.FromMilliseconds(500),
@@ -82,6 +86,8 @@ public sealed partial class SettingsWindow : Window
     {
         Rows.Clear();
         SetMode(config.Inference.Mode);
+        ApplyModeView(config.Inference.Mode);
+        UpdateModelStackButtons(config.Inference.ModelSelectionPath);
 
         if (config.Endpoints is null)
         {
@@ -307,6 +313,60 @@ public sealed partial class SettingsWindow : Window
         LocalStateText.Text = info.State;
         LocalPairText.Text = info.Pair;
         LocalErrorText.Text = info.Error ?? "";
+        UpdateModelStackButtons(info.ModelSelectionPath ?? info.Pair);
+    }
+
+    private void UpdateModelStackButtons(string? pathOrPair)
+    {
+        bool isMac = pathOrPair is not null && pathOrPair.Contains("parakeet", StringComparison.OrdinalIgnoreCase);
+        StackDefaultBtn.BorderBrush = isMac ? System.Windows.Media.Brushes.Transparent : System.Windows.Media.Brushes.MediumSpringGreen;
+        StackDefaultBtn.BorderThickness = isMac ? new Thickness(1) : new Thickness(2);
+        StackMacBtn.BorderBrush = isMac ? System.Windows.Media.Brushes.MediumSpringGreen : System.Windows.Media.Brushes.Transparent;
+        StackMacBtn.BorderThickness = isMac ? new Thickness(2) : new Thickness(1);
+    }
+
+    private void StackDefaultBtn_Click(object sender, RoutedEventArgs e)
+    {
+        SelectModelPair("models/selected.json");
+    }
+
+    private void StackMacBtn_Click(object sender, RoutedEventArgs e)
+    {
+        SelectModelPair("models/selected-parakeet-qwen.json");
+    }
+
+    private void SelectModelPair(string relativePath)
+    {
+        if (!ConfigWriter.SetModelSelectionPath(_configPath, relativePath))
+        {
+            StatusText.Text = "Salvataggio stack modelli non riuscito.";
+            return;
+        }
+        UpdateModelStackButtons(relativePath);
+        _onModelPairSaved?.Invoke(relativePath);
+        StatusText.Text = $"Stack {Path.GetFileNameWithoutExtension(relativePath)} applicato a caldo.";
+    }
+
+    private void SwitchToRemoteBtn_Click(object sender, RoutedEventArgs e)
+    {
+        SetMode("remote");
+        ApplyModeView("remote");
+        if (ConfigWriter.SetInferenceMode(_configPath, "remote"))
+        {
+            _onModeSaved?.Invoke("remote");
+            StatusText.Text = "Passato alla modalità Remoto (Mac).";
+        }
+    }
+
+    private void SwitchToLocalBtn_Click(object sender, RoutedEventArgs e)
+    {
+        SetMode("local");
+        ApplyModeView("local");
+        if (ConfigWriter.SetInferenceMode(_configPath, "local"))
+        {
+            _onModeSaved?.Invoke("local");
+            StatusText.Text = "Passato alla modalità Locale.";
+        }
     }
 
     private async void RecordingCheck_Click(object sender, RoutedEventArgs e)

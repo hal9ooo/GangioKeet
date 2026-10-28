@@ -8,7 +8,7 @@ public sealed class CleanupPolicy
 {
     public List<string> CanonicalTerms { get; set; } = [];
     public Dictionary<string, string> PhoneticOverrides { get; set; } = [];
-    public double LlmTimeoutSeconds { get; set; } = 5;
+    public double LlmTimeoutSeconds { get; set; } = 180;
     [YamlIgnore] public TimeSpan LlmTimeout => TimeSpan.FromSeconds(LlmTimeoutSeconds);
     [YamlIgnore] public string Sha256 { get; private set; } = "";
 
@@ -17,8 +17,8 @@ public sealed class CleanupPolicy
         string text = File.ReadAllText(path).Replace("\r\n", "\n");
         CleanupPolicy policy = new DeserializerBuilder().WithNamingConvention(UnderscoredNamingConvention.Instance)
             .Build().Deserialize<CleanupPolicy>(text) ?? throw new InvalidDataException("Empty cleanup policy.");
-        if (!double.IsFinite(policy.LlmTimeoutSeconds) || policy.LlmTimeoutSeconds <= 0 || policy.LlmTimeoutSeconds > 120)
-            throw new InvalidDataException("Cleanup timeout must be between 0 and 120 seconds.");
+        if (!double.IsFinite(policy.LlmTimeoutSeconds) || policy.LlmTimeoutSeconds <= 0 || policy.LlmTimeoutSeconds > 300)
+            throw new InvalidDataException("Cleanup timeout must be between 0 and 300 seconds.");
         if (policy.CanonicalTerms is null || policy.PhoneticOverrides is null)
             throw new InvalidDataException("Cleanup glossary must not be null.");
         policy.Sha256 = Convert.ToHexStringLower(SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text)));

@@ -1,4 +1,4 @@
-﻿using System.IO;
+using System.IO;
 using System.Net.Http;
 using System.Windows;
 using GangioKeet.Client.Audio;
@@ -102,7 +102,7 @@ public partial class App : Application
         // l'avvio dell'app (resterebbe un processo morto senza log né UI).
         try
         {
-            _splash = new SplashWindow(TimeSpan.FromSeconds(3));
+            _splash = new SplashWindow(TimeSpan.FromSeconds(5));
             _splash.Show();
         }
         catch (Exception ex)
@@ -301,9 +301,9 @@ public partial class App : Application
 
         SettingsWindow window = _selector is null || _probe is null
             ? new(null, null, _telemetry, ConfigLoader.DefaultPath, _ => { }, _logger,
-                LocalInfo, OnModeSaved, _recordingStore)
+                LocalInfo, OnModeSaved, _recordingStore, OnModelPairSaved)
             : new(_selector, _probe, _telemetry, ConfigLoader.DefaultPath, OnEndpointsSaved, _logger,
-                LocalInfo, OnModeSaved, _recordingStore);
+                LocalInfo, OnModeSaved, _recordingStore, OnModelPairSaved);
 
         window.Closed += (_, _) => _settings = null;
         _settings = window;
@@ -316,13 +316,60 @@ public partial class App : Application
         _localBackend ?? _config?.Inference.Backend ?? "vulkan",
         _localSttId is null || _localCleanerId is null ? "—" : $"{_localSttId} + {_localCleanerId}",
         _runtime?.State.ToString() ?? "Stopped",
-        _runtime?.Failure?.Message);
+        _runtime?.Failure?.Message,
+        _config?.Inference.ModelSelectionPath ?? "models/selected.json");
 
     private void OnModeSaved(string mode)
     {
         if (_config is null) return;
         _logger?.Write("inference_mode_saved", mode);
         _ = SwitchInferenceModeAsync(mode);
+    }
+
+    private void OnModelPairSaved(string selectionPath)
+    {
+        if (_config is null) return;
+        _logger?.Write("model_pair_saved", selectionPath);
+        _ = SwitchLocalModelPairAsync(selectionPath);
+    }
+
+    public async Task SwitchLocalModelPairAsync(string selectionPath)
+    {
+        if (_config is null || _controller is null) return;
+        _config.Inference.ModelSelectionPath = selectionPath;
+
+        var oldRuntime = _runtime;
+        _runtime = null;
+        if (oldRuntime is not null)
+        {
+            try { await oldRuntime.StopAsync(CancellationToken.None).ConfigureAwait(false); }
+            catch (Exception ex) { _logger?.Write("local_runtime_stop_error", ex.Message); }
+        }
+
+        try
+        {
+            LocalInferenceSetup setup = LocalInferenceFactory.Create(_config);
+            _localSttId = setup.SttId;
+            _localCleanerId = setup.CleanerId;
+            _localBackend = setup.Backend;
+            _recordingStore = new RecordingStore(_config.Recording,
+                provenance: new RecordingProvenance(setup.PromptVersion, setup.PromptSha256, setup.PolicySha256));
+            _settings?.SetRecordingStore(_recordingStore);
+            _recordingQueue = new RecordingQueue(_recordingStore, warning: warning =>
+                _logger?.Write("recording", warning),
+                enabled: () => _recordingStore?.Enabled == true);
+            _runtime = new AppRuntime(setup.Pipeline, _recordingQueue);
+
+            var localBackend = new LocalDictationBackend(_runtime.Pipeline, () => _runtime.IsReady, _recordingQueue);
+            _controller.SetBackend(localBackend);
+            _ = StartLocalRuntimeAsync(_runtime);
+            _settings?.SetEndpointServices(null, null);
+            _logger?.Write("switched_local_pair", $"{setup.SttId} + {setup.CleanerId}");
+        }
+        catch (Exception ex)
+        {
+            _logger?.Write("switch_local_pair_failed", ex.Message);
+        }
     }
 
     public async Task SwitchInferenceModeAsync(string targetMode)

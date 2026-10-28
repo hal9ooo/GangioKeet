@@ -78,6 +78,15 @@ server:
     }
 
     [Fact]
+    public void SetModelSelectionPath_WritesUnderInferenceSection()
+    {
+        string path = TempFile("inference:\n  mode: local\n");
+        Assert.True(ConfigWriter.SetModelSelectionPath(path, "models/selected-parakeet-qwen.json"));
+        string text = File.ReadAllText(path);
+        Assert.Contains("model_selection_path: \"models/selected-parakeet-qwen.json\"", text);
+    }
+
+    [Fact]
     public void AudioSectionWithInlineComment_IsStillRecognized()
     {
         string path = TempFile("audio:   # sezione audio\n  input_device: null\n");

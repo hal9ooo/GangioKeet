@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "status": "provisional_public_corpus",
+  "selected_at": "2026-10-28",
+  "pair_id": "parakeet_v3+qwen3_1_7b",
+  "inference": {
+    "mode": "local",
+    "backend": "vulkan",
+    "model_root": "models"
+  },
+  "stt": {
+    "candidate_id": "parakeet_v3",
+    "source_checkpoint": "nvidia/parakeet-tdt-0.6b-v3",
+    "artifact_repository": "handy-computer/parakeet-tdt-0.6b-v3-gguf",
+    "revision": "d8d8c32cb2017c57e5307767343e97870f8a7f53",
+    "files": [
+      {
+        "path": "parakeet_v3/parakeet-tdt-0.6b-v3-F16.gguf",
+        "sha256": "d9ec7e2c39da7b4fec3e01e71e82c7f7bbe97741e08c0c054091bf3d520a41d3"
+      }
+    ],
+    "precision": "F16",
+    "license": "CC-BY-4.0",
+    "runtime_id": "transcribe-vulkan",
+    "family": "parakeet-tdt"
+  },
+  "cleaner": {
+    "candidate_id": "qwen3_1_7b",
+    "source_checkpoint": "Qwen/Qwen3-1.7B",
+    "artifact_repository": "Qwen/Qwen3-1.7B-GGUF",
+    "revision": "90862c4b9d2787eaed51d12237eafdfe7c5f6077",
+    "files": [
+      {
+        "path": "qwen3_1_7b/Qwen3-1.7B-Q8_0.gguf",
+        "sha256": "061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a"
+      }
+    ],
+    "precision": "Q8_0",
+    "license": "Apache-2.0",
+    "runtime_id": "llama-vulkan",
+    "family": "qwen3"
+  },
+  "runtime": {
+    "lock_path": "native/runtime-lock.json",
+    "lock_sha256": "e7ff49f052c9a37b917d2e844f8185215cda8a60d01e1eaa5bf6e925b1436846",
+    "transcribe": {
+      "id": "transcribe-vulkan",
+      "version": "0.4.1",
+      "commit": "4d7c1ccefd39e5a9ea36cca5f8fefc6dcc14b99b",
+      "archive_sha256": "272eb97795048ccb557c85bb9dd44c9e530e1c928443114c39816a8a5f76269d"
+    },
+    "llama": {
+      "id": "llama-vulkan",
+      "version": "0.30.0",
+      "managed_commit": "d03b6cbca3c66357e2ed9ee9d0324f5eaeabfd4f",
+      "namespace_revision": "equal-length-managed-native-ggml-to-lgml-v2"
+    }
+  },
+  "cleanup_policy": {
+    "path": "cleanup.yaml",
+    "source_path": "cleanup.example.yaml",
+    "sha256": "69483c177408d58b62dea1f3a9ff660cb9bee973144ffd1ee5f6fad9e8825740"
+  },
+  "prompt": {
+    "version": "conservative-local-v3",
+    "sha256": "e63fa4085c525b203bbd71897a25c03af0984b0a627ee229e6304081a349e907"
+  },
+  "evidence": {
+    "selection_report": "docs/benchmarks/local-monolith/selection.md",
+    "heldout_manifest_sha256": "8bf86d88673deabcc780c8c400bfd5fdf7474dd75fdce2dc979893c39c2c3677",
+    "heldout_clips": 200,
+    "runner": {
+      "apphost_sha256": "d08bc20ae223451488b69d7bd1f7db047f3d171dd7670db2a0f7ce7b1e9c78d0",
+      "eval_dll_sha256": "de142b0f4885bcbccd1713032e7a9c991d15254623dda14fc5b23d451252b705",
+      "inference_dll_sha256": "03f77e39ba761f1188a45dc50bc38798f4b987e7de296324f1234f809cd2d51c"
+    },
+    "gate": {
+      "status": "cancelled",
+      "cancel_after_ms": 2000,
+      "cold_start_ms": 21773.0947,
+      "elapsed_ms": 25785.0337,
+      "dispose_ms": 1608.0854,
+      "peak_working_set_bytes": 9239699456
+    }
+  },
+  "limitations": [
+    "Public FLEURS corpus only; personal voice and lexicon are not measured.",
+    "The cleaner sometimes deletes short content words; final WER is higher than raw ASR WER for this pair."
+  ]
+}
+

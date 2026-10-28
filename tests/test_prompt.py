@@ -83,7 +83,7 @@ def test_unknown_profile_rejected():
 
 
 def test_shared_cleanup_policy_matches_config_and_hash():
-    assert hashlib.sha256(SHARED_POLICY.read_bytes()).hexdigest() == (
+    assert hashlib.sha256(SHARED_POLICY.read_bytes().replace(b"\r\n", b"\n")).hexdigest() == (
         "69483c177408d58b62dea1f3a9ff660cb9bee973144ffd1ee5f6fad9e8825740"
     )
     policy = yaml.safe_load(SHARED_POLICY.read_text(encoding="utf-8"))
