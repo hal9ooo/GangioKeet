@@ -284,10 +284,10 @@ public sealed partial class SettingsWindow : Window
             StatusText.Text = "Salvataggio del flag registrazione non riuscito.";
             return;
         }
-        StatusText.Text = enabled
-            ? "Registrazione attivata. Riavvia GangioKeet per iniziare a salvare."
-            : "Registrazione disattivata subito. I campioni esistenti restano sul disco.";
         if (_recordingStore is not null) _recordingStore.Enabled = enabled;
+        StatusText.Text = enabled
+            ? "Registrazione attivata subito."
+            : "Registrazione disattivata subito. I campioni esistenti restano sul disco.";
         await RefreshRecordingsAsync();
     }
 
