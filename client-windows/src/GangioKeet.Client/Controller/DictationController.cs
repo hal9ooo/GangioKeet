@@ -17,7 +17,8 @@ namespace GangioKeet.Client.Controller;
 public sealed class DictationController : IAsyncDisposable
 {
     private readonly IAudioCapture _capture;
-    private readonly IDictationBackend _backend;
+    private IDictationBackend _backend;
+    private IDictationBackend? _pendingBackend;
     private readonly PasteService _paste;
     private readonly RecoveryStore _recovery;
     private readonly IForegroundWindowService _foreground;
@@ -82,6 +83,47 @@ public sealed class DictationController : IAsyncDisposable
 
     public ClientState State => _state;
     public DictationProfile CurrentProfile => _profile;
+
+    public IDictationBackend CurrentBackend
+    {
+        get
+        {
+            lock (_audioGate)
+            {
+                return _pendingBackend ?? _backend;
+            }
+        }
+    }
+
+    public void SetBackend(IDictationBackend backend)
+    {
+        ArgumentNullException.ThrowIfNull(backend);
+        lock (_audioGate)
+        {
+            if (_state == ClientState.Idle)
+            {
+                _backend = backend;
+                _pendingBackend = null;
+            }
+            else
+            {
+                _pendingBackend = backend;
+            }
+        }
+    }
+
+    private void TransitionToIdle()
+    {
+        lock (_audioGate)
+        {
+            _state = ClientState.Idle;
+            if (_pendingBackend is not null)
+            {
+                _backend = _pendingBackend;
+                _pendingBackend = null;
+            }
+        }
+    }
 
     /// <summary>
     /// Imposta il microfono per le dettature successive. <paramref name="deviceId"/> null
@@ -189,7 +231,7 @@ public sealed class DictationController : IAsyncDisposable
         }
 
         _pill.Hide();
-        _state = ClientState.Idle;
+        TransitionToIdle();
     }
 
     /// <summary>
@@ -244,7 +286,7 @@ public sealed class DictationController : IAsyncDisposable
         }
         finally
         {
-            _state = ClientState.Idle;
+            TransitionToIdle();
         }
     }
 
@@ -345,7 +387,7 @@ public sealed class DictationController : IAsyncDisposable
             if (IsStale(generation))
             {
                 _pill.Hide();
-                _state = ClientState.Idle;
+                TransitionToIdle();
                 return;
             }
 
@@ -401,7 +443,7 @@ public sealed class DictationController : IAsyncDisposable
         {
             _turnTiming?.MarkPasteFailed("aborted");
             _pill.Hide();
-            _state = ClientState.Idle;
+            TransitionToIdle();
             return;
         }
 
@@ -420,7 +462,7 @@ public sealed class DictationController : IAsyncDisposable
         if (string.IsNullOrWhiteSpace(result.FinalText))
         {
             _turnTiming?.MarkPasteFailed("empty_result");
-            _state = ClientState.Idle;
+            TransitionToIdle();
             _pill.Show(PillState.EmptyResult, "Testo vuoto", _profile);
             _ = HidePillAfterAsync(TimeSpan.FromMilliseconds(800), generation);
             return;
@@ -444,7 +486,7 @@ public sealed class DictationController : IAsyncDisposable
             _turnTiming?.MarkPasteFailed("target_unavailable");
             OfferResultForRecovery(result, target, "uipi_blocked");
             _pill.Show(PillState.Error, "Testo non incollato: recuperabile dalla tray", _profile);
-            _state = ClientState.Idle;
+            TransitionToIdle();
             return;
         }
 
@@ -461,7 +503,7 @@ public sealed class DictationController : IAsyncDisposable
         if (pasteResult.Status == PasteStatus.Pasted)
         {
             _turnTiming?.MarkPasted(_time.GetTimestamp());
-            _state = ClientState.Idle;
+            TransitionToIdle();
             _pill.Hide();
             _sound.Play(SoundKind.Stop);
             _audioBuffer.Clear();
@@ -480,7 +522,7 @@ public sealed class DictationController : IAsyncDisposable
         OfferResultForRecovery(result, target, pasteFailure);
 
         _pill.Show(PillState.Error, "Paste non riuscito: testo recuperabile", _profile);
-        _state = ClientState.Idle;
+        TransitionToIdle();
     }
 
     private async Task HandleFailureAsync(
@@ -517,7 +559,7 @@ public sealed class DictationController : IAsyncDisposable
         }
 
         _pill.Show(PillState.Error, message, _profile);
-        _state = ClientState.Idle;
+        TransitionToIdle();
 
         _telemetry.RecordDictation(
             success: false,
@@ -567,7 +609,7 @@ public sealed class DictationController : IAsyncDisposable
         if (IsStale(generation)) return;
 
         _pill.Hide();
-        _state = ClientState.Idle;
+        TransitionToIdle();
     }
 
     private bool IsStale(int generation) => generation != Volatile.Read(ref _generation);
