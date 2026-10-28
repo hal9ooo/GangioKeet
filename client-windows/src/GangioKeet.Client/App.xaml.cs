@@ -243,6 +243,12 @@ public partial class App : Application
             _ = _monitor.RunAsync(_monitorCts.Token);
         }
 
+        var capsReset = new CapsLockResetService();
+        if (capsReset.ResetIfActive())
+        {
+            _logger?.Write("capslock_cleared_on_startup", "Caps Lock was active and has been turned off");
+        }
+
         _hooks.Start();
     }
 
