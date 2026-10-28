@@ -23,7 +23,12 @@ public static class LocalInferenceFactory
         if (config.Inference.Mode != "local")
             throw new InvalidOperationException("Local inference requires inference.mode=local.");
 
-        string selectionPath = Path.GetFullPath(config.Inference.ModelSelectionPath);
+        string rawSelection = config.Inference.ModelSelectionPath;
+        string selectionPath = Path.IsPathRooted(rawSelection)
+            ? rawSelection
+            : (File.Exists(Path.Combine(AppContext.BaseDirectory, rawSelection))
+                ? Path.Combine(AppContext.BaseDirectory, rawSelection)
+                : Path.GetFullPath(rawSelection));
         using JsonDocument document = JsonDocument.Parse(File.ReadAllText(selectionPath));
         JsonElement root = document.RootElement;
         if (root.GetProperty("schema_version").GetInt32() != 1)

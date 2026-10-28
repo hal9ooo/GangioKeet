@@ -46,6 +46,7 @@ public partial class App : Application
     private HttpClient? _monitorHttp;
     private CancellationTokenSource? _monitorCts;
     private AppRuntime? _runtime;
+    private string? _localError;
     private RecordingStore? _recordingStore;
     private RecordingQueue? _recordingQueue;
     private readonly IModelProvisioner _modelProvisioner;
@@ -282,6 +283,7 @@ public partial class App : Application
         }
         catch (Exception error)
         {
+            _localError = error.Message;
             _logger?.Write("local_runtime_failed", error.Message);
         }
     }
@@ -315,8 +317,8 @@ public partial class App : Application
         _config?.Inference.Mode ?? "local",
         _localBackend ?? _config?.Inference.Backend ?? "vulkan",
         _localSttId is null || _localCleanerId is null ? "—" : $"{_localSttId} + {_localCleanerId}",
-        _runtime?.State.ToString() ?? "Stopped",
-        _runtime?.Failure?.Message,
+        _localError is not null ? "Error" : (_runtime?.State.ToString() ?? "Stopped"),
+        _localError ?? _runtime?.Failure?.Message,
         _config?.Inference.ModelSelectionPath ?? "models/selected.json");
 
     private void OnModeSaved(string mode)
@@ -348,6 +350,7 @@ public partial class App : Application
 
         try
         {
+            _localError = null;
             LocalInferenceSetup setup = LocalInferenceFactory.Create(_config);
             _localSttId = setup.SttId;
             _localCleanerId = setup.CleanerId;
@@ -368,6 +371,7 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
+            _localError = ex.Message;
             _logger?.Write("switch_local_pair_failed", ex.Message);
         }
     }

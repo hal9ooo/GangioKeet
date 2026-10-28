@@ -344,6 +344,7 @@ public sealed partial class SettingsWindow : Window
         }
         UpdateModelStackButtons(relativePath);
         _onModelPairSaved?.Invoke(relativePath);
+        UpdateLocal();
         StatusText.Text = $"Stack {Path.GetFileNameWithoutExtension(relativePath)} applicato a caldo.";
     }
 
@@ -426,9 +427,13 @@ public sealed partial class SettingsWindow : Window
 
     private void Refresh()
     {
-        if (_selector is null)
+        if (LocalPanel.Visibility == Visibility.Visible)
         {
             UpdateLocal();
+        }
+
+        if (_selector is null)
+        {
             return;
         }
 
