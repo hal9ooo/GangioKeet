@@ -8,7 +8,7 @@ public sealed class ConfigWriterLocalTests : IDisposable
     private readonly string _root = Directory.CreateTempSubdirectory("GangioKeetWriterLocal-").FullName;
 
     [Fact]
-    public void SetRecordingPreservesEndpointsAndAllComments()
+    public void SetRecordingPreservesLegacyKeysAndAllComments()
     {
         string path = Path.Combine(_root, "config.yaml");
         File.WriteAllText(path, "# legacy\nserver:\n  host: old.example # server\nrecording:\n  directory: private\n# recording switch\n  enabled: false # explicit\n");
@@ -18,20 +18,9 @@ public sealed class ConfigWriterLocalTests : IDisposable
         Assert.Contains("# recording switch", text);
         Assert.Contains("enabled: true   # explicit", text);
         Assert.Equal(1, text.Split("enabled:").Length - 1);
-        ClientConfig config = ConfigLoader.Load(path);
-        Assert.Equal("remote", config.Inference.Mode);
+        ClientConfig config = ConfigLoader.Load(path, installationDirectory: _root);
         Assert.True(config.Recording.Enabled);
-    }
-
-    [Fact]
-    public void ModeCanBeExplicitlyPersistedForNewInstall()
-    {
-        string path = Path.Combine(_root, "nested", "config.yaml");
-        Assert.True(ConfigWriter.SetInferenceMode(path, "local"));
-        Assert.Equal("local", ConfigLoader.Load(path).Inference.Mode);
-        string before = File.ReadAllText(path);
-        Assert.False(ConfigWriter.SetInferenceMode(path, "wrong"));
-        Assert.Equal(before, File.ReadAllText(path));
+        Assert.Equal(Path.Combine(_root, "models", "selected.json"), config.Inference.ModelSelectionPath);
     }
 
     [Fact]

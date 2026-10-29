@@ -89,7 +89,6 @@ public sealed class LocalLifecycleTests
         {
             Inference = new InferenceConfig
             {
-                Mode = "local",
                 Backend = "vulkan",
                 ModelSelectionPath = selection,
                 CleanupPolicyPath = Path.Combine(repo, "client-windows", "cleanup.example.yaml"),

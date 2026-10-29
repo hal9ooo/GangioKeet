@@ -10,6 +10,7 @@ public sealed class WorkingDirectoryCollection;
 public sealed class LocalConfigTests : IDisposable
 {
     private readonly string _root = Directory.CreateTempSubdirectory("GangioKeetLocalConfig-").FullName;
+
     private string Yaml(string text)
     {
         string path = Path.Combine(_root, "config.yaml");
@@ -18,47 +19,76 @@ public sealed class LocalConfigTests : IDisposable
     }
 
     [Fact]
-    public void NewInstallIsLocalWithoutSyntheticEndpoints()
+    public void NewInstallIsLocal()
     {
         ClientConfig config = ConfigLoader.Load(appDataBase: _root);
-        Assert.Equal("local", config.Inference.Mode);
-        Assert.Empty(config.Endpoints!);
+        Assert.Equal("vulkan", config.Inference.Backend);
         Assert.False(config.Recording.Enabled);
         Assert.False(config.Recording.StoreContext);
     }
 
-    [Theory]
-    [InlineData("server:\n  host: legacy.example\n  port: 8080\n")]
-    [InlineData("endpoints:\n  - name: Legacy\n    role: primary\n    host: legacy.example\n    port: 8080\n")]
-    public void LegacyRemoteIsPreservedWithoutWritingMigration(string yaml)
+    [Fact]
+    public void LegacyServerEndpointsAndMode_AreIgnoredAndConfigLoadsLocal()
     {
-        string path = Yaml(yaml);
-        ClientConfig config = ConfigLoader.Load(path);
-        Assert.Equal("remote", config.Inference.Mode);
-        EndpointConfig endpoint = Assert.Single(config.Endpoints!);
-        Assert.Equal("legacy.example", endpoint.Host);
-        Assert.Equal(8080, endpoint.Port);
-        Assert.Equal(yaml, File.ReadAllText(path));
+        string path = Yaml("""
+inference:
+  mode: remote
+  model_selection_path: "models/selected.json"
+server:
+  host: "192.168.1.10"
+  port: 8000
+endpoints:
+  - name: Casa
+    host: "192.168.1.10"
+    port: 8000
+""");
+
+        ClientConfig config = ConfigLoader.Load(path, installationDirectory: _root);
+
+        Assert.Equal(Path.Combine(_root, "models", "selected.json"), config.Inference.ModelSelectionPath);
+        Assert.Equal("vulkan", config.Inference.Backend);
     }
 
     [Fact]
-    public void ExplicitLocalDoesNotReadMissingRemoteCredential()
+    public void LegacyMalformedValues_AreIgnored()
     {
-        ClientConfig config = ConfigLoader.Load(Yaml("inference:\n  mode: local\nserver:\n  api_key_env: GANGIOKEET_TEST_UNSET_47A2\n"));
-        Assert.Equal("local", config.Inference.Mode);
-        Assert.Empty(config.Endpoints!);
-        Assert.Equal("GANGIOKEET_TEST_UNSET_47A2", config.Server.ApiKeyEnv);
+        string path = Yaml("""
+server: "not-a-mapping"
+endpoints: 42
+inference:
+  mode: [remote]
+  model_selection_path: "models/selected.json"
+""");
+
+        ClientConfig config = ConfigLoader.Load(path, installationDirectory: _root);
+
+        Assert.Equal(Path.Combine(_root, "models", "selected.json"), config.Inference.ModelSelectionPath);
     }
 
     [Fact]
-    public void ExplicitRemoteStillRequiresConfiguredCredential() => Assert.Throws<ConfigException>(() =>
-        ConfigLoader.Load(Yaml("inference:\n  mode: remote\nserver:\n  api_key_env: GANGIOKEET_TEST_UNSET_47A2\n")));
+    public void UnknownKey_IsStillRejected()
+    {
+        string path = Yaml("inference:\n  model_selection_path: \"models/selected.json\"\nunknown_key: true\n");
+
+        Assert.Throws<ConfigException>(() => ConfigLoader.Load(path));
+    }
+
+    [Fact]
+    public void LoadingLegacyFile_DoesNotRewriteIt()
+    {
+        string path = Yaml("server:\n  host: \"192.168.1.10\"\ninference:\n  mode: remote\n");
+        string before = File.ReadAllText(path);
+
+        _ = ConfigLoader.Load(path);
+
+        Assert.Equal(before, File.ReadAllText(path));
+    }
 
     [Theory]
-    [InlineData("inference:\n  mode: offline\n")]
     [InlineData("inference:\n  backend: cuda\n")]
     [InlineData("recording:\n  directory: ''\n")]
-    public void InvalidLocalOptionsFail(string yaml) => Assert.Throws<ConfigException>(() => ConfigLoader.Load(Yaml(yaml)));
+    public void InvalidLocalOptionsFail(string yaml) =>
+        Assert.Throws<ConfigException>(() => ConfigLoader.Load(Yaml(yaml)));
 
     [Fact]
     public void InstalledArtifactPathsDoNotDependOnWorkingDirectory()
@@ -69,11 +99,15 @@ public sealed class LocalConfigTests : IDisposable
         try
         {
             Environment.CurrentDirectory = _root;
-            ClientConfig config = ConfigLoader.Load(Yaml("inference:\n  mode: local\n"), installationDirectory: install);
+            ClientConfig config = ConfigLoader.Load(
+                Yaml("inference:\n  backend: vulkan\n"), installationDirectory: install);
             Assert.Equal(Path.Combine(install, "models", "selected.json"), config.Inference.ModelSelectionPath);
             Assert.Equal(Path.Combine(install, "cleanup.yaml"), config.Inference.CleanupPolicyPath);
         }
-        finally { Environment.CurrentDirectory = before; }
+        finally
+        {
+            Environment.CurrentDirectory = before;
+        }
     }
 
     public void Dispose() => Directory.Delete(_root, true);

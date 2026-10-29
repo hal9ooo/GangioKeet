@@ -39,7 +39,7 @@ server:
     [Fact]
     public void AppendsTheSection_WhenMissing()
     {
-        string path = TempFile("server:\n  host: \"192.168.1.62\"\n");
+        string path = TempFile("ui:\n  pill_position: \"cursor\"\n");
 
         Assert.True(ConfigWriter.SetAudioInputDevice(path, "mic-123"));
 

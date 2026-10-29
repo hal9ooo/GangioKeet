@@ -10,17 +10,6 @@ public sealed class ClientConfig
     [YamlMember(Alias = "recording")]
     public RecordingConfig Recording { get; set; } = new();
 
-    [YamlMember(Alias = "server")]
-    public ServerConfig Server { get; set; } = new();
-
-    /// <summary>
-    /// Endpoint configurati. Dopo <see cref="ConfigLoader.Load"/> è sempre non
-    /// nullo. Solo in remoto viene sintetizzato dal vecchio blocco server;
-    /// una nuova installazione locale non costruisce endpoint fittizi.
-    /// </summary>
-    [YamlMember(Alias = "endpoints")]
-    public List<EndpointConfig>? Endpoints { get; set; }
-
     [YamlMember(Alias = "hotkey")]
     public HotkeyConfig Hotkey { get; set; } = new();
 
@@ -41,48 +30,6 @@ public sealed class ClientConfig
 
     [YamlMember(Alias = "recovery")]
     public RecoveryConfig Recovery { get; set; } = new();
-}
-
-public sealed class ServerConfig
-{
-    [YamlMember(Alias = "host")]
-    public string Host { get; set; } = "192.168.1.167";
-
-    [YamlMember(Alias = "scheme")]
-    public string Scheme { get; set; } = "http";
-
-    [YamlMember(Alias = "port")]
-    public int Port { get; set; } = 8000;
-
-    [YamlMember(Alias = "transport")]
-    public string Transport { get; set; } = "websocket";
-
-    [YamlMember(Alias = "connect_timeout_seconds")]
-    public double ConnectTimeoutSeconds { get; set; } = 2.0;
-
-    [YamlMember(Alias = "response_timeout_seconds")]
-    public double ResponseTimeoutSeconds { get; set; } = 180.0;
-
-    [YamlMember(Alias = "upload_timeout_seconds")]
-    public double UploadTimeoutSeconds { get; set; } = 5.0;
-
-    [YamlMember(Alias = "rest_response_timeout_seconds")]
-    public double RestResponseTimeoutSeconds { get; set; } = 240.0;
-
-    [YamlMember(Alias = "rest_fallback")]
-    public bool RestFallback { get; set; } = true;
-
-    [YamlMember(Alias = "health_check_interval_seconds")]
-    public double HealthCheckIntervalSeconds { get; set; } = 30.0;
-
-    [YamlMember(Alias = "health_check_timeout_seconds")]
-    public double HealthCheckTimeoutSeconds { get; set; } = 2.0;
-
-    [YamlMember(Alias = "switch_margin_percent")]
-    public int SwitchMarginPercent { get; set; } = 25;
-
-    [YamlMember(Alias = "api_key_env")]
-    public string? ApiKeyEnv { get; set; } = null;
 }
 
 public sealed class HotkeyConfig

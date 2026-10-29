@@ -286,7 +286,6 @@ public partial class App : Application
     }
 
     private LocalSettingsInfo LocalInfo() => new(
-        _config?.Inference.Mode ?? "local",
         _localBackend ?? _config?.Inference.Backend ?? "vulkan",
         _localSttId is null || _localCleanerId is null ? "—" : $"{_localSttId} + {_localCleanerId}",
         _localError is not null ? "Error" : (_runtime?.State.ToString() ?? "Stopped"),

@@ -27,8 +27,7 @@ public static class ReloadPolicy
     /// Callers must keep the current runtime until replacement load succeeds,
     /// and use Evaluate to defer replacement during an active dictation.</summary>
     public static bool RequiresRuntimeReload(ClientConfig current, ClientConfig replacement) =>
-        current.Inference.Mode != replacement.Inference.Mode
-        || current.Inference.Backend != replacement.Inference.Backend
+        current.Inference.Backend != replacement.Inference.Backend
         || !string.Equals(current.Inference.ModelSelectionPath, replacement.Inference.ModelSelectionPath, StringComparison.OrdinalIgnoreCase)
         || !string.Equals(current.Inference.CleanupPolicyPath, replacement.Inference.CleanupPolicyPath, StringComparison.OrdinalIgnoreCase);
 

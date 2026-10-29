@@ -1,53 +1,17 @@
 # GangioKeet client configuration example.
 # Copy this file to %APPDATA%/GangioKeet/client_config.yaml, then edit.
 # Strict schema: unknown keys are rejected. Times are seconds (doubles), ms are integers.
+# Legacy keys from the old remote setup (server, endpoints, inference.mode) are
+# ignored in memory and never rewritten by the app.
 inference:
-  mode: local                        # local | remote; legacy server/endpoints files remain remote
   model_selection_path: "models/selected.json" # relative to installed app directory
-  cleanup_policy_path: "cleanup.yaml"         # explicit override; never server config.yaml
-  backend: vulkan                    # vulkan | cpu; no silent remote fallback
+  cleanup_policy_path: "cleanup.yaml"         # policy locale di pulizia
+  backend: vulkan                    # vulkan | cpu
 
 recording:
   enabled: false                     # only completed dictations, not ambient recording
   directory: "recordings"            # relative to the per-user GangioKeet data directory
   store_context: false               # never stores selected text
-
-# The following remote settings are preserved but unused in local mode.
-# The API token is never stored here: set the environment variable named by
-# server.api_key_env (recommended: GANGIOKEET_API_KEY); unset api_key_env means "no token".
-
-# Endpoint multipli (facoltativo). Se questo blocco c'è, ha la precedenza sulle
-# chiavi server.host/scheme/port, che servono solo a sintetizzare un endpoint
-# "Server" quando endpoints: manca. Vince la latenza mediana più bassa; il
-# cambio vale dalla dettatura successiva, mai a metà di quella in corso.
-# Regole: almeno un endpoint, nomi unici, al massimo un "primary", niente
-# host:porta duplicati.
-# endpoints:
-#   - name: "Casa"                    # etichetta libera, unica
-#     role: "primary"                 # primary | secondary
-#     host: "192.168.1.167"           # IPv4, IPv6 o hostname; senza schema né porta
-#     scheme: "http"                  # http | https
-#     port: 8000
-#   - name: "Tailscale"
-#     role: "secondary"
-#     host: "100.101.102.103"
-#     scheme: "http"
-#     port: 8000
-
-server:
-  host: "192.168.1.167"               # solo se endpoints: manca; IP del Mac (verificato: /health OK)
-  scheme: "http"                      # http | https; https usa anche wss per il WebSocket
-  port: 8000
-  transport: "websocket"              # websocket | rest
-  connect_timeout_seconds: 2.0        # guardrail 3.6: capire subito se il Mac è raggiungibile
-  response_timeout_seconds: 180.0     # attesa tra stop e result: il cleaner locale può essere lento
-  upload_timeout_seconds: 5.0         # timeout del POST REST dei chunk (fallback)
-  rest_response_timeout_seconds: 240.0 # attesa della risposta REST dopo l'upload
-  rest_fallback: true                 # WS fallita alla pressione -> buffer RAM + POST REST allo stop
-  health_check_interval_seconds: 30   # ping /health periodico per lo stato nel tray
-  health_check_timeout_seconds: 2.0   # timeout del probe /health di ogni endpoint
-  switch_margin_percent: 25           # isteresi: cambio attivo solo se il nuovo è >=25% più veloce
-  api_key_env: null                   # es. "GANGIOKEET_API_KEY"; il token vive solo nell'ambiente
 
 hotkey:
   mode: "push_to_talk"                # push_to_talk | toggle
@@ -58,7 +22,7 @@ hotkey:
 
 audio:
   input_device: null                  # null per il microfono predefinito di Windows
-  sample_rate: 16000                  # contratto wire PCM16 LE mono
+  sample_rate: 16000                  # PCM16 LE mono
   channels: 1
   chunk_duration_ms: 100
   ready_timeout_seconds: 3.0          # quanto aspettare che il mic sia pronto prima di registrare

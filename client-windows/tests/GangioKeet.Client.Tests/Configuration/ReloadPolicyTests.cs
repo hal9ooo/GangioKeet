@@ -38,7 +38,7 @@ public sealed class ReloadPolicyTests
             logger: null);
 
         Assert.Null(reloaded);
-        Assert.Equal("websocket", working.Server.Transport);
-        Assert.Equal(8000, working.Server.Port);
+        Assert.Equal("vulkan", working.Inference.Backend);
+        Assert.Equal("selected.json", Path.GetFileName(working.Inference.ModelSelectionPath));
     }
 }

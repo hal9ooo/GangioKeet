@@ -32,17 +32,9 @@ public sealed class ConfigLoaderTests
     {
         ClientConfig config = ConfigLoader.Load(FindExampleYaml(), Path.GetTempPath());
 
-        Assert.Equal("192.168.1.167", config.Server.Host);
-        Assert.Equal("http", config.Server.Scheme);
-        Assert.Equal(8000, config.Server.Port);
-        Assert.Equal("websocket", config.Server.Transport);
-        Assert.Equal(2.0, config.Server.ConnectTimeoutSeconds);
-        Assert.Equal(180.0, config.Server.ResponseTimeoutSeconds);
-        Assert.Equal(5.0, config.Server.UploadTimeoutSeconds);
-        Assert.Equal(240.0, config.Server.RestResponseTimeoutSeconds);
-        Assert.True(config.Server.RestFallback);
-        Assert.Equal(30.0, config.Server.HealthCheckIntervalSeconds);
-        Assert.Null(config.Server.ApiKeyEnv);
+        Assert.Equal("vulkan", config.Inference.Backend);
+        Assert.EndsWith(Path.Combine("models", "selected.json"), config.Inference.ModelSelectionPath);
+        Assert.EndsWith("cleanup.yaml", config.Inference.CleanupPolicyPath);
 
         Assert.Equal("push_to_talk", config.Hotkey.Mode);
         Assert.Equal("capslock", config.Hotkey.Key);
@@ -104,17 +96,12 @@ public sealed class ConfigLoaderTests
     [Fact]
     public void UnknownKeyRejected()
     {
-        string path = WriteTempYaml(
-            """
-            server:
-              host: "192.168.1.167"
-              bogus_key: true
-            """);
+        string path = WriteTempYaml("unknown_key: true\n");
         try
         {
             var ex = Record.Exception(() => ConfigLoader.Load(path));
             Assert.IsType<ConfigException>(ex);
-            Assert.Contains("bogus_key", ex!.Message);
+            Assert.Contains("unknown_key", ex!.Message);
         }
         finally
         {
@@ -180,14 +167,7 @@ public sealed class ConfigLoaderTests
 
         ClientConfig config = ConfigLoader.Load(null, appDataBase);
 
-        Assert.Equal("192.168.1.167", config.Server.Host);
-        Assert.Equal("http", config.Server.Scheme);
-        Assert.Equal(8000, config.Server.Port);
-        Assert.Equal(2.0, config.Server.ConnectTimeoutSeconds);
-        Assert.Equal(180.0, config.Server.ResponseTimeoutSeconds);
-        Assert.Equal(5.0, config.Server.UploadTimeoutSeconds);
-        Assert.Equal(240.0, config.Server.RestResponseTimeoutSeconds);
-        Assert.Equal(30.0, config.Server.HealthCheckIntervalSeconds);
+        Assert.Equal("vulkan", config.Inference.Backend);
         Assert.Equal("capslock", config.Hotkey.Key);
         Assert.Equal("escape", config.Hotkey.AbortKey);
         Assert.Equal(250, config.Hotkey.DoubleTapMaxMs);
@@ -197,32 +177,6 @@ public sealed class ConfigLoaderTests
         Assert.Equal(100, config.Audio.ChunkDurationMs);
         Assert.Equal(200, config.Paste.ClipboardRestoreDelayMs);
         Assert.Equal(600.0, config.Recovery.RetentionSeconds);
-    }
-
-    [Fact]
-    public void MissingConfiguredSecretFailsWithoutPrintingValue()
-    {
-        const string sentinel = "sk-sentinel-secret-do-not-print";
-        var environment = new Dictionary<string, string?>
-        {
-            ["GANGIOKEET_API_KEY"] = "",
-            ["OTHER_SECRET"] = sentinel,
-        };
-
-        var ex = Record.Exception(
-            () => ApiCredential.Resolve("GANGIOKEET_API_KEY", name => environment.GetValueOrDefault(name)));
-
-        Assert.IsType<ConfigException>(ex);
-        Assert.Contains("GANGIOKEET_API_KEY", ex!.Message);
-        Assert.DoesNotContain(sentinel, ex.Message);
-    }
-
-    [Fact]
-    public void SecretNotRequired_WhenEnvNameUnset()
-    {
-        string? resolved = ApiCredential.Resolve(null, name => throw new InvalidOperationException("must not read environment"));
-
-        Assert.Null(resolved);
     }
 
     [Fact]
@@ -244,55 +198,11 @@ public sealed class ConfigLoaderTests
     }
 
     [Fact]
-    public void HttpsScheme_IsAccepted()
-    {
-        string path = WriteTempYaml(
-            """
-            server:
-              scheme: "https"
-              host: "dictation.example"
-              port: 8443
-            """);
-        try
-        {
-            ClientConfig config = ConfigLoader.Load(path);
-
-            Assert.Equal("https", config.Server.Scheme);
-            Assert.Equal("dictation.example", config.Server.Host);
-        }
-        finally
-        {
-            File.Delete(path);
-        }
-    }
-
-    [Fact]
-    public void UnknownScheme_IsRejected()
-    {
-        string path = WriteTempYaml(
-            """
-            server:
-              scheme: "ftp"
-            """);
-        try
-        {
-            var ex = Record.Exception(() => ConfigLoader.Load(path));
-
-            Assert.IsType<ConfigException>(ex);
-            Assert.Contains("server.scheme", ex!.Message);
-        }
-        finally
-        {
-            File.Delete(path);
-        }
-    }
-
-    [Fact]
-    public void CreateDefaults_IsLocalWithNoRemoteEndpoint()
+    public void CreateDefaults_IsLocal()
     {
         ClientConfig config = ConfigLoader.CreateDefaults();
 
-        Assert.Equal("local", config.Inference.Mode);
-        Assert.Empty(config.Endpoints!);
+        Assert.Equal("vulkan", config.Inference.Backend);
+        Assert.EndsWith(Path.Combine("models", "selected.json"), config.Inference.ModelSelectionPath);
     }
 }

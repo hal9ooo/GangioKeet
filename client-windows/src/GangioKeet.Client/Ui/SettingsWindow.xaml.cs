@@ -101,8 +101,7 @@ public sealed partial class SettingsWindow : Window
 
     private void UpdateLocal()
     {
-        LocalSettingsInfo info = _localInfo();
-        LocalBackendText.Text = info.Backend;
+        LocalSettingsInfo info = _localInfo();        LocalBackendText.Text = info.Backend;
         LocalStateText.Text = info.State;
         LocalPairText.Text = info.Pair;
         LocalErrorText.Text = info.Error ?? "";

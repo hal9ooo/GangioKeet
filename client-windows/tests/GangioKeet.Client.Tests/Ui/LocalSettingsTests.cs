@@ -19,7 +19,7 @@ public sealed class LocalSettingsTests
                 configPath: path,
                 logger: null,
                 localInfo: () => new LocalSettingsInfo(
-                    "local", "vulkan", "qwen3_asr_1_7b + gemma4_e2b", "Ready", null),
+                    "vulkan", "qwen3_asr_1_7b + gemma4_e2b", "Ready", null),
                 recordingStore: null,
                 onModelPairSaved: null);
 
