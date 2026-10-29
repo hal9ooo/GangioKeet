@@ -30,8 +30,8 @@ public static class ConfigWriter
             }
             else
             {
-                string rest = lines[start][(lines[start].IndexOf(':') + 1)..].Trim();
-                if (rest.Length > 0 && !rest.StartsWith('#')) return false;
+                string remainder = lines[start][(lines[start].IndexOf(':') + 1)..].Trim();
+                if (remainder.Length > 0 && !remainder.StartsWith('#')) return false;
                 int end = start + 1;
                 while (end < lines.Count && (string.IsNullOrWhiteSpace(lines[end])
                     || lines[end].TrimStart().StartsWith('#') || char.IsWhiteSpace(lines[end][0]))) end++;
@@ -143,8 +143,8 @@ public static class ConfigWriter
             return false;
         }
 
-        string rest = trimmed["audio:".Length..].Trim();
-        return rest.Length == 0 || rest.StartsWith('#');
+        string remainder = trimmed["audio:".Length..].Trim();
+        return remainder.Length == 0 || remainder.StartsWith('#');
     }
 
     private static string? DetectIndent(List<string> lines, int audioIndex)

@@ -102,9 +102,9 @@ foreach ($file in Get-ChildItem -LiteralPath $modelsRoot -Recurse -File -ErrorAc
         Add-Error "unselected model artifact must not ship: models/$relative"
     }
 }
-$macSelectionPath = Join-Path (Split-Path -Parent $SelectionPath) 'selected-parakeet-qwen.json'
-if (Test-Path -LiteralPath $macSelectionPath -PathType Leaf) {
-    Check-File 'models/selected-parakeet-qwen.json' (Get-FileHash -LiteralPath $macSelectionPath -Algorithm SHA256).Hash
+$parakeetSelectionPath = Join-Path (Split-Path -Parent $SelectionPath) 'selected-parakeet-qwen.json'
+if (Test-Path -LiteralPath $parakeetSelectionPath -PathType Leaf) {
+    Check-File 'models/selected-parakeet-qwen.json' (Get-FileHash -LiteralPath $parakeetSelectionPath -Algorithm SHA256).Hash
 }
 $lock = Get-Content -LiteralPath $LockPath -Raw | ConvertFrom-Json
 foreach ($runtime in $lock.runtimes) {

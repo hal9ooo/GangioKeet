@@ -125,9 +125,6 @@ Esclusioni:
 - **Backend CPU**: non selezionato; il gate richiede GPU effettiva e i tempi
   CPU del task 4 non rispettano il budget breve. Nessun fallback CPU
   silenzioso.
-- **Baseline MLX**: non eseguibile su Windows e non confrontabile come se
-  fosse lo stesso artefatto. La baseline GGUF è un porting, non una misura
-  del cleaner MLX di produzione.
 
 ## Baseline sherpa CPU
 

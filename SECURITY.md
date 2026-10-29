@@ -13,7 +13,7 @@ the maintainer through GitHub.
 Include:
 
 - affected version or commit;
-- platform (macOS or Windows);
+- platform (Windows);
 - reproduction steps;
 - expected impact.
 
@@ -22,6 +22,21 @@ an audio sample, use a synthetic fixture.
 
 ## Scope
 
-Covered: the macOS server (FastAPI, WebSocket, REST), the Windows client (WPF),
-and the deployment scripts. MLX/Hugging Face models and third-party
-dependencies should be reported to their respective projects.
+Covered: the Windows client (WPF/.NET) and the Windows build, evaluation, and
+packaging scripts. This includes local microphone capture, the local ASR/LLM
+pipeline, clipboard/paste handling, the media pause service, and the per-user
+configuration loader.
+
+Not covered: model weights and third-party dependencies, which should be
+reported to their respective projects.
+
+## Data handling
+
+- The runtime opens no HTTP listener and sends no audio or text to a network
+  service.
+- Logs contain codes and technical details, never audio, transcripts, window
+  titles, or API keys.
+- Completed dictations are stored on disk only when `recording.enabled` is
+  explicitly turned on, under `%LOCALAPPDATA%\GangioKeet\recordings`.
+- The media pause service reads session metadata from Windows GSMTC but logs
+  only counts and error codes, never titles, artists, or URLs.

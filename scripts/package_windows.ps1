@@ -36,9 +36,9 @@ if (Test-Path -LiteralPath $Runtimes) {
 $selected = Get-Content -LiteralPath $SelectionPath -Raw | ConvertFrom-Json
 New-Item -ItemType Directory -Path (Join-Path $Payload 'models') -Force | Out-Null
 Copy-Item -LiteralPath $SelectionPath -Destination (Join-Path $Payload 'models/selected.json') -Force
-$MacSelection = Join-Path $RepoRoot 'client-windows/models/selected-parakeet-qwen.json'
-if (Test-Path -LiteralPath $MacSelection -PathType Leaf) {
-    Copy-Item -LiteralPath $MacSelection -Destination (Join-Path $Payload 'models/selected-parakeet-qwen.json') -Force
+$ParakeetSelection = Join-Path $RepoRoot 'client-windows/models/selected-parakeet-qwen.json'
+if (Test-Path -LiteralPath $ParakeetSelection -PathType Leaf) {
+    Copy-Item -LiteralPath $ParakeetSelection -Destination (Join-Path $Payload 'models/selected-parakeet-qwen.json') -Force
 }
 Copy-Item -LiteralPath $CleanupPath -Destination (Join-Path $Payload 'cleanup.yaml') -Force
 # Models are downloaded on demand on first app launch via ModelProvisioner;

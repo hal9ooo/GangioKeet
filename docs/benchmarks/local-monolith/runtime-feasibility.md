@@ -59,4 +59,4 @@ questa mediana con la singola prima inferenza della tabella.
 
 I JSON grezzi rimangono in `reports/local-monolith/` (ignorato da Git).
 Test e baseline sono riproducibili dal runner C# e da
-`scripts/stt_eval_windows_baseline.py`; nessun runtime Python entra nell'app.
+`scripts/eval_local_monolith.ps1` e dal runner C# `GangioKeet.Eval`; nessun runtime Python entra nell'app.

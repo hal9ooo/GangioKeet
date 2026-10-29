@@ -1,4 +1,4 @@
-# Ambiente di valutazione Windows (niente MLX/server).
+# Ambiente di valutazione Windows.
 # python -m venv .venv
 # .venv\Scripts\python -m pip install -r scripts/stt_eval_requirements.txt
 numpy

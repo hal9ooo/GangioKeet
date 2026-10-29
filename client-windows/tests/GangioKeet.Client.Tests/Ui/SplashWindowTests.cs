@@ -31,7 +31,6 @@ public sealed class SplashWindowTests
     public void Payoff_MentionsLocalGpusWithoutMacs()
     {
         Assert.Equal("A one-user project putting local GPUs to work.", SplashWindow.Payoff);
-        Assert.DoesNotContain("Mac", SplashWindow.Payoff, StringComparison.OrdinalIgnoreCase);
     }
 
     private static Exception? RunOnStaThread(Action action)
