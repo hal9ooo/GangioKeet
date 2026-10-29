@@ -3,8 +3,8 @@
 Windows push-to-talk dictation client with local ASR and local LLM cleanup. It
 captures WASAPI audio, transcribes and cleans it in-process, and pastes the text
 into the foreground app. Caps Lock push-to-talk (Wispr Flow style) or F8,
-clipboard-preserving paste, explicit recovery of the last failed dictation, and
-automatic media pause/resume while dictating.
+clipboard-preserving paste, explicit recovery of a failed dictation, an
+always-copyable last result, and automatic media pause/resume while dictating.
 
 - Target: **Windows 11** (Windows 10 not certified).
 - Stack: C# / .NET 10, WPF, NAudio 3.3, YamlDotNet 17, Hardcodet.NotifyIcon.Wpf 2.
@@ -105,9 +105,20 @@ never played on release.
 
 ## Recovery
 
-One slot in RAM, 600 s expiry. From the tray: retry the last dictation (sends
-the buffered PCM to the active local backend again), copy the last text, or
-discard the recovery.
+One failure slot in RAM, 600 s expiry, plus the last result for copy. From the
+tray:
+
+- **Riprova ultima dettatura** sends the buffered PCM to the active local
+  backend again; if only the text is available it copies it. Enabled when a
+  failed dictation is recoverable.
+- **Copia ultimo testo** copies the recovered text, or the last successful
+  result, without pasting; enabled after any dictation with text.
+- **Scarta recupero** clears the failure slot; enabled only when a failure is
+  present.
+
+If the target window disappears or loses focus during paste, the result is
+offered to recovery instead of being dropped. A successful paste keeps the last
+text copyable for the rest of the session, so a focus change cannot lose it.
 
 ## Settings
 
@@ -155,7 +166,7 @@ src/GangioKeet.Client/
   Paste/          clipboard preservation and input simulation
   Platform/       runtime, model provisioner, GSMTC media pause, logging
   Protocol/       dictation DTOs and in-RAM telemetry
-  Recovery/       last-failure slot
+  Recovery/       last-failure slot and last-result retention
   Ui/             pill, settings, splash, tray
 
 tests/GangioKeet.Client.Tests/

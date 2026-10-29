@@ -22,6 +22,8 @@
 > **Status:** works on my machine. There is exactly one known user. If you are
 > not me, you are an early adopter, a mistake, or a very bored person.
 
+> **Splash payoff:** *A one-user project putting local GPUs to work.*
+
 GangioKeet is a personal Windows dictation client. Speech-to-text and the
 optional LLM cleanup run in the same process: WASAPI microphone → local ASR →
 local cleaner → clipboard-preserving paste. Nothing leaves the machine.
@@ -38,8 +40,12 @@ local cleaner → clipboard-preserving paste. Nothing leaves the machine.
   GangioKeet are resumed. Always on, no setting.
 - **Context-aware**: `code`, `terminal`, `chat`, `email`, and `document`
   profiles chosen from the active app and window title, with browser rules.
-- **Quality of life**: floating pill, tray menu, microphone picker, last
-  dictation recovery, and clipboard-preserving paste.
+- **Quality of life**: floating pill, tray menu, microphone picker, always
+  copyable last dictation, and clipboard-preserving paste.
+- **Recovery**: if the target window disappears or loses focus during paste, the
+  text is kept in RAM and can be copied from the tray; a failed dictation can
+  also be retried from its buffered audio. The last successful text stays
+  copyable for the session.
 - **Privacy by default**: content-free logs, no on-disk history; benchmark
   recording is opt-in and stored under `%LOCALAPPDATA%\GangioKeet\recordings`.
 
@@ -103,9 +109,12 @@ The client starts in the tray with no main window. On first run it reads
 or verifies the missing model artifacts. Wait for the tray state to become
 ready, then hold **Caps Lock** and speak.
 
-The tray menu has the microphone picker, the last-dictation recovery actions,
-the settings window, and the exit command. The settings window switches between
-the two local stacks and toggles benchmark recording; both apply immediately.
+The tray menu has the microphone picker, the last-dictation actions, the
+settings window, and the exit command. **Copia ultimo testo** is available after
+any dictation with text, including a successful paste; **Riprova** and
+**Scarta recupero** are enabled only when there is a failed dictation to
+recover. The settings window switches between the two local stacks and toggles
+benchmark recording; both apply immediately.
 
 ## Configuration
 
@@ -154,7 +163,7 @@ them and can switch stacks without restarting.
 ## Privacy and security
 
 - **No network**: the runtime opens no HTTP listener and sends no audio or text
-  to a remote service.
+  over the network.
 - **No history by default**: audio and transcripts live in RAM. If
   `recording.enabled` is on, completed local dictations are written under
   `%LOCALAPPDATA%\GangioKeet\recordings` with empty human references.
@@ -183,8 +192,8 @@ dotnet test client-windows\GangioKeet.Client.sln
 ```
 
 The client tests cover the controller lifecycle, media pause/resume ordering,
-configuration compatibility, hotkeys, audio conversion, paste, recording, and
-the two-stack switch.
+configuration compatibility, hotkeys, audio conversion, paste, recording,
+recovery, and the two-stack switch.
 
 Offline evaluation:
 
