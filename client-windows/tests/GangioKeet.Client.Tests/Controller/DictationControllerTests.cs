@@ -10,6 +10,7 @@ using GangioKeet.Client.Paste;
 using GangioKeet.Client.Protocol;
 using GangioKeet.Client.Recovery;
 using GangioKeet.Client.Tests.Fakes;
+using GangioKeet.Client.Ui;
 using Microsoft.Extensions.Time.Testing;
 using Xunit;
 
@@ -197,6 +198,22 @@ public sealed class DictationControllerTests
 
         Assert.Equal(0, h.Clipboard.SetTextCalls);
         Assert.Equal(ClientState.Idle, h.Controller.State);
+    }
+
+    [Fact]
+    public async Task SuccessfulResult_CanBeCopiedAfterPaste()
+    {
+        Harness h = new();
+        FakeTurn turn = h.Backend.EnqueueTurn();
+
+        h.Controller.Start();
+        await WaitUntilAsync(() => h.Controller.State == ClientState.Recording);
+        turn.PublishResult("testo finale");
+        await WaitUntilAsync(() => h.Controller.State == ClientState.Idle && h.Input.Combos.Count > 0);
+
+        Assert.True(h.Controller.HasLastText);
+        await h.Controller.CopyLastTextAsync(CancellationToken.None);
+        Assert.Equal("testo finale", h.Clipboard.Text);
     }
 
     [Fact]
@@ -435,6 +452,27 @@ public sealed class DictationControllerTests
     }
 
     [Fact]
+    public async Task FocusLostDuringPaste_OffersCopyableRecovery()
+    {
+        Harness h = new();
+        FakeTurn turn = h.Backend.EnqueueTurn();
+
+        h.Controller.Start();
+        await WaitUntilAsync(() => h.Controller.State == ClientState.Recording);
+
+        h.Foreground.Window = new ForegroundWindowInfo(0x999, 43, "other.exe", "Altra finestra");
+        turn.PublishResult("testo recuperabile");
+
+        await WaitUntilAsync(() => h.Recovery.GetCurrent() is not null);
+
+        RecoveryItem item = h.Recovery.GetCurrent()!;
+        Assert.Equal("focus_lost", item.FailureCode);
+        Assert.Equal("testo recuperabile", item.Result!.FinalText);
+        Assert.True(RecoveryMenuPolicy.CanCopy(hasText: true));
+        Assert.True(RecoveryMenuPolicy.CanDiscard(hasRecovery: true));
+    }
+
+    [Fact]
     public async Task Start_ShowsAvvioInsteadOfConnessione()
     {
         Harness h = new();
@@ -484,6 +522,7 @@ public sealed class DictationControllerTests
         public FakeTimeProvider Time { get; } = new();
         public FakeClipboardService Clipboard { get; } = new();
         public FakeInputSimulator Input { get; } = new();
+        public FakeForegroundWindowService Foreground { get; } = new() { Window = Window };
         public RecoveryStore Recovery { get; }
         public TelemetryStore Telemetry { get; } = new();
         public FakeBackend Backend { get; } = new();
@@ -509,7 +548,7 @@ public sealed class DictationControllerTests
             PasteService paste = new(
                 Clipboard,
                 Input,
-                new FakeForegroundWindowService(),
+                Foreground,
                 new FakeElevationChecker(),
                 new InlinePasteDispatcher(),
                 FastPasteConfig,
@@ -531,7 +570,7 @@ public sealed class DictationControllerTests
                 backend,
                 paste,
                 Recovery,
-                new FakeForegroundWindowService { Window = Window },
+                Foreground,
                 elevation,
                 Pill,
                 Sound,

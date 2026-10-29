@@ -46,6 +46,7 @@ public sealed class DictationController : IAsyncDisposable
     private bool _captureStarted;
     private bool _connected;
     private ForegroundWindowInfo? _target;
+    private ResultMessage? _lastResult;
     private DictationProfile _profile;
     private string _wireProfile = "default";
     private ClientState _state = ClientState.Idle;
@@ -89,6 +90,7 @@ public sealed class DictationController : IAsyncDisposable
 
     public ClientState State => _state;
     public DictationProfile CurrentProfile => _profile;
+    public bool HasLastText => Volatile.Read(ref _lastResult) is not null;
 
     public IDictationBackend CurrentBackend
     {
@@ -307,10 +309,18 @@ public sealed class DictationController : IAsyncDisposable
     public async Task CopyLastTextAsync(CancellationToken ct)
     {
         RecoveryItem? item = _recovery.GetCurrent();
-        if (item?.Result is null) return;
+        if (item?.Result is not null)
+        {
+            await CopyTextAsync(item.Result.FinalText, ct).ConfigureAwait(false);
+            _recovery.RemoveIfCurrent(item.Id);
+            return;
+        }
 
-        await CopyTextAsync(item.Result.FinalText, ct).ConfigureAwait(false);
-        _recovery.RemoveIfCurrent(item.Id);
+        ResultMessage? last = Volatile.Read(ref _lastResult);
+        if (last is not null)
+        {
+            await CopyTextAsync(last.FinalText, ct).ConfigureAwait(false);
+        }
     }
 
     public void DiscardLast()
@@ -505,6 +515,8 @@ public sealed class DictationController : IAsyncDisposable
             _ = HidePillAfterAsync(TimeSpan.FromMilliseconds(800), generation);
             return;
         }
+
+        Volatile.Write(ref _lastResult, result);
 
         if (result.Warnings.Count > 0)
         {

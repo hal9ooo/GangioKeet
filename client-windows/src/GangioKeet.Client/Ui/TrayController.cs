@@ -251,7 +251,9 @@ public sealed class TrayController : IDisposable
 
     private void UpdateRecoveryMenu()
     {
-        bool hasRecovery = _recovery.GetCurrent() is not null;
+        RecoveryItem? item = _recovery.GetCurrent();
+        bool hasRecovery = item is not null;
+        bool hasText = item?.Result is not null || _controller.HasLastText;
         bool isActive = _controller.State != ClientState.Idle;
 
         if (_tray.ContextMenu?.Items is not { Count: > 2 }) return;
@@ -263,7 +265,7 @@ public sealed class TrayController : IDisposable
 
         if (_tray.ContextMenu.Items[1] is System.Windows.Controls.MenuItem copy)
         {
-            copy.IsEnabled = RecoveryMenuPolicy.CanCopy(hasRecovery);
+            copy.IsEnabled = RecoveryMenuPolicy.CanCopy(hasText);
         }
 
         if (_tray.ContextMenu.Items[2] is System.Windows.Controls.MenuItem discard)
@@ -275,14 +277,15 @@ public sealed class TrayController : IDisposable
 
 /// <summary>
 /// Policy pura di abilitazione delle voci tray: testabile senza WPF.
-/// Il retry è disabilitato durante una sessione attiva; copia e scarta restano
-/// disponibili finché esiste un recupero.
+/// Il retry è disabilitato durante una sessione attiva; copia resta disponibile
+/// finché c'è un testo (recupero o ultima dettatura riuscita), scarta richiede
+/// un recupero.
 /// </summary>
 public static class RecoveryMenuPolicy
 {
     public static bool CanRetry(bool hasRecovery, bool isActive) => hasRecovery && !isActive;
 
-    public static bool CanCopy(bool hasRecovery) => hasRecovery;
+    public static bool CanCopy(bool hasText) => hasText;
 
     public static bool CanDiscard(bool hasRecovery) => hasRecovery;
 }

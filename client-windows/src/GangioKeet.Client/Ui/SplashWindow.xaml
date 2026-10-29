@@ -24,20 +24,6 @@
         </Border>
 
         <Border VerticalAlignment="Bottom"
-                Margin="16,0,16,14"
-                Padding="12,6"
-                Background="#B3121212"
-                CornerRadius="6"
-                HorizontalAlignment="Center">
-            <TextBlock Text="A one-user project putting local GPUs to work."
-                       Foreground="#E0E0E0"
-                       FontSize="12"
-                       FontFamily="Segoe UI"
-                       FontWeight="Medium"
-                       HorizontalAlignment="Center" />
-        </Border>
-
-        <Border VerticalAlignment="Bottom"
                 Height="3"
                 Background="#33FFFFFF"
                 CornerRadius="0,0,10,10" />

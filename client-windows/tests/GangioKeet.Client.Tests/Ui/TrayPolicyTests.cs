@@ -18,9 +18,16 @@ public sealed class TrayPolicyTests
     [Theory]
     [InlineData(false, false)]
     [InlineData(true, true)]
-    public void CopyAndDiscard_RequireOnlyARecoveryItem(bool hasRecovery, bool expected)
+    public void Copy_RequiresAnyLastText(bool hasText, bool expected)
     {
-        Assert.Equal(expected, RecoveryMenuPolicy.CanCopy(hasRecovery));
+        Assert.Equal(expected, RecoveryMenuPolicy.CanCopy(hasText));
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public void Discard_RequiresARecoveryItem(bool hasRecovery, bool expected)
+    {
         Assert.Equal(expected, RecoveryMenuPolicy.CanDiscard(hasRecovery));
     }
 }
