@@ -125,9 +125,28 @@ internal sealed class WindowsMediaPlaybackPause : IMediaPlaybackPause
                 _paused.Clear();
             }
 
+            HashSet<object>? alive = null;
+            try
+            {
+                using CancellationTokenSource probe = new(TimeSpan.FromMilliseconds(250));
+                IReadOnlyList<IMediaSessionControl> current =
+                    await _sessions.GetSessionsAsync(probe.Token).ConfigureAwait(false);
+                alive = new HashSet<object>(ReferenceEqualityComparer.Instance);
+                foreach (IMediaSessionControl session in current)
+                {
+                    alive.Add(session.NativeIdentity);
+                }
+            }
+            catch (Exception)
+            {
+                // Se il manager non risponde, proviamo comunque le sessioni registrate.
+            }
+
             int resumed = 0;
             foreach (IMediaSessionControl session in snapshot)
             {
+                if (alive is not null && !alive.Contains(session.NativeIdentity)) continue;
+
                 try
                 {
                     if (session.PlaybackStatus == MediaSessionPlaybackStatus.Paused
@@ -171,7 +190,22 @@ internal sealed class WindowsMediaPlaybackPause : IMediaPlaybackPause
         }
         catch (OperationCanceledException)
         {
-            // Il budget è scaduto: la sessione non è registrata.
+            // La pausa può essere stata applicata anche se l'attesa è stata annullata:
+            // registrala per non lasciare il media bloccato in pausa.
+            try
+            {
+                if (session.PlaybackStatus == MediaSessionPlaybackStatus.Paused)
+                {
+                    lock (_paused)
+                    {
+                        _paused.Add(session);
+                    }
+                }
+            }
+            catch (Exception)
+            {
+                // Sessione chiusa durante l'annullamento.
+            }
         }
         catch (Exception)
         {
@@ -198,6 +232,7 @@ internal sealed class WindowsMediaSessionControl(GlobalSystemMediaTransportContr
     : IMediaSessionControl
 {
     public string SourceAppUserModelId => session.SourceAppUserModelId;
+    public object NativeIdentity => session;
 
     public MediaSessionPlaybackStatus PlaybackStatus => session.GetPlaybackInfo().PlaybackStatus switch
     {

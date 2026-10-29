@@ -124,12 +124,47 @@ public sealed class WindowsMediaPlaybackPauseTests
 
         Task pause = sut.PauseAsync(CancellationToken.None);
         await Task.Delay(20);
-        await sut.ResumeAsync();
+        Task resume = sut.ResumeAsync();
         manager.Gate.TrySetResult();
+        await resume;
         await pause;
 
         Assert.False(sut.HasPausedSessions);
         if (session.PauseCalls == 1) Assert.Equal(1, session.PlayCalls);
+    }
+
+    [Fact]
+    public async Task PauseAsync_CancelledAfterSessionPaused_StillRegistersForResume()
+    {
+        FakeSessionControl session = new("spotify.exe", MediaSessionPlaybackStatus.Playing)
+        {
+            PauseGate = new TaskCompletionSource(),
+            PauseDespiteCancellation = true,
+        };
+        WindowsMediaPlaybackPause sut = new(
+            new FakeSessionManager(session),
+            pauseBudget: TimeSpan.FromMilliseconds(50));
+
+        await sut.PauseAsync(CancellationToken.None);
+
+        Assert.True(sut.HasPausedSessions);
+        await sut.ResumeAsync();
+        Assert.Equal(1, session.PlayCalls);
+    }
+
+    [Fact]
+    public async Task ResumeAsync_SkipsSessionNoLongerPresentInManager()
+    {
+        FakeSessionControl session = new("spotify.exe", MediaSessionPlaybackStatus.Playing);
+        FakeSessionManager manager = new(session);
+        WindowsMediaPlaybackPause sut = new(manager, pauseBudget: TimeSpan.FromMilliseconds(500));
+
+        await sut.PauseAsync(CancellationToken.None);
+        manager.Hidden = true;
+        await sut.ResumeAsync();
+
+        Assert.Equal(0, session.PlayCalls);
+        Assert.False(sut.HasPausedSessions);
     }
 
     private static WindowsMediaPlaybackPause Create(params FakeSessionControl[] sessions) =>
@@ -138,28 +173,45 @@ public sealed class WindowsMediaPlaybackPauseTests
     private sealed class FakeSessionManager(params FakeSessionControl[] sessions) : IMediaSessionManager
     {
         public TaskCompletionSource? Gate { get; set; }
+        public bool Hidden { get; set; }
 
         public async Task<IReadOnlyList<IMediaSessionControl>> GetSessionsAsync(CancellationToken ct)
         {
             if (Gate is not null) await Gate.Task.WaitAsync(ct);
-            return sessions;
+            return Hidden ? [] : sessions;
         }
     }
 
     private sealed class FakeSessionControl(string aumid, MediaSessionPlaybackStatus status) : IMediaSessionControl
     {
         public string SourceAppUserModelId { get; } = aumid;
+        public object NativeIdentity => this;
         public MediaSessionPlaybackStatus Status { get; set; } = status;
         public MediaSessionPlaybackStatus PlaybackStatus => Status;
         public bool PauseResult { get; set; } = true;
+        public TaskCompletionSource? PauseGate { get; set; }
+        public bool PauseDespiteCancellation { get; set; }
         public int PauseCalls { get; private set; }
         public int PlayCalls { get; private set; }
 
-        public Task<bool> TryPauseAsync(CancellationToken ct)
+        public async Task<bool> TryPauseAsync(CancellationToken ct)
         {
             PauseCalls++;
+            if (PauseGate is not null)
+            {
+                try
+                {
+                    await PauseGate.Task.WaitAsync(ct);
+                }
+                catch (OperationCanceledException)
+                {
+                    if (PauseDespiteCancellation) Status = MediaSessionPlaybackStatus.Paused;
+                    throw;
+                }
+            }
+
             if (PauseResult) Status = MediaSessionPlaybackStatus.Paused;
-            return Task.FromResult(PauseResult);
+            return PauseResult;
         }
 
         public Task<bool> TryPlayAsync(CancellationToken ct)

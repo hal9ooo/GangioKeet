@@ -119,6 +119,7 @@ internal sealed class FakePillView : IPillView
 {
     public PillState? LastState { get; private set; }
     public string? LastMessage { get; private set; }
+    public List<string?> Messages { get; } = [];
     public DictationProfile? LastProfile { get; private set; }
     public double LastLevel { get; private set; }
     public int HideCalls { get; private set; }
@@ -130,6 +131,7 @@ internal sealed class FakePillView : IPillView
         ShowCalls++;
         LastState = state;
         LastMessage = message;
+        Messages.Add(message);
         LastProfile = profile;
     }
 

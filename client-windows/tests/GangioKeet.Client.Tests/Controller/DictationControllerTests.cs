@@ -430,6 +430,21 @@ public sealed class DictationControllerTests
 
         Assert.Equal(0, h.Capture.StartCalls);
         Assert.True(h.Media.ResumeCalls >= 1);
+        Assert.Equal(ClientState.Idle, h.Controller.State);
+        Assert.True(h.Pill.HideCalls >= 1);
+    }
+
+    [Fact]
+    public async Task Start_ShowsAvvioInsteadOfConnessione()
+    {
+        Harness h = new();
+        h.Backend.EnqueueTurn();
+
+        h.Controller.Start();
+        await WaitUntilAsync(() => h.Capture.StartCalls == 1);
+
+        Assert.Contains("Avvio…", h.Pill.Messages);
+        Assert.DoesNotContain("Connessione…", h.Pill.Messages);
     }
 
     [Fact]

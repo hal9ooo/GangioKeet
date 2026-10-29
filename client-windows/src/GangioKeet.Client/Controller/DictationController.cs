@@ -12,8 +12,8 @@ namespace GangioKeet.Client.Controller;
 /// Orchestratore della dettatura: gestisce l'intero ciclo di vita da hotkey a paste.
 /// Usa un generation ID per invalidare tentativi precedenti: Esc o errori irreversibili
 /// incrementano la generazione e qualsiasi completamento di una generazione precedente
-/// viene ignorato. Operazioni asincrone lunghe (rete, cattura) sono avviate e possedute
-/// dal controller, mai awaited nel loop di eventi.
+/// viene ignorato. Operazioni asincrone lunghe (cattura e inferenza locale) sono
+/// avviate e possedute dal controller, mai awaited nel loop di eventi.
 /// </summary>
 public sealed class DictationController : IAsyncDisposable
 {
@@ -187,12 +187,14 @@ public sealed class DictationController : IAsyncDisposable
     /// </summary>
     public async Task StopAsync(CancellationToken ct)
     {
-        IActiveDictationTurn? turn = _turn;
-        if (turn is null) return;
         if (_state is not (ClientState.Recording or ClientState.Connecting)) return;
 
         _stopRequested = true;
         _turnTiming?.MarkReleased(_time.GetTimestamp());
+
+        IActiveDictationTurn? turn = _turn;
+        if (turn is null) return;
+
         try
         {
             await StopCaptureAsync(ct).ConfigureAwait(false);
@@ -354,12 +356,12 @@ public sealed class DictationController : IAsyncDisposable
 
     private async Task RunDictationAsync(int generation, ForegroundWindowInfo target)
     {
-        _pill.Show(PillState.Arming, "Connessione…", _profile);
+        _pill.Show(PillState.Arming, "Avvio…", _profile);
         _audioBuffer.Clear();
         ClearPendingAudio();
 
-        // L'endpoint è fissato qui, una volta per dettatura: se il monitor ne
-        // elegge un altro durante il turno, il cambio vale dal turno successivo.
+        // Il turno è fissato qui, una volta per dettatura: un cambio stack
+        // vale dal turno successivo.
         _turnStarted = _time.GetTimestamp();
         _turnTiming = new TurnTiming(_time);
         using CancellationTokenSource pasteAbort = new();
@@ -379,11 +381,19 @@ public sealed class DictationController : IAsyncDisposable
             long connectStarted = _time.GetTimestamp();
             Task<TurnStartOutcome> startTask = turn.StartAsync(CancellationToken.None);
 
-            if (_stopRequested) return;
+            if (_stopRequested)
+            {
+                _pill.Hide();
+                TransitionToIdle();
+                return;
+            }
+
             await PauseMediaAsync().ConfigureAwait(false);
             if (_stopRequested)
             {
                 ResumeMediaInBackground();
+                _pill.Hide();
+                TransitionToIdle();
                 return;
             }
 

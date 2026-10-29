@@ -17,6 +17,7 @@ internal enum MediaSessionPlaybackStatus
 internal interface IMediaSessionControl
 {
     string SourceAppUserModelId { get; }
+    object NativeIdentity { get; }
     MediaSessionPlaybackStatus PlaybackStatus { get; }
     Task<bool> TryPauseAsync(CancellationToken ct);
     Task<bool> TryPlayAsync(CancellationToken ct);
