@@ -6,32 +6,54 @@ on:
   pull_request:
   schedule:
     - cron: "0 6 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: read
-  pull-requests: write
+
+concurrency:
+  group: security-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   gitleaks:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      # actions/checkout v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
+          persist-credentials: false
 
-      - uses: gitleaks/gitleaks-action@v2
+      # gitleaks/gitleaks-action v3
+      - uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   dotnet-vulnerable:
     runs-on: windows-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
-      - uses: actions/checkout@v4
+      # actions/checkout v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-dotnet@v4
+      # actions/setup-dotnet v6
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68
         with:
           dotnet-version: "10.0.x"
 
       - run: dotnet restore client-windows/src/GangioKeet.Client/GangioKeet.Client.csproj
 
+      - run: dotnet restore client-windows/src/GangioKeet.Inference/GangioKeet.Inference.csproj
+
       - run: dotnet list client-windows/src/GangioKeet.Client/GangioKeet.Client.csproj package --vulnerable --include-transitive
+
+      - run: dotnet list client-windows/src/GangioKeet.Inference/GangioKeet.Inference.csproj package --vulnerable --include-transitive

@@ -11,6 +11,13 @@ $ErrorActionPreference = 'Stop'
 $RepoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $SelectionPath = [IO.Path]::GetFullPath((Join-Path $RepoRoot $Selection))
 $Payload = [IO.Path]::GetFullPath((Join-Path $RepoRoot $OutputDirectory))
+$RepoRootNormalized = $RepoRoot.TrimEnd([char[]]'\/')
+$PayloadNormalized = $Payload.TrimEnd([char[]]'\/')
+$RepoPrefix = $RepoRootNormalized + [IO.Path]::DirectorySeparatorChar
+if ($PayloadNormalized -eq $RepoRootNormalized -or
+        -not $Payload.StartsWith($RepoPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "OutputDirectory must resolve inside the repository: $Payload"
+}
 $LockPath = Join-Path $RepoRoot 'client-windows/native/runtime-lock.json'
 $CleanupPath = Join-Path $RepoRoot 'client-windows/cleanup.example.yaml'
 $TranscribeSource = Join-Path $RepoRoot 'client-windows/native/build/transcribe-0.4.1/payload/transcribe-native-windows-x86_64-cpu-vulkan'
@@ -89,13 +96,17 @@ New-Item -ItemType Directory -Path (Join-Path $Payload 'licenses/llama') -Force 
 New-Item -ItemType Directory -Path (Join-Path $Payload 'licenses/dotnet') -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $Payload 'licenses/msvc') -Force | Out-Null
 New-Item -ItemType Directory -Path (Join-Path $Payload 'licenses/models') -Force | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $Payload 'licenses/managed') -Force | Out-Null
 Copy-Item -LiteralPath (Join-Path $LicenseSource 'llama.cpp.LICENSE.txt') -Destination (Join-Path $Payload 'licenses/llama/llama.cpp.LICENSE.txt') -Force
 Copy-Item -LiteralPath (Join-Path $LicenseSource 'LLamaSharp.LICENSE.txt') -Destination (Join-Path $Payload 'licenses/llama/LLamaSharp.LICENSE.txt') -Force
 Copy-Item -LiteralPath (Join-Path $LicenseSource 'dotnet.LICENSE.txt') -Destination (Join-Path $Payload 'licenses/dotnet/LICENSE.txt') -Force
 Copy-Item -LiteralPath (Join-Path $LicenseSource 'dotnet.ThirdPartyNotices.txt') -Destination (Join-Path $Payload 'licenses/dotnet/ThirdPartyNotices.txt') -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'client-windows/installer/msvc/SOURCE.txt') -Destination (Join-Path $Payload 'licenses/msvc/SOURCE.txt') -Force
+Copy-Item -LiteralPath (Join-Path $LicenseSource 'msvc/LICENSE.txt') -Destination (Join-Path $Payload 'licenses/msvc/LICENSE.txt') -Force
 Copy-Item -LiteralPath (Join-Path $LicenseSource 'models/APACHE-2.0.txt') -Destination (Join-Path $Payload 'licenses/models/APACHE-2.0.txt') -Force
+Copy-Item -LiteralPath (Join-Path $LicenseSource 'models/CC-BY-4.0.txt') -Destination (Join-Path $Payload 'licenses/models/CC-BY-4.0.txt') -Force
 Copy-Item -LiteralPath (Join-Path $LicenseSource 'models/MODELS.txt') -Destination (Join-Path $Payload 'licenses/models/MODELS.txt') -Force
+Copy-Item -Path (Join-Path $LicenseSource 'managed/*') -Destination (Join-Path $Payload 'licenses/managed') -Force
 
 & (Join-Path $PSScriptRoot 'verify_windows_package.ps1') -Payload $Payload -Selection $SelectionPath `
     -RuntimeLock $LockPath -CleanupPolicy $CleanupPath

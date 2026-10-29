@@ -41,7 +41,7 @@ Strict schema: unknown keys are rejected. The file lives in
 | Section | Main entries |
 |---|---|
 | `inference` | `model_selection_path`, `cleanup_policy_path`, `backend` (`vulkan`/`cpu`) |
-| `recording` | `enabled`, `directory`, `store_context` |
+| `recording` | `enabled`, `directory` |
 | `hotkey` | mode (`push_to_talk`/`toggle`), key (`capslock` default, f1–f24, mouse_x1), abort_key (escape), double_tap_max_ms 250, double_tap_gap_ms 350 |
 | `audio` | input_device (WASAPI endpoint ID or `null` for the default), sample_rate 16000, channels 1, chunk_duration_ms 100, ready_timeout_seconds 3 |
 | `paste` | default_combo `ctrl+v`, terminal_combo `ctrl+shift+v`, terminal_apps, clipboard_restore_delay_ms 200, refocus_before_paste |
@@ -53,7 +53,12 @@ Strict schema: unknown keys are rejected. The file lives in
 Legacy keys (`server`, `endpoints`, `inference.mode`) are removed from the
 YAML representation **in memory** before deserialization. An existing file keeps
 loading as a local configuration and is not rewritten; every other unknown key
-is still rejected.
+is still rejected. `recording.store_context` is accepted for compatibility but
+has no effect: selected text is never stored.
+
+On first run or after a stack switch, missing model files are downloaded from
+`huggingface.co` over HTTPS. No audio, transcript, window title, or telemetry is
+sent; the request exposes the client IP and the requested model/revision.
 
 ## The two local stacks
 

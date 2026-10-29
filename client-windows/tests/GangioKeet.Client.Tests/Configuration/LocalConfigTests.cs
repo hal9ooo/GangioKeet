@@ -35,11 +35,11 @@ inference:
   mode: remote
   model_selection_path: "models/selected.json"
 server:
-  host: "192.168.1.10"
+  host: "192.0.2.10"
   port: 8000
 endpoints:
   - name: Casa
-    host: "192.168.1.10"
+    host: "192.0.2.10"
     port: 8000
 """);
 
@@ -76,7 +76,7 @@ inference:
     [Fact]
     public void LoadingLegacyFile_DoesNotRewriteIt()
     {
-        string path = Yaml("server:\n  host: \"192.168.1.10\"\ninference:\n  mode: remote\n");
+        string path = Yaml("server:\n  host: \"192.0.2.10\"\ninference:\n  mode: remote\n");
         string before = File.ReadAllText(path);
 
         _ = ConfigLoader.Load(path);

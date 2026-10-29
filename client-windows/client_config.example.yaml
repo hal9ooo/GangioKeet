@@ -11,7 +11,6 @@ inference:
 recording:
   enabled: false                     # only completed dictations, not ambient recording
   directory: "recordings"            # relative to the per-user GangioKeet data directory
-  store_context: false               # never stores selected text
 
 hotkey:
   mode: "push_to_talk"                # push_to_talk | toggle

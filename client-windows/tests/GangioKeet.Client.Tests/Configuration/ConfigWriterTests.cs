@@ -14,7 +14,7 @@ audio:
   input_device: null   # microfono
   sample_rate: 16000
 server:
-  host: "192.168.1.62"
+  host: "192.0.2.62"
 """);
 
         Assert.True(ConfigWriter.SetAudioInputDevice(path, "mic-123"));
@@ -23,7 +23,7 @@ server:
         Assert.Contains("# commento iniziale", text);
         Assert.Contains("input_device: \"mic-123\"   # microfono", text);
         Assert.Contains("sample_rate: 16000", text);
-        Assert.Contains("host: \"192.168.1.62\"", text);
+        Assert.Contains("host: \"192.0.2.62\"", text);
     }
 
     [Fact]

@@ -1,0 +1,12 @@
+Microsoft Visual C++ Redistributable license terms
+==================================================
+
+The four app-local DLLs listed in SOURCE.txt are unmodified, signed Microsoft
+binaries redistributed under the Microsoft Visual C++ Redistributable license
+terms:
+
+https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist
+
+Consult the current Microsoft terms before redistributing the package. The
+files are installed app-local; no machine-wide runtime installation or
+administrator elevation is required.

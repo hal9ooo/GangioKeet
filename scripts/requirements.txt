@@ -1,0 +1,5 @@
+# Ambiente di valutazione Windows.
+# python -m venv .venv
+# .venv\Scripts\python -m pip install -r scripts/requirements.txt
+numpy
+pytest

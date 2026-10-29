@@ -7,6 +7,7 @@ Idempotent: skips the download when every required file is already present.
 """
 
 import argparse
+import hashlib
 import sys
 import tarfile
 import urllib.request
@@ -17,6 +18,8 @@ URL = (
     "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models/"
     f"{NAME}.tar.bz2"
 )
+# SHA-256 of the pinned GitHub release asset. Update this together with URL.
+SHA256 = "5793d0fd397c5778d2cf2126994d58e9d56b1be7c04d13c7a15bb1b4eafb16bf"
 REQUIRED = (
     "encoder.int8.onnx",
     "decoder.int8.onnx",
@@ -25,10 +28,26 @@ REQUIRED = (
 )
 
 
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _verify_archive(path: Path) -> None:
+    actual = _sha256(path)
+    if actual != SHA256:
+        raise ValueError(
+            f"archive hash mismatch for {path}: expected {SHA256}, got {actual}"
+        )
+
+
 def _download(url: str, target: Path) -> None:
     partial = target.with_suffix(target.suffix + ".part")
     print(f"downloading {url}")
-    with urllib.request.urlopen(url) as response, partial.open("wb") as out:
+    with urllib.request.urlopen(url, timeout=60) as response, partial.open("wb") as out:
         total = int(response.headers.get("Content-Length") or 0)
         done = 0
         while True:
@@ -45,6 +64,11 @@ def _download(url: str, target: Path) -> None:
                     flush=True,
                 )
     print()
+    try:
+        _verify_archive(partial)
+    except ValueError:
+        partial.unlink(missing_ok=True)
+        raise
     partial.replace(target)
 
 
@@ -68,6 +92,7 @@ def main(argv: list[str] | None = None) -> int:
     archive = dest / f"{NAME}.tar.bz2"
     if not archive.is_file():
         _download(URL, archive)
+    _verify_archive(archive)
 
     print(f"extracting {archive.name}")
     with tarfile.open(archive, "r:bz2") as tar:

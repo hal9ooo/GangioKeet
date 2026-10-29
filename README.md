@@ -26,7 +26,8 @@
 
 GangioKeet is a personal Windows dictation client. Speech-to-text and the
 optional LLM cleanup run in the same process: WASAPI microphone → local ASR →
-local cleaner → clipboard-preserving paste. Nothing leaves the machine.
+local cleaner → clipboard-preserving paste. No audio or transcript leaves the
+machine; the only network access is model provisioning from Hugging Face.
 
 ## What it does
 
@@ -88,7 +89,7 @@ The flow, in short:
 | **Runtime** | Windows 11 (Windows 10 is not certified) |
 | **Build** | .NET 10 SDK |
 | **Models** | Provisioned on demand by the client; the installer does not ship GGUF files |
-| **Evaluation (optional)** | Python 3.12 and `scripts/stt_eval_requirements.txt` |
+| **Evaluation (optional)** | Python 3.12 and `scripts/requirements.txt` |
 
 Python is only needed for the offline evaluation scripts. The runtime has no
 Python dependency.
@@ -123,7 +124,7 @@ The default path is `%APPDATA%\GangioKeet\client_config.yaml`.
 | Section | Key fields |
 |---|---|
 | `inference` | `model_selection_path`, `cleanup_policy_path`, `backend` (`vulkan` or `cpu`) |
-| `recording` | `enabled`, `directory`, `store_context` |
+| `recording` | `enabled`, `directory` |
 | `hotkey` | `mode` (`push_to_talk`/`toggle`), `key`, `abort_key`, double-tap timings |
 | `audio` | `input_device`, sample rate 16000, mono, 100 ms chunks |
 | `paste` | `default_combo`, `terminal_combo`, `terminal_apps`, clipboard delay |
@@ -162,18 +163,30 @@ them and can switch stacks without restarting.
 
 ## Privacy and security
 
-- **No network**: the runtime opens no HTTP listener and sends no audio or text
-  over the network.
+- **No audio or text over the network**: the runtime opens no HTTP listener and
+  never sends audio, transcripts, window titles, or telemetry to a service.
+- **Model provisioning is the only network access**: on first run or when you
+  switch stack, the client downloads missing model files from
+  `huggingface.co` over HTTPS. Hugging Face sees your IP address and the
+  requested model/revision; it never receives audio or text.
 - **No history by default**: audio and transcripts live in RAM. If
   `recording.enabled` is on, completed local dictations are written under
-  `%LOCALAPPDATA%\GangioKeet\recordings` with empty human references.
+  `%LOCALAPPDATA%\GangioKeet\recordings` (or the configured `recording.directory`)
+  with empty human references.
 - **Logs are content-free**: daily files in `%LOCALAPPDATA%\GangioKeet\logs\`
   contain codes and technical details, never audio, transcripts, window titles,
   or API keys.
-- **Clipboard**: the client backs up and restores the clipboard only if nobody
-  copied something else in the meantime; it does not read the clipboard or press
-  Ctrl+C.
+- **Clipboard**: the client reads text and DIB from the clipboard only to back
+  them up, and restores them only if nobody copied something else in the
+  meantime. It never inspects, logs, or transmits clipboard contents, and it
+  never presses Ctrl+C.
+- **Clipboard history**: dictated text is placed on the Windows clipboard, so
+  Windows Clipboard History or cloud clipboard may retain it if those features
+  are enabled. Disable them if you dictate sensitive material.
 - **No API keys**: there is no token handling and no credential file.
+
+`recording.store_context` is still accepted for backward compatibility, but it
+has no effect: selected text is never stored.
 
 See [SECURITY.md](SECURITY.md) for the reporting policy.
 
@@ -199,7 +212,7 @@ Offline evaluation:
 
 ```powershell
 python -m venv .venv
-.venv\Scripts\python -m pip install -r scripts\stt_eval_requirements.txt
+.venv\Scripts\python -m pip install -r scripts\requirements.txt
 .venv\Scripts\python -m pytest tests\test_stt_eval_native_report.py tests\test_stt_eval_punctuation.py tests\test_stt_eval_ingest.py tests\test_stt_eval_analyze.py tests\test_stt_eval_review.py tests\test_namespace_llama_runtime.py -q
 ```
 
@@ -234,4 +247,4 @@ because a parakeet made of sound waves was the only logical choice at 1 a.m.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

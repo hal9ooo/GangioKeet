@@ -50,5 +50,9 @@ artifacts/
 !client-windows/models/
 client-windows/models/*
 !client-windows/models/*.json
-.commandcode/taste/coding-style/taste.md
-.commandcode/taste/workflow/taste.md
+
+# Local agent/tooling state and internal notes never get committed
+.commandcode/
+.tokensave/
+docs/superpowers/
+tests/fixtures/*.pcm

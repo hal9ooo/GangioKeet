@@ -82,8 +82,13 @@ if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
 foreach ($legal in @('LICENSE', 'THIRD_PARTY_NOTICES.md',
         'licenses/llama/llama.cpp.LICENSE.txt', 'licenses/llama/LLamaSharp.LICENSE.txt',
         'licenses/dotnet/LICENSE.txt', 'licenses/dotnet/ThirdPartyNotices.txt',
-        'licenses/msvc/SOURCE.txt', 'licenses/models/APACHE-2.0.txt',
-        'licenses/models/MODELS.txt')) {
+        'licenses/msvc/SOURCE.txt', 'licenses/msvc/LICENSE.txt',
+        'licenses/models/APACHE-2.0.txt', 'licenses/models/CC-BY-4.0.txt',
+        'licenses/models/MODELS.txt',
+        'licenses/managed/NAudio.LICENSE.txt',
+        'licenses/managed/Hardcodet.NotifyIcon.Wpf.LICENSE.txt',
+        'licenses/managed/YamlDotNet.LICENSE.txt',
+        'licenses/managed/CommunityToolkit.HighPerformance.LICENSE.txt')) {
     $path = Join-Path $Root $legal
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { Add-Error "missing: $legal" }
     elseif ((Get-Item -LiteralPath $path).Length -eq 0) { Add-Error "empty: $legal" }
@@ -91,7 +96,9 @@ foreach ($legal in @('LICENSE', 'THIRD_PARTY_NOTICES.md',
 $noticesPath = Join-Path $Root 'THIRD_PARTY_NOTICES.md'
 if (Test-Path -LiteralPath $noticesPath -PathType Leaf) {
     $notices = Get-Content -LiteralPath $noticesPath -Raw
-    foreach ($token in @('Qwen3-ASR', 'Gemma 4', 'transcribe.cpp', 'LLamaSharp', 'Visual C++')) {
+    foreach ($token in @('Qwen3-ASR', 'Gemma 4', 'Parakeet', 'Qwen3-1.7B',
+            'transcribe.cpp', 'LLamaSharp', 'NAudio', 'YamlDotNet',
+            'Visual C++', 'CC-BY-4.0')) {
         if ($notices -notmatch [regex]::Escape($token)) { Add-Error "third-party notices missing: $token" }
     }
 }

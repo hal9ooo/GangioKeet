@@ -2,13 +2,17 @@
 
 GangioKeet itself is distributed under the MIT license; see `LICENSE`.
 
-The Windows package redistributes the model weights and native runtimes listed
-below. They are not part of the Git repository; `models/selected.json` and
-`native/runtime-lock.json` pin their revisions and SHA-256 hashes.
+The Windows package does **not** bundle model weights. The client downloads
+missing model files on demand from Hugging Face; `models/selected.json` and
+`models/selected-parakeet-qwen.json` pin the revisions and SHA-256 hashes of the
+files used by the two selectable stacks. Native runtimes are pinned by
+`native/runtime-lock.json`.
 
 ## Model weights
 
-### Qwen3-ASR-1.7B
+### Default stack: Qwen3-ASR-1.7B + Gemma 4 E2B-it
+
+#### Qwen3-ASR-1.7B
 
 - Source checkpoint: `Qwen/Qwen3-ASR-1.7B`, revision
   `0e0a596e3959c3f3f2ab7d443a5b6f0f4a4bba6f`.
@@ -19,7 +23,7 @@ below. They are not part of the Git repository; `models/selected.json` and
   `licenses/models/APACHE-2.0.txt`; attribution is in `licenses/models/MODELS.txt`.
 - SHA-256: `edb09c29b8f73822c639168d5ef72aa2dccdf8b4e48fc4b8518885352ff62c71`.
 
-### Gemma 4 E2B-it (QAT Q4_0)
+#### Gemma 4 E2B-it (QAT Q4_0)
 
 - Source checkpoint: `google/gemma-4-E2B-it`, artifact repository
   `google/gemma-4-E2B-it-qat-q4_0-gguf`, revision
@@ -29,6 +33,30 @@ below. They are not part of the Git repository; `models/selected.json` and
   The full Apache text ships under `licenses/models/APACHE-2.0.txt`; attribution
   is in `licenses/models/MODELS.txt`.
 - SHA-256: `fa401b55b07ee70a54c6dae3903c783a6e65064312529ea57175cb5f8dec6634`.
+
+### Alternate stack: Parakeet TDT 0.6B v3 + Qwen3-1.7B
+
+#### Parakeet TDT 0.6B v3
+
+- Source checkpoint: `nvidia/parakeet-tdt-0.6b-v3`, artifact repository
+  `handy-computer/parakeet-tdt-0.6b-v3-gguf`, revision
+  `d8d8c32cb2017c57e5307767343e97870f8a7f53`.
+- File: `parakeet_v3/parakeet-tdt-0.6b-v3-F16.gguf`.
+- License: Creative Commons Attribution 4.0 International (CC-BY-4.0),
+  <https://creativecommons.org/licenses/by/4.0/>. The full text ships under
+  `licenses/models/CC-BY-4.0.txt`; attribution is in `licenses/models/MODELS.txt`.
+- SHA-256: `d9ec7e2c39da7b4fec3e01e71e82c7f7bbe97741e08c0c054091bf3d520a41d3`.
+
+#### Qwen3-1.7B
+
+- Source checkpoint: `Qwen/Qwen3-1.7B`, artifact repository
+  `Qwen/Qwen3-1.7B-GGUF`, revision
+  `90862c4b9d2787eaed51d12237eafdfe7c5f6077`.
+- File: `qwen3_1_7b/Qwen3-1.7B-Q8_0.gguf`.
+- License: Apache License 2.0,
+  <https://www.apache.org/licenses/LICENSE-2.0>. The full text ships under
+  `licenses/models/APACHE-2.0.txt`; attribution is in `licenses/models/MODELS.txt`.
+- SHA-256: `061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a`.
 
 ## Native inference runtimes
 
@@ -52,8 +80,8 @@ below. They are not part of the Git repository; `models/selected.json` and
   transcribe.cpp ggml DLLs.
 - LLamaSharp: <https://github.com/SciSharp/LLamaSharp>, version 0.30.0,
   commit `d03b6cbca3c66357e2ed9ee9d0324f5eaeabfd4f`, MIT, copyright (c) 2025
-  SciSharp STACK. The managed assembly is rebuilt from that source with the
-  same namespace-only patch and shipped as `LLamaSharp.dll`.
+  SciSharp STACK. The managed assembly is patched from that package with the
+  same namespace-only change and shipped as `LLamaSharp.dll`.
 - The complete MIT texts ship under `licenses/llama/`.
 
 ## Managed dependencies
@@ -68,9 +96,10 @@ All are MIT-licensed:
 - Microsoft.Extensions.* packages, copyright (c) .NET Foundation and
   Contributors.
 
-Their package metadata and license files are available from the NuGet
-package sources pinned in `client-windows/src/GangioKeet.Client/GangioKeet.Client.csproj`
-and `client-windows/src/GangioKeet.Inference/GangioKeet.Inference.csproj`.
+Their full license texts ship under `licenses/managed/`; package metadata is
+available from the NuGet package sources pinned in
+`client-windows/src/GangioKeet.Client/GangioKeet.Client.csproj` and
+`client-windows/src/GangioKeet.Inference/GangioKeet.Inference.csproj`.
 
 ## .NET runtime
 
@@ -89,7 +118,7 @@ no administrator elevation.
 
 They are redistributed under the Microsoft Visual C++ Redistributable license
 terms: <https://learn.microsoft.com/cpp/windows/latest-supported-vc-redist>.
-Origin and SHA-256 hashes ship under `licenses/msvc/SOURCE.txt`.
+Origin, hashes and the license pointer ship under `licenses/msvc/`.
 
 ## FLEURS
 
@@ -99,6 +128,9 @@ revision `70bb2e84b976b7e960aa89f1c648e09c59f894dd`).
 
 FLEURS is distributed under the Creative Commons Attribution 4.0 International
 license (CC-BY-4.0): <https://creativecommons.org/licenses/by/4.0/>.
+
+Citation: Conneau et al., *FLEURS: Few-shot Learning Evaluation of Universal
+Representations of Speech*, 2022, <https://arxiv.org/abs/2205.12446>.
 
 The audio files are **not** distributed in this repository; only the manifest
 and its provenance metadata are tracked, and the FLEURS manifest is not part of

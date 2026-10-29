@@ -1,7 +1,8 @@
 # Release check: Windows local monolith
 
-Data: 2026-10-27. Questo report copre il payload e l'installer; non sostituisce
-la prova su una macchina Windows pulita, che non è stata eseguita.
+Data: 2026-10-27; aggiornato: 2026-10-29. Questo report copre il payload e
+l'installer; non sostituisce la prova su una macchina Windows pulita, che non è
+stata eseguita.
 
 ## Ambiente di build
 
@@ -33,8 +34,9 @@ la prova su una macchina Windows pulita, che non è stata eseguita.
 ## Payload
 
 - Directory: `artifacts/package`.
-- File: **542**; dimensione **7,742 GB**.
-- Modelli inclusi: solo i due file della coppia scelta.
+- File: **549**; dimensione **326.278.512 byte** (0,304 GiB).
+- Modelli: provisioning on demand; **nessun GGUF nel payload**. I file sono
+  scaricati dal client e verificati contro `models/selected.json`.
 - Runtime: `native/transcribe` (transcribe.cpp 0.4.1) e `native/llama`
   (LLamaSharp 0.30.0 patchato, namespace `lgml`). Le copie non patchate sotto
   `runtimes/` prodotte dal publish NuGet sono state rimosse.
@@ -42,12 +44,14 @@ la prova su una macchina Windows pulita, che non è stata eseguita.
   `vcruntime140.dll`, `vcruntime140_1.dll`, `vcomp140.dll`, copiati nella
   radice e nelle due directory native.
 - Licenze: `LICENSE`, `THIRD_PARTY_NOTICES.md`, `licenses/llama`,
-  `licenses/dotnet`, `licenses/msvc`, `licenses/models` (testo Apache-2.0 e
-  attribuzione dei due modelli), più le licenze già incluse in
+  `licenses/dotnet`, `licenses/msvc`, `licenses/models` (Apache-2.0,
+  CC-BY-4.0 e attribuzione delle due coppie di modelli), `licenses/managed`
+  (testi MIT di NAudio, Hardcodet.NotifyIcon.Wpf, YamlDotNet e
+  CommunityToolkit.HighPerformance), più le licenze già incluse in
   `native/transcribe/licenses`.
 - Esclusioni verificate: nessun `.py`, nessun `.pdb`, nessun
-  `GangioKeet.Eval`, nessun `tools`, nessun `candidates.json`, nessun modello
-  non selezionato, nessuna DLL nativa di inferenza fuori da
+  `GangioKeet.Eval`, nessun `tools`, nessun `candidates.json`, nessun GGUF,
+  nessuna DLL nativa di inferenza fuori da
   `native/transcribe`/`native/llama`, nessun `runtimes/`.
 
 ## Comandi eseguiti
@@ -62,44 +66,26 @@ secondo ricostruisce lo stesso payload, lo verifica e compila l'installer.
 
 ## Probe negativo
 
-Su una copia hardlink della directory temporanea è stato rimosso
-`models/qwen3_asr_1_7b/Qwen3-ASR-1.7B-F16.gguf`. `verify_windows_package.ps1`
-è terminato con exit 1 e:
-
-```
-missing: models/qwen3_asr_1_7b/Qwen3-ASR-1.7B-F16.gguf
-```
-
-La copia negativa è stata eliminata; nessun file della directory reale è stato
-toccato.
+Il probe con modello rimosso appartiene alla vecchia modalità con modelli
+inclusi e non è più applicabile: ora i GGUF non fanno parte del payload e
+`verify_windows_package.ps1` verifica layout, runtime, licenze ed esclusioni.
 
 ## Installer
 
 - Directory: `artifacts/installer`.
-- `GangioKeet-Setup-0.1.0-local.exe` più le slice
-  `GangioKeet-Setup-0.1.0-local-*.bin`.
-- Dimensione totale: **6.453.570.728 byte** (6,4536 GB / 6,01 GiB).
-- Compilazione Inno: **720,125 s**.
-- SHA-256 (il file `SHA256SUMS.txt` nella directory dell'installer contiene la
-  stessa lista):
+- `GangioKeet-Setup-0.1.0-local.exe` (nessuna slice).
+- Dimensione: **72.829.164 byte** (69,4 MiB).
+- SHA-256 (l'hash autorevole è `artifacts/installer/SHA256SUMS.txt`; il
+  `package-manifest.json` non contiene l'hash dell'installer per evitare
+  autoreferenza):
 
 | File | Byte | SHA-256 |
 |---|---:|---|
-| `GangioKeet-Setup-0.1.0-local.exe` | 2.328.092 | `5002d6c30a88ca17f8c4ed88db0105be8fc16f5add77668a1db9ba595d781d7d` |
-| `GangioKeet-Setup-0.1.0-local-1.bin` | 1.997.671.424 | `27795a2b536946854160e94eb49441965d8e6c138cb158fc20c3ba84dc3cf5fd` |
-| `GangioKeet-Setup-0.1.0-local-2.bin` | 2.000.000.000 | `631e0709223b827f4bbaf60213ba9dd708ff7cbfe14e7ea91859d4f64b2c3d4f` |
-| `GangioKeet-Setup-0.1.0-local-3.bin` | 2.000.000.000 | `c342b91f6917dac792002dec890e2084503ffc7283a6b6db33035d26f626053b` |
-| `GangioKeet-Setup-0.1.0-local-4.bin` | 453.571.212 | `3abddfb062a6657781f0bb2a0419637a29348a045e78f9b879a101b967a8d4de` |
+| `GangioKeet-Setup-0.1.0-local.exe` | 72.829.164 | `544dcec301fa2ae75a837638d58d27cb614723df7d189e49e92fa7dfeddfaab8` |
 
-- Inno Setup non può creare un singolo `Setup.exe` oltre 4,2 GB. Il payload di
-  7,742 GB supera quel limite, quindi l'installer usa il disk spanning
-  supportato da Inno: una sola procedura di installazione per utente, ma più
-  file da tenere nella stessa directory. Il setup può chiedere la slice
-  successiva durante l'installazione.
-- Compressione `zip`: i pesi GGUF sono già ad alta entropia e LZMA2 richiedeva
-  molti minuti per un guadagno limitato. La build avviene in
-  `artifacts/installer.staging`; il packager rifiuta slice vuote e sostituisce
-  l'installer precedente solo dopo una compilazione e una verifica riuscite.
+- Compressione `lzma2/max`, nessun disk spanning. La build avviene in
+  `artifacts/installer.staging`; il packager sostituisce l'installer precedente
+  solo dopo una compilazione e una verifica riuscite.
 - Installazione per utente in `%LOCALAPPDATA%\Programs\GangioKeet`, nessun
   servizio, nessun task pianificato, nessuna regola firewall.
 - Disinstallazione: rimuove i file installati; le registrazioni in
@@ -118,14 +104,14 @@ runtime patchato; non sostituisce la prova su una macchina pulita.
 
 ## Gate
 
-- `dotnet test client-windows/GangioKeet.Client.sln --no-restore`:
-  **435 passati, 20 saltati** (test opt-in reali).
-- `uv run --extra onnx pytest -m 'not integration' -q`: **420 passati,
-  14 saltati, 4 deselezionati**.
+- `dotnet test client-windows/GangioKeet.Client.sln --no-build -c Debug`:
+  **324 passati, 15 saltati** (269 Client + 55 Inference; gli skip sono test
+  opt-in reali).
+- `.venv\Scripts\python -m pytest -q`: **36 passati**.
 - Test lifecycle reale opt-in: stop normale **1.479,0 ms**; stop durante il
   caricamento nativo **3.927,7 ms**; layout del payload **1.592,9 ms**.
-- Probe negativo del packager: modello rimosso -> exit 1; `runtimes/` estraneo
-  -> exit 1.
+- Il packager rifiuta DLL native fuori dalle directory pinnate e artefatti di
+  sviluppo nel payload (`verify_windows_package.ps1`).
 
 ## Verifiche non eseguite
 

@@ -1,11 +1,14 @@
-Model weights shipped with the Windows package
-==============================================
+Model weights used by GangioKeet
+================================
 
-Both selected model artifacts are distributed under the Apache License 2.0.
-The full license text is in `APACHE-2.0.txt` in this directory.
+The installer does not bundle model weights. The client downloads the selected
+stack on demand from Hugging Face and verifies every file against the SHA-256
+recorded in the selection JSON.
+
+Default stack: Qwen3-ASR-1.7B + Gemma 4 E2B-it
+-----------------------------------------------
 
 Qwen3-ASR-1.7B
---------------
 Source checkpoint: Qwen/Qwen3-ASR-1.7B
 Revision: 0e0a596e3959c3f3f2ab7d443a5b6f0f4a4bba6f
 Artifact repository: handy-computer/Qwen3-ASR-1.7B-gguf
@@ -14,7 +17,6 @@ SHA-256: edb09c29b8f73822c639168d5ef72aa2dccdf8b4e48fc4b8518885352ff62c71
 License: Apache License 2.0
 
 Gemma 4 E2B-it (QAT Q4_0)
--------------------------
 Source checkpoint: google/gemma-4-E2B-it
 Artifact repository: google/gemma-4-E2B-it-qat-q4_0-gguf
 Revision: 675cff42a74c774d6cb76f76d8eacb49b48c9b93
@@ -22,3 +24,27 @@ File: gemma4_e2b/gemma-4-E2B_q4_0-it.gguf
 SHA-256: fa401b55b07ee70a54c6dae3903c783a6e65064312529ea57175cb5f8dec6634
 License: Apache License 2.0; the upstream model card also links the Gemma 4
 license terms at https://ai.google.dev/gemma/docs/gemma_4_license
+
+Alternate stack: Parakeet TDT 0.6B v3 + Qwen3-1.7B
+---------------------------------------------------
+
+Parakeet TDT 0.6B v3
+Source checkpoint: nvidia/parakeet-tdt-0.6b-v3
+Artifact repository: handy-computer/parakeet-tdt-0.6b-v3-gguf
+Revision: d8d8c32cb2017c57e5307767343e97870f8a7f53
+File: parakeet_v3/parakeet-tdt-0.6b-v3-F16.gguf
+SHA-256: d9ec7e2c39da7b4fec3e01e71e82c7f7bbe97741e08c0c054091bf3d520a41d3
+License: Creative Commons Attribution 4.0 International (CC-BY-4.0)
+Attribution: NVIDIA Parakeet TDT 0.6B v3, model card at
+https://huggingface.co/nvidia/parakeet-tdt-0.6b-v3
+
+Qwen3-1.7B
+Source checkpoint: Qwen/Qwen3-1.7B
+Artifact repository: Qwen/Qwen3-1.7B-GGUF
+Revision: 90862c4b9d2787eaed51d12237eafdfe7c5f6077
+File: qwen3_1_7b/Qwen3-1.7B-Q8_0.gguf
+SHA-256: 061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a
+License: Apache License 2.0
+
+The full Apache 2.0 text is in APACHE-2.0.txt in this directory. The full
+CC-BY-4.0 text is in CC-BY-4.0.txt.

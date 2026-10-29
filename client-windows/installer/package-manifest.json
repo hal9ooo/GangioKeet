@@ -13,7 +13,6 @@
     "tool": "Inno Setup",
     "required_version": "6.7.3",
     "iscc_sha256": "0a8757031b33777e4c9cbffee40f11a5062b36d25cbe144c1db73b6102b80ad7",
-    "installer_sha256": "611ebf7bfde3174bc76f996d0bcc51a7e21257bf4214ed12ba8ad7cf21e464f7",
     "disk_spanning": false,
     "script": "client-windows/installer/GangioKeet.iss",
     "mode": "per-user, no service, no scheduled task, no firewall rule"
@@ -49,6 +48,7 @@
   },
   "payload": {
     "model_root": "models",
+    "model_delivery": "on_demand",
     "models": [
       "models/qwen3_asr_1_7b/Qwen3-ASR-1.7B-F16.gguf",
       "models/gemma4_e2b/gemma-4-E2B_q4_0-it.gguf"
@@ -64,7 +64,8 @@
       "licenses/llama",
       "licenses/dotnet",
       "licenses/msvc",
-      "licenses/models"
+      "licenses/models",
+      "licenses/managed"
     ]
   },
   "exclusions": [
