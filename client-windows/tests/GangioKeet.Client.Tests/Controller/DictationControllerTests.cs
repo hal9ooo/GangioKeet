@@ -50,7 +50,7 @@ public sealed class DictationControllerTests
     public void DoubleStart_SecondCallIsIgnored()
     {
         Harness h = new();
-        h.Sessions.Enqueue(new FakeSession());
+        h.Backend.EnqueueTurn();
 
         h.Controller.Start();
         h.Controller.Start();
@@ -59,32 +59,33 @@ public sealed class DictationControllerTests
     }
 
     [Fact]
-    public async Task ConnectFailure_StopsCaptureAndOffersRecovery()
+    public async Task StartFailure_StopsCaptureAndOffersRecovery()
     {
         Harness h = new();
-        FakeSession session = new() { Connected = false, ConnectGate = new() };
-        h.Sessions.Enqueue(session);
+        FakeTurn turn = h.Backend.EnqueueTurn();
+        turn.StartReady = false;
+        turn.StartGate = new();
 
         h.Controller.Start();
         await WaitUntilAsync(() => h.Capture.StartCalls == 1);
         h.Capture.EmitChunk(new byte[] { 1, 2, 3, 4 });
-        session.ConnectGate!.SetResult();
+        turn.StartGate!.SetResult();
 
         await WaitUntilAsync(() => h.Recovery.GetCurrent() is not null);
 
         Assert.Equal(1, h.Capture.StopCalls);
         Assert.Equal(ClientState.Idle, h.Controller.State);
-        Assert.Equal("connect_failed", h.Recovery.GetCurrent()!.FailureCode);
+        Assert.Equal("start_failed", h.Recovery.GetCurrent()!.FailureCode);
         Assert.NotNull(h.Recovery.GetCurrent()!.Pcm);
-        Assert.Empty(session.Enqueued);
+        Assert.Empty(turn.Enqueued);
     }
 
     [Fact]
-    public async Task ChunksDuringConnecting_AreFlushedBeforeLiveChunks()
+    public async Task ChunksWhileStarting_AreFlushedBeforeLiveChunks()
     {
         Harness h = new();
-        FakeSession session = new() { ConnectGate = new() };
-        h.Sessions.Enqueue(session);
+        FakeTurn turn = h.Backend.EnqueueTurn();
+        turn.StartGate = new();
 
         h.Controller.Start();
         await WaitUntilAsync(() => h.Capture.StartCalls == 1);
@@ -92,23 +93,23 @@ public sealed class DictationControllerTests
         h.Capture.EmitChunk(new byte[] { 1 });
         h.Capture.EmitChunk(new byte[] { 2 });
 
-        session.ConnectGate!.SetResult();
-        await WaitUntilAsync(() => session.Enqueued.Count == 2);
+        turn.StartGate!.SetResult();
+        await WaitUntilAsync(() => turn.Enqueued.Count == 2);
 
         h.Capture.EmitChunk(new byte[] { 3 });
-        await WaitUntilAsync(() => session.Enqueued.Count == 3);
+        await WaitUntilAsync(() => turn.Enqueued.Count == 3);
 
-        Assert.Equal(new byte[] { 1 }, session.Enqueued[0]);
-        Assert.Equal(new byte[] { 2 }, session.Enqueued[1]);
-        Assert.Equal(new byte[] { 3 }, session.Enqueued[2]);
+        Assert.Equal(new byte[] { 1 }, turn.Enqueued[0]);
+        Assert.Equal(new byte[] { 2 }, turn.Enqueued[1]);
+        Assert.Equal(new byte[] { 3 }, turn.Enqueued[2]);
     }
 
     [Fact]
     public async Task EnqueueFailure_StopsAndOffersBackpressureRecovery()
     {
         Harness h = new();
-        FakeSession session = new() { EnqueueResult = false };
-        h.Sessions.Enqueue(session);
+        FakeTurn turn = h.Backend.EnqueueTurn();
+        turn.EnqueueResult = false;
 
         h.Controller.Start();
         await WaitUntilAsync(() => h.Controller.State == ClientState.Recording);
@@ -126,10 +127,7 @@ public sealed class DictationControllerTests
     public async Task ErrorOutcome_ReturnsToIdleAndAllowsNextStart()
     {
         Harness h = new();
-        FakeSession first = new();
-        FakeSession second = new();
-        h.Sessions.Enqueue(first);
-        h.Sessions.Enqueue(second);
+        FakeTurn first = h.Backend.EnqueueTurn();
 
         h.Controller.Start();
         await WaitUntilAsync(() => h.Controller.State == ClientState.Recording);
@@ -140,6 +138,7 @@ public sealed class DictationControllerTests
         Assert.NotNull(h.Recovery.GetCurrent());
         Assert.Equal("busy", h.Recovery.GetCurrent()!.FailureCode);
 
+        h.Backend.EnqueueTurn();
         h.Controller.Start();
         await WaitUntilAsync(() => h.Capture.StartCalls == 2);
         Assert.Equal(ClientState.Recording, h.Controller.State);
@@ -149,12 +148,11 @@ public sealed class DictationControllerTests
     public async Task ResultWithUipiBlockedAtPaste_OffersRecoveryWithoutPasting()
     {
         Harness h = new(elevationBlockedAfterFirstCheck: true);
-        FakeSession session = new();
-        h.Sessions.Enqueue(session);
+        FakeTurn turn = h.Backend.EnqueueTurn();
 
         h.Controller.Start();
         await WaitUntilAsync(() => h.Controller.State == ClientState.Recording);
-        session.PublishResult("ciao mondo");
+        turn.PublishResult("ciao mondo");
 
         await WaitUntilAsync(() => h.Recovery.GetCurrent() is not null);
 
@@ -168,12 +166,11 @@ public sealed class DictationControllerTests
     public async Task SuccessfulResult_PastesTextAndHidesPill()
     {
         Harness h = new();
-        FakeSession session = new();
-        h.Sessions.Enqueue(session);
+        FakeTurn turn = h.Backend.EnqueueTurn();
 
         h.Controller.Start();
         await WaitUntilAsync(() => h.Controller.State == ClientState.Recording);
-        session.PublishResult("testo finale");
+        turn.PublishResult("testo finale");
 
         await WaitUntilAsync(() => h.Input.Combos.Count > 0);
         await WaitUntilAsync(() => h.Controller.State == ClientState.Idle
@@ -190,12 +187,11 @@ public sealed class DictationControllerTests
     public async Task EmptyResult_DoesNotTouchTheClipboard()
     {
         Harness h = new();
-        FakeSession session = new();
-        h.Sessions.Enqueue(session);
+        FakeTurn turn = h.Backend.EnqueueTurn();
 
         h.Controller.Start();
         await WaitUntilAsync(() => h.Controller.State == ClientState.Recording);
-        session.PublishResult("   ");
+        turn.PublishResult("   ");
 
         await WaitUntilAsync(() => h.Pill.LastState == PillState.EmptyResult);
 
@@ -247,14 +243,13 @@ public sealed class DictationControllerTests
     public async Task AbortDuringRecording_IgnoresALateResultAndNeverPastes()
     {
         Harness h = new();
-        FakeSession session = new();
-        h.Sessions.Enqueue(session);
+        FakeTurn turn = h.Backend.EnqueueTurn();
 
         h.Controller.Start();
         await WaitUntilAsync(() => h.Controller.State == ClientState.Recording);
 
         await h.Controller.AbortAsync(CancellationToken.None);
-        session.PublishResult("risultato tardivo");
+        turn.PublishResult("risultato tardivo");
 
         await Task.Delay(100);
         Assert.Empty(h.Input.Combos);
@@ -287,7 +282,7 @@ public sealed class DictationControllerTests
     public async Task SetInputDevice_OverridesTheConfigForTheNextCapture()
     {
         Harness h = new(configInputDevice: "config-mic");
-        h.Sessions.Enqueue(new FakeSession());
+        h.Backend.EnqueueTurn();
 
         h.Controller.SetInputDevice("selected-mic");
         h.Controller.Start();
@@ -300,7 +295,7 @@ public sealed class DictationControllerTests
     public async Task SetInputDeviceNull_SelectsTheWindowsDefault()
     {
         Harness h = new(configInputDevice: "config-mic");
-        h.Sessions.Enqueue(new FakeSession());
+        h.Backend.EnqueueTurn();
 
         h.Controller.SetInputDevice("selected-mic");
         h.Controller.SetInputDevice(null);
@@ -311,74 +306,31 @@ public sealed class DictationControllerTests
     }
 
     [Fact]
-    public async Task Session_UsesEndpointPinnedAtStart()
+    public async Task Success_RecordsTelemetryForActiveBackend()
     {
-        MutableResolver resolver = new(Endpoint("a", "10.0.0.1"));
-        Harness h = new(endpointResolver: resolver);
-        FakeSession session = new() { ConnectGate = new() };
-        h.Sessions.Enqueue(session);
-
-        h.Controller.Start();
-        await WaitUntilAsync(() => h.Capture.StartCalls == 1);
-
-        resolver.Set(Endpoint("b", "10.0.0.2"));
-        session.ConnectGate!.SetResult();
-
-        await WaitUntilAsync(() => h.Controller.State == ClientState.Recording);
-
-        Assert.Equal("ws://10.0.0.1:8000/ws/dictate", session.LastUri!.AbsoluteUri);
-    }
-
-    [Fact]
-    public async Task NextDictation_UsesNewActive()
-    {
-        MutableResolver resolver = new(Endpoint("a", "10.0.0.1"));
-        Harness h = new(endpointResolver: resolver);
-        FakeSession first = new();
-        FakeSession second = new();
-        h.Sessions.Enqueue(first);
-        h.Sessions.Enqueue(second);
+        Harness h = new();
+        FakeTurn turn = h.Backend.EnqueueTurn();
 
         h.Controller.Start();
         await WaitUntilAsync(() => h.Controller.State == ClientState.Recording);
-        first.PublishResult("uno");
-        await WaitUntilAsync(() => h.Controller.State == ClientState.Idle);
-
-        resolver.Set(Endpoint("b", "10.0.0.2"));
-
-        h.Controller.Start();
-        await WaitUntilAsync(() => h.Controller.State == ClientState.Recording);
-
-        Assert.Equal("ws://10.0.0.1:8000/ws/dictate", first.LastUri!.AbsoluteUri);
-        Assert.Equal("ws://10.0.0.2:8000/ws/dictate", second.LastUri!.AbsoluteUri);
-    }
-
-    [Fact]
-    public async Task Success_RecordsTelemetryForThePinnedEndpoint()
-    {
-        Harness h = new(endpointResolver: new MutableResolver(Endpoint("casa", "10.0.0.1")));
-        FakeSession session = new();
-        h.Sessions.Enqueue(session);
-
-        h.Controller.Start();
-        await WaitUntilAsync(() => h.Controller.State == ClientState.Recording);
-        session.PublishResult("ciao");
+        turn.PublishResult("ciao");
         await WaitUntilAsync(() => h.Controller.State == ClientState.Idle);
 
         TelemetrySnapshot snapshot = h.Telemetry.Snapshot();
 
         Assert.Equal(1, snapshot.Successes);
-        Assert.Equal("casa", snapshot.LastEndpoint);
+        Assert.Equal("fake", snapshot.LastEndpoint);
         Assert.NotNull(snapshot.LastDictationMs);
         Assert.NotNull(snapshot.LastConnectMs);
         Assert.Null(snapshot.LastError);
     }
 
     [Fact]
-    public async Task ConnectFailure_RecordsTelemetryFailure()
+    public async Task StartFailure_RecordsTelemetryFailure()
     {
-        Harness h = new(endpointResolver: new MutableResolver(Endpoint("casa", "10.0.0.1")));
-        h.Sessions.Enqueue(new FakeSession { Connected = false });
+        Harness h = new();
+        FakeTurn turn = h.Backend.EnqueueTurn();
+        turn.StartReady = false;
 
         h.Controller.Start();
         await WaitUntilAsync(() => h.Telemetry.Snapshot().Failures == 1);
@@ -386,15 +338,15 @@ public sealed class DictationControllerTests
         TelemetrySnapshot snapshot = h.Telemetry.Snapshot();
 
         Assert.Equal(1, snapshot.Failures);
-        Assert.Equal("connect_failed", snapshot.LastError);
-        Assert.Equal("casa", snapshot.LastEndpoint);
+        Assert.Equal("start_failed", snapshot.LastError);
+        Assert.Equal("fake", snapshot.LastEndpoint);
     }
 
     [Fact]
     public async Task Start_PausesMediaBeforeCaptureStarts()
     {
         Harness h = new();
-        h.Sessions.Enqueue(new FakeSession());
+        h.Backend.EnqueueTurn();
 
         h.Controller.Start();
         await WaitUntilAsync(() => h.Capture.StartCalls == 1);
@@ -408,14 +360,13 @@ public sealed class DictationControllerTests
     public async Task Stop_ResumesMediaAtKeyRelease()
     {
         Harness h = new();
-        FakeSession session = new();
-        h.Sessions.Enqueue(session);
+        FakeTurn turn = h.Backend.EnqueueTurn();
         h.Controller.Start();
         await WaitUntilAsync(() => h.Capture.StartCalls == 1);
 
         Task stop = h.Controller.StopAsync(CancellationToken.None);
         await WaitUntilAsync(() => h.Media.ResumeCalls >= 1);
-        session.PublishResult("ciao");
+        turn.PublishResult("ciao");
         await stop;
 
         Assert.True(h.Media.ResumeCalls >= 1);
@@ -425,8 +376,7 @@ public sealed class DictationControllerTests
     public async Task Abort_ResumesMedia()
     {
         Harness h = new();
-        FakeSession session = new();
-        h.Sessions.Enqueue(session);
+        FakeTurn turn = h.Backend.EnqueueTurn();
         h.Controller.Start();
         await WaitUntilAsync(() => h.Capture.StartCalls == 1);
 
@@ -439,12 +389,11 @@ public sealed class DictationControllerTests
     public async Task BackendFailure_ResumesMedia()
     {
         Harness h = new();
-        FakeSession session = new();
-        h.Sessions.Enqueue(session);
+        FakeTurn turn = h.Backend.EnqueueTurn();
         h.Controller.Start();
         await WaitUntilAsync(() => h.Capture.StartCalls == 1);
 
-        session.PublishError("error", "boom");
+        turn.PublishError("error", "boom");
         await WaitUntilAsync(() => h.Media.ResumeCalls >= 1);
 
         Assert.True(h.Media.ResumeCalls >= 1);
@@ -454,7 +403,7 @@ public sealed class DictationControllerTests
     public async Task Dispose_ResumesMedia()
     {
         Harness h = new();
-        h.Sessions.Enqueue(new FakeSession());
+        h.Backend.EnqueueTurn();
         h.Controller.Start();
         await WaitUntilAsync(() => h.Capture.StartCalls == 1);
 
@@ -467,8 +416,7 @@ public sealed class DictationControllerTests
     public async Task QuickStopDuringPause_DoesNotStartCapture()
     {
         Harness h = new();
-        FakeSession session = new();
-        h.Sessions.Enqueue(session);
+        FakeTurn turn = h.Backend.EnqueueTurn();
         h.Media.PauseGate = new TaskCompletionSource();
 
         h.Controller.Start();
@@ -477,7 +425,7 @@ public sealed class DictationControllerTests
         Task stop = h.Controller.StopAsync(CancellationToken.None);
         h.Media.PauseGate.TrySetResult();
         await WaitUntilAsync(() => h.Media.ResumeCalls >= 1);
-        session.PublishResult("ciao");
+        turn.PublishResult("ciao");
         await stop;
 
         Assert.Equal(0, h.Capture.StartCalls);
@@ -489,21 +437,13 @@ public sealed class DictationControllerTests
     {
         Harness h = new();
         h.Media.PauseException = new InvalidOperationException("media");
-        h.Sessions.Enqueue(new FakeSession());
+        h.Backend.EnqueueTurn();
 
         h.Controller.Start();
         await WaitUntilAsync(() => h.Controller.State == ClientState.Recording);
 
         Assert.Equal(ClientState.Recording, h.Controller.State);
     }
-
-    private static EndpointConfig Endpoint(string name, string host) => new()
-    {
-        Name = name,
-        Role = name == "a" ? "primary" : "secondary",
-        Host = host,
-        Port = 8000,
-    };
 
     private static async Task WaitUntilAsync(Func<bool> condition, int timeoutMs = 5000)    {
         using CancellationTokenSource cts = new(timeoutMs);
@@ -531,7 +471,7 @@ public sealed class DictationControllerTests
         public FakeInputSimulator Input { get; } = new();
         public RecoveryStore Recovery { get; }
         public TelemetryStore Telemetry { get; } = new();
-        public Queue<FakeSession> Sessions { get; } = new();
+        public FakeBackend Backend { get; } = new();
         public List<string> Events { get; } = [];
         public FakeMediaPlaybackPause Media { get; }
         public DictationController Controller { get; }
@@ -540,7 +480,6 @@ public sealed class DictationControllerTests
             bool elevationBlocked = false,
             bool elevationBlockedAfterFirstCheck = false,
             string? configInputDevice = null,
-            IEndpointResolver? endpointResolver = null,
             IDictationBackend? backend = null)
         {
             Recovery = new RecoveryStore(Time, TimeSpan.FromSeconds(600));
@@ -570,12 +509,7 @@ public sealed class DictationControllerTests
             Media = new FakeMediaPlaybackPause(Events.Add);
             Capture.Record = Events.Add;
 
-            backend ??= new RemoteDictationBackend(
-                () => Sessions.Count > 0 ? Sessions.Dequeue() : new FakeSession(),
-                endpointResolver ?? new MutableResolver(Endpoint("a", "10.0.0.1")),
-                config,
-                Time,
-                () => new HttpClient());
+            backend ??= Backend;
 
             Controller = new DictationController(
                 Capture,
