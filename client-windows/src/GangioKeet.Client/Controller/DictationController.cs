@@ -247,9 +247,8 @@ public sealed class DictationController : IAsyncDisposable
     }
 
     /// <summary>
-    /// Ritenta l'ultimo fallimento. Se è già disponibile un risultato, ristrascrive solo
-    /// l'audio via REST; un risultato già trascritto viene copiato negli appunti senza
-    /// essere incollato automaticamente.
+    /// Ritenta l'ultimo fallimento: se è già disponibile un risultato, copia il testo
+    /// negli appunti senza incollarlo; altrimenti reinvia l'audio al backend locale.
     /// </summary>
     public async Task RetryLastAsync(CancellationToken ct)
     {

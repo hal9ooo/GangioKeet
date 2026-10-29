@@ -5,9 +5,8 @@ namespace GangioKeet.Client.Controller;
 public interface IDictationBackend
 {
     /// <summary>
-    /// False finché i modelli locali non hanno completato il warm-up. I
-    /// backend remoti sono pronti per definizione. Il controller controlla
-    /// questo valore prima di aprire il microfono.
+    /// False finché i modelli locali non hanno completato il warm-up. Il
+    /// controller controlla questo valore prima di aprire il microfono.
     /// </summary>
     bool IsReady => true;
 

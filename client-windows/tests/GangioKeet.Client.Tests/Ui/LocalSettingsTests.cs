@@ -9,7 +9,7 @@ namespace GangioKeet.Client.Tests.Ui;
 public sealed class LocalSettingsTests
 {
     [Fact]
-    public void LocalWindowOpensWithoutEndpointSelectorOrProbe()
+    public void LocalWindowOpensWithLocalPanel()
     {
         Exception? failure = RunOnStaThread(() =>
         {

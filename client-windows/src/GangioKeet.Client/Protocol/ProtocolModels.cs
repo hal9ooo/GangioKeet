@@ -17,9 +17,3 @@ public sealed record ResultMessage(
     bool FastPath,
     DictationMetrics Metrics,
     IReadOnlyList<string> Warnings);
-
-public abstract record ServerFrame;
-
-public sealed record ResultFrame(ResultMessage Result) : ServerFrame;
-
-public sealed record ErrorFrame(string Code, string Message, bool Retryable = false) : ServerFrame;

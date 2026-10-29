@@ -9,11 +9,9 @@ public enum DictationStatus
 }
 
 /// <summary>
-/// Errore terminale. <see cref="Code"/> può essere un codice server (frame error) oppure
-/// un codice locale della sessione: <c>timeout</c>, <c>send_failed</c>, <c>protocol</c>,
-/// <c>closed</c>, <c>aborted</c>, <c>receive_failed</c>. I vocaboli dei fallimenti di
-/// handshake restano in <see cref="ConnectFailure"/> (unauthorized/forbidden/not_found/
-/// upgrade_required/unexpected_response/connect_failed).
+/// Errore terminale della dettatura locale. <see cref="Code"/> è un codice
+/// stabile dell'app o del backend locale (es. <c>start_failed</c>,
+/// <c>backpressure</c>, <c>aborted</c>).
 /// </summary>
 public sealed record DictationError(string Code, string Message, bool Retryable, int? HttpStatus = null);
 
@@ -22,6 +20,3 @@ public sealed record DictationError(string Code, string Message, bool Retryable,
 /// vicenda; <see cref="Status"/> è sempre valorizzato. Il terminale si completa una sola volta.
 /// </summary>
 public sealed record DictationOutcome(DictationStatus Status, ResultMessage? Result, DictationError? Error);
-
-/// <summary>Esito della connessione: se <see cref="Connected"/> è false, <see cref="Failure"/> non è null.</summary>
-public sealed record SessionConnectOutcome(bool Connected, ConnectFailure? Failure);

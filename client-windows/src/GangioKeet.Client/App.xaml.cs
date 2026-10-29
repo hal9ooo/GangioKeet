@@ -30,9 +30,6 @@ public partial class App : Application
     private DictationController? _controller;
     private TelemetryStore? _telemetry;
     private RecoveryStore? _recovery;
-    private EndpointSelector? _selector;
-    private EndpointProbe? _probe;
-    private EndpointMonitor? _monitor;
     private SettingsWindow? _settings;
     private SplashWindow? _splash;
     private TrayController? _tray;
@@ -43,8 +40,6 @@ public partial class App : Application
     private GestureRouter? _gestureRouter;
     private StaPasteDispatcher? _pasteDispatcher;
     private SynthSoundPlayer? _soundPlayer;
-    private HttpClient? _monitorHttp;
-    private CancellationTokenSource? _monitorCts;
     private AppRuntime? _runtime;
     private string? _localError;
     private RecordingStore? _recordingStore;
@@ -172,39 +167,18 @@ public partial class App : Application
         _telemetry = new TelemetryStore();
 
         IDictationBackend backend;
-        if (config.Inference.Mode == "local")
-        {
-            LocalInferenceSetup setup = LocalInferenceFactory.Create(config);
-            _localSttId = setup.SttId;
-            _localCleanerId = setup.CleanerId;
-            _localBackend = setup.Backend;
-            _recordingStore = new RecordingStore(config.Recording,
-                provenance: new RecordingProvenance(setup.PromptVersion, setup.PromptSha256, setup.PolicySha256));
-            _recordingQueue = new RecordingQueue(_recordingStore, warning: warning =>
-                _logger?.Write("recording", warning),
-                enabled: () => _recordingStore?.Enabled == true);
-            _runtime = new AppRuntime(setup.Pipeline, _recordingQueue);
-            backend = new LocalDictationBackend(setup.Pipeline, () => _runtime.IsReady, _recordingQueue);
-            _ = StartLocalRuntimeAsync(_runtime);
-        }
-        else
-        {
-            _recordingStore = new RecordingStore(config.Recording, provenance: null);
-            _monitorHttp = new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
-            _probe = new EndpointProbe(
-                _monitorHttp,
-                ApiCredential.Resolve(config.Server.ApiKeyEnv, Environment.GetEnvironmentVariable),
-                time);
-            EndpointSelector selector = new(config.Endpoints!, config.Server.SwitchMarginPercent);
-            _selector = selector;
-            _monitor = new EndpointMonitor(
-                _probe,
-                selector,
-                time,
-                TimeSpan.FromSeconds(config.Server.HealthCheckIntervalSeconds),
-                TimeSpan.FromSeconds(config.Server.HealthCheckTimeoutSeconds));
-            backend = new RemoteDictationBackend(CreateSession, selector, config, time);
-        }
+        LocalInferenceSetup setup = LocalInferenceFactory.Create(config);
+        _localSttId = setup.SttId;
+        _localCleanerId = setup.CleanerId;
+        _localBackend = setup.Backend;
+        _recordingStore = new RecordingStore(config.Recording,
+            provenance: new RecordingProvenance(setup.PromptVersion, setup.PromptSha256, setup.PolicySha256));
+        _recordingQueue = new RecordingQueue(_recordingStore, warning: warning =>
+            _logger?.Write("recording", warning),
+            enabled: () => _recordingStore?.Enabled == true);
+        _runtime = new AppRuntime(setup.Pipeline, _recordingQueue);
+        backend = new LocalDictationBackend(setup.Pipeline, () => _runtime.IsReady, _recordingQueue);
+        _ = StartLocalRuntimeAsync(_runtime);
 
         WindowsMediaPlaybackPause media = new(new WindowsMediaSessionManager(), _logger);
 
@@ -245,12 +219,6 @@ public partial class App : Application
             ShowSettings,
             _logger,
             exit: RequestShutdownAsync);
-
-        if (_monitor is not null)
-        {
-            _monitorCts = new CancellationTokenSource();
-            _ = _monitor.RunAsync(_monitorCts.Token);
-        }
 
         var capsReset = new CapsLockResetService();
         if (capsReset.ResetIfActive())
@@ -325,13 +293,6 @@ public partial class App : Application
         _localError ?? _runtime?.Failure?.Message,
         _config?.Inference.ModelSelectionPath ?? "models/selected.json");
 
-    private void OnModeSaved(string mode)
-    {
-        if (_config is null) return;
-        _logger?.Write("inference_mode_saved", mode);
-        _ = SwitchInferenceModeAsync(mode);
-    }
-
     private void OnModelPairSaved(string selectionPath)
     {
         if (_config is null) return;
@@ -379,147 +340,6 @@ public partial class App : Application
         }
     }
 
-    public async Task SwitchInferenceModeAsync(string targetMode)
-    {
-        if (_config is null || _controller is null) return;
-        _config.Inference.Mode = targetMode;
-
-        if (string.Equals(targetMode, "local", StringComparison.OrdinalIgnoreCase))
-        {
-            if (_monitorCts is not null)
-            {
-                _monitorCts.Cancel();
-                _monitorCts.Dispose();
-                _monitorCts = null;
-            }
-            _monitor = null;
-
-            if (_runtime is null)
-            {
-                LocalInferenceSetup setup = LocalInferenceFactory.Create(_config);
-                _localSttId = setup.SttId;
-                _localCleanerId = setup.CleanerId;
-                _localBackend = setup.Backend;
-                _recordingStore = new RecordingStore(_config.Recording,
-                    provenance: new RecordingProvenance(setup.PromptVersion, setup.PromptSha256, setup.PolicySha256));
-                _settings?.SetRecordingStore(_recordingStore);
-                _recordingQueue = new RecordingQueue(_recordingStore, warning: warning =>
-                    _logger?.Write("recording", warning),
-                    enabled: () => _recordingStore?.Enabled == true);
-                _runtime = new AppRuntime(setup.Pipeline, _recordingQueue);
-            }
-
-            var localBackend = new LocalDictationBackend(_runtime.Pipeline, () => _runtime.IsReady, _recordingQueue);
-            _controller.SetBackend(localBackend);
-            _ = StartLocalRuntimeAsync(_runtime);
-            _logger?.Write("switched_to_local", "Local runtime active and controller backend swapped");
-        }
-        else // remote
-        {
-            var oldRuntime = _runtime;
-            _runtime = null;
-            _recordingQueue = null;
-
-            if (oldRuntime is not null)
-            {
-                _ = Task.Run(async () =>
-                {
-                    while (_controller.State != ClientState.Idle)
-                    {
-                        await Task.Delay(50).ConfigureAwait(false);
-                    }
-                    try
-                    {
-                        await oldRuntime.StopAsync(CancellationToken.None).ConfigureAwait(false);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger?.Write("local_runtime_stop_error", ex.Message);
-                    }
-                });
-            }
-
-            if (_monitorCts is not null)
-            {
-                _monitorCts.Cancel();
-                _monitorCts.Dispose();
-                _monitorCts = null;
-            }
-            _monitor = null;
-
-            TimeProvider time = TimeProvider.System;
-            _monitorHttp ??= new HttpClient { Timeout = Timeout.InfiniteTimeSpan };
-            _probe ??= new EndpointProbe(
-                _monitorHttp,
-                ApiCredential.Resolve(_config.Server.ApiKeyEnv, Environment.GetEnvironmentVariable),
-                time);
-
-            if (_config.Endpoints is null || _config.Endpoints.Count == 0)
-            {
-                ConfigLoader.EnsureEndpoints(_config);
-            }
-            if (_config.Endpoints is null || _config.Endpoints.Count == 0)
-            {
-                _config.Endpoints = [new EndpointConfig { Host = _config.Server.Host, Port = _config.Server.Port, Role = "primary", Name = "Mac Server" }];
-            }
-
-            if (_selector is null)
-            {
-                _selector = new EndpointSelector(_config.Endpoints, _config.Server.SwitchMarginPercent);
-            }
-            else
-            {
-                _selector.Reset(_config.Endpoints);
-            }
-
-            _monitor = new EndpointMonitor(
-                _probe,
-                _selector,
-                time,
-                TimeSpan.FromSeconds(_config.Server.HealthCheckIntervalSeconds),
-                TimeSpan.FromSeconds(_config.Server.HealthCheckTimeoutSeconds));
-
-            _monitorCts = new CancellationTokenSource();
-            _ = _monitor.RunAsync(_monitorCts.Token);
-
-            var remoteBackend = new RemoteDictationBackend(CreateSession, _selector, _config, time);
-            _controller.SetBackend(remoteBackend);
-            _logger?.Write("switched_to_remote", "Remote monitor active and controller backend swapped");
-        }
-    }
-
-    private void OnEndpointsSaved(IReadOnlyList<EndpointConfig> endpoints)
-    {
-        if (_config is null || _selector is null)
-        {
-            return;
-        }
-
-        _config.Endpoints = [.. endpoints];
-        _selector.Reset(endpoints);
-        _ = ProbeSavedEndpointsAsync();
-        _logger?.Write("endpoints_saved", $"{endpoints.Count} endpoint");
-    }
-
-    private async Task ProbeSavedEndpointsAsync()
-    {
-        try
-        {
-            if (_monitor is not null)
-            {
-                await _monitor.ProbeOnceAsync(CancellationToken.None);
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // shutdown mentre il round era in volo
-        }
-        catch (Exception ex)
-        {
-            _logger?.Write("probe_once_failed", ex.Message);
-        }
-    }
-
     private static System.Windows.Media.ImageSource CreateTrayIcon()
     {
         var image = new System.Windows.Media.Imaging.BitmapImage(
@@ -564,16 +384,6 @@ public partial class App : Application
         return _gestureRouter;
     }
 
-    private DictationSession CreateSession()
-    {
-        ClientConfig config = _config!;
-        TimeProvider time = TimeProvider.System;
-        return new DictationSession(
-            new WebSocketDictationTransport(),
-            time,
-            TimeSpan.FromSeconds(config.Server.ResponseTimeoutSeconds));
-    }
-
     private void HandleRawEvent(RawKeyEvent raw, ClientConfig config)
     {
         KeyCode abortKey = KeyCodes.Parse(config.Hotkey.AbortKey);
@@ -608,13 +418,11 @@ public partial class App : Application
 
     private async Task StopOwnedAsync()
     {
-        // Prima si ferma chi produce eventi (hook, gesture pump, monitor),
+        // Prima si ferma chi produce eventi (hook, gesture pump),
         // poi chi li consuma, infine le risorse native. Nessun timeout: il
         // runtime attende il ritorno delle chiamate native prima del dispose.
         _hooks?.Dispose();
         _gestures?.Dispose();
-        _monitorCts?.Cancel();
-        _monitor?.Dispose();
 
         if (_controller is not null)
         {
@@ -638,8 +446,6 @@ public partial class App : Application
 
     private void DisposeDesktop()
     {
-        _monitorCts?.Dispose();
-        _monitorHttp?.Dispose();
         _pasteDispatcher?.Dispose();
         _soundPlayer?.Dispose();
         _tray?.Dispose();

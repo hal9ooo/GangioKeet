@@ -20,9 +20,6 @@ public static class LocalInferenceFactory
     public static LocalInferenceSetup Create(ClientConfig config, string? nativeDirectory = null,
         string? llamaDirectory = null, string? runtimeLockPath = null, string? modelRoot = null)
     {
-        if (config.Inference.Mode != "local")
-            throw new InvalidOperationException("Local inference requires inference.mode=local.");
-
         string rawSelection = config.Inference.ModelSelectionPath;
         string selectionPath = Path.IsPathRooted(rawSelection)
             ? rawSelection

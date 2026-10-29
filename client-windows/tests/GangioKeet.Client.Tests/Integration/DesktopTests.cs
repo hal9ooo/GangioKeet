@@ -13,7 +13,7 @@ namespace GangioKeet.Client.Tests.Integration;
 
 /// <summary>
 /// Smoke test desktop: richiedono RUN_DESKTOP_TESTS=1 e un desktop Windows reale.
-/// Non usano il server Mac.
+/// Non usano servizi di rete.
 /// </summary>
 [Trait("Category", "Integration")]
 public sealed class DesktopTests
