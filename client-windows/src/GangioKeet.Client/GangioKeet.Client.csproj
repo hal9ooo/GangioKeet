@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <TargetFramework>net10.0-windows10.0.19041.0</TargetFramework>
     <UseWPF>true</UseWPF>
     <RootNamespace>GangioKeet.Client</RootNamespace>
     <AssemblyName>GangioKeet.Client</AssemblyName>
@@ -12,6 +12,10 @@
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\gangio.ico</ApplicationIcon>
   </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="GangioKeet.Client.Tests" />
+  </ItemGroup>
 
   <ItemGroup>
     <Resource Include="Assets\gangio.ico" />
