@@ -17,7 +17,7 @@ internal sealed class WindowsMediaPlaybackPause : IMediaPlaybackPause
     private readonly SemaphoreSlim _gate = new(1, 1);
     private readonly List<IMediaSessionControl> _paused = [];
     private volatile CancellationTokenSource? _pauseCts;
-    private bool _resumeRequested;
+    private volatile bool _resumeRequested;
 
     public WindowsMediaPlaybackPause(
         IMediaSessionManager sessions,
@@ -106,13 +106,18 @@ internal sealed class WindowsMediaPlaybackPause : IMediaPlaybackPause
     public async Task ResumeAsync()
     {
         _resumeRequested = true;
-        _pauseCts?.Cancel();
+        try
+        {
+            _pauseCts?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+            // La pausa ha appena rilasciato il CTS: non c'è nulla da annullare.
+        }
 
         await _gate.WaitAsync().ConfigureAwait(false);
         try
         {
-            _resumeRequested = false;
-
             IMediaSessionControl[] snapshot;
             lock (_paused)
             {
@@ -148,6 +153,7 @@ internal sealed class WindowsMediaPlaybackPause : IMediaPlaybackPause
         }
         finally
         {
+            _resumeRequested = false;
             _gate.Release();
         }
     }

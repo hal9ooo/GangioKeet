@@ -83,6 +83,25 @@ public sealed class WindowsMediaPlaybackPauseTests
     }
 
     [Fact]
+    public async Task PauseAndResumeConcurrently_DoNotLeaveSessionsPaused()
+    {
+        FakeSessionControl session = new("spotify.exe", MediaSessionPlaybackStatus.Playing);
+        FakeSessionManager manager = new(session) { Gate = new TaskCompletionSource() };
+        WindowsMediaPlaybackPause sut = new(manager, pauseBudget: TimeSpan.FromSeconds(10));
+
+        Task pause = sut.PauseAsync(CancellationToken.None);
+        await Task.Delay(20);
+        Task firstResume = sut.ResumeAsync();
+        manager.Gate.TrySetResult();
+        await pause;
+        Task secondResume = sut.ResumeAsync();
+        await Task.WhenAll(firstResume, secondResume);
+
+        Assert.False(sut.HasPausedSessions);
+        if (session.PauseCalls == 1) Assert.Equal(1, session.PlayCalls);
+    }
+
+    [Fact]
     public async Task PauseAsync_ReturnsAtBudgetWhenManagerHangs()
     {
         FakeSessionManager manager = new() { Gate = new TaskCompletionSource() };

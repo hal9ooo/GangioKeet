@@ -24,8 +24,7 @@
 
 GangioKeet is a personal Windows dictation client. Speech-to-text and the
 optional LLM cleanup run in the same process: WASAPI microphone → local ASR →
-local cleaner → clipboard-preserving paste. Nothing is sent to a server, because
-there is no server anymore.
+local cleaner → clipboard-preserving paste. Nothing leaves the machine.
 
 ## What it does
 
@@ -110,8 +109,7 @@ the two local stacks and toggles benchmark recording; both apply immediately.
 
 ## Configuration
 
-The default path is `%APPDATA%\GangioKeet\client_config.yaml`. An explicit path
-can be passed with `--config` to the client.
+The default path is `%APPDATA%\GangioKeet\client_config.yaml`.
 
 | Section | Key fields |
 |---|---|
@@ -125,7 +123,7 @@ can be passed with `--config` to the client.
 | `browser_profiles` | browser list and page-title rules |
 | `recovery` | `retention_seconds` |
 
-The schema is strict: unknown keys are rejected. Old remote keys (`server`,
+The schema is strict: unknown keys are rejected. Legacy keys (`server`,
 `endpoints`, `inference.mode`) are tolerated **in memory** and ignored, so an
 existing `client_config.yaml` keeps loading as a local configuration. The app
 does not rewrite those keys; they simply have no effect.

@@ -35,8 +35,8 @@ source-only run, set `GANGIOKEET_TRANSCRIBE_DIR`, `GANGIOKEET_LLAMA_DIR` and
 ## Configuration
 
 Strict schema: unknown keys are rejected. The file lives in
-`%APPDATA%\GangioKeet\client_config.yaml`; an explicit path can be passed with
-`--config`. All defaults are in `client_config.example.yaml`.
+`%APPDATA%\GangioKeet\client_config.yaml`. All defaults are in
+`client_config.example.yaml`.
 
 | Section | Main entries |
 |---|---|
@@ -50,7 +50,7 @@ Strict schema: unknown keys are rejected. The file lives in
 | `browser_profiles` | browsers and page-title rules, priority email → chat → code → document |
 | `recovery` | retention_seconds 600 |
 
-Old remote keys (`server`, `endpoints`, `inference.mode`) are removed from the
+Legacy keys (`server`, `endpoints`, `inference.mode`) are removed from the
 YAML representation **in memory** before deserialization. An existing file keeps
 loading as a local configuration and is not rewritten; every other unknown key
 is still rejected.
