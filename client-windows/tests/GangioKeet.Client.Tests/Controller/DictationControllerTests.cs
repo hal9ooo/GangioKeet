@@ -390,6 +390,113 @@ public sealed class DictationControllerTests
         Assert.Equal("casa", snapshot.LastEndpoint);
     }
 
+    [Fact]
+    public async Task Start_PausesMediaBeforeCaptureStarts()
+    {
+        Harness h = new();
+        h.Sessions.Enqueue(new FakeSession());
+
+        h.Controller.Start();
+        await WaitUntilAsync(() => h.Capture.StartCalls == 1);
+
+        int pause = h.Events.IndexOf("media_pause");
+        int capture = h.Events.IndexOf("capture_start");
+        Assert.True(pause >= 0 && capture >= 0 && pause < capture);
+    }
+
+    [Fact]
+    public async Task Stop_ResumesMediaAtKeyRelease()
+    {
+        Harness h = new();
+        FakeSession session = new();
+        h.Sessions.Enqueue(session);
+        h.Controller.Start();
+        await WaitUntilAsync(() => h.Capture.StartCalls == 1);
+
+        Task stop = h.Controller.StopAsync(CancellationToken.None);
+        await WaitUntilAsync(() => h.Media.ResumeCalls >= 1);
+        session.PublishResult("ciao");
+        await stop;
+
+        Assert.True(h.Media.ResumeCalls >= 1);
+    }
+
+    [Fact]
+    public async Task Abort_ResumesMedia()
+    {
+        Harness h = new();
+        FakeSession session = new();
+        h.Sessions.Enqueue(session);
+        h.Controller.Start();
+        await WaitUntilAsync(() => h.Capture.StartCalls == 1);
+
+        await h.Controller.AbortAsync(CancellationToken.None);
+
+        Assert.True(h.Media.ResumeCalls >= 1);
+    }
+
+    [Fact]
+    public async Task BackendFailure_ResumesMedia()
+    {
+        Harness h = new();
+        FakeSession session = new();
+        h.Sessions.Enqueue(session);
+        h.Controller.Start();
+        await WaitUntilAsync(() => h.Capture.StartCalls == 1);
+
+        session.PublishError("error", "boom");
+        await WaitUntilAsync(() => h.Media.ResumeCalls >= 1);
+
+        Assert.True(h.Media.ResumeCalls >= 1);
+    }
+
+    [Fact]
+    public async Task Dispose_ResumesMedia()
+    {
+        Harness h = new();
+        h.Sessions.Enqueue(new FakeSession());
+        h.Controller.Start();
+        await WaitUntilAsync(() => h.Capture.StartCalls == 1);
+
+        await h.Controller.DisposeAsync();
+
+        Assert.True(h.Media.ResumeCalls >= 1);
+    }
+
+    [Fact]
+    public async Task QuickStopDuringPause_DoesNotStartCapture()
+    {
+        Harness h = new();
+        FakeSession session = new();
+        h.Sessions.Enqueue(session);
+        h.Media.PauseGate = new TaskCompletionSource();
+
+        h.Controller.Start();
+        await WaitUntilAsync(() => h.Media.PauseCalls == 1);
+
+        Task stop = h.Controller.StopAsync(CancellationToken.None);
+        h.Media.PauseGate.TrySetResult();
+        await WaitUntilAsync(() => h.Media.ResumeCalls >= 1);
+        session.PublishResult("ciao");
+        await stop;
+
+        Assert.Equal(0, h.Capture.StartCalls);
+        Assert.True(h.Media.ResumeCalls >= 1);
+    }
+
+    [Fact]
+    public async Task MediaPauseFailure_DoesNotFailDictation()
+    {
+        Harness h = new();
+        h.Media.PauseException = new InvalidOperationException("media");
+        h.Sessions.Enqueue(new FakeSession());
+
+        h.Controller.Start();
+        await WaitUntilAsync(() => h.Controller.State == ClientState.Recording);
+
+        Assert.Equal(ClientState.Recording, h.Controller.State);
+    }
+
     private static EndpointConfig Endpoint(string name, string host) => new()
     {
         Name = name,
@@ -425,6 +532,8 @@ public sealed class DictationControllerTests
         public RecoveryStore Recovery { get; }
         public TelemetryStore Telemetry { get; } = new();
         public Queue<FakeSession> Sessions { get; } = new();
+        public List<string> Events { get; } = [];
+        public FakeMediaPlaybackPause Media { get; }
         public DictationController Controller { get; }
 
         public Harness(
@@ -458,6 +567,9 @@ public sealed class DictationControllerTests
                 BlockedAfterFirstCheck = elevationBlockedAfterFirstCheck,
             };
 
+            Media = new FakeMediaPlaybackPause(Events.Add);
+            Capture.Record = Events.Add;
+
             backend ??= new RemoteDictationBackend(
                 () => Sessions.Count > 0 ? Sessions.Dequeue() : new FakeSession(),
                 endpointResolver ?? new MutableResolver(Endpoint("a", "10.0.0.1")),
@@ -476,6 +588,7 @@ public sealed class DictationControllerTests
                 Sound,
                 config,
                 Telemetry,
+                Media,
                 Time);
         }
 

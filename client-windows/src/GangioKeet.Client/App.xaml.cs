@@ -206,6 +206,8 @@ public partial class App : Application
             backend = new RemoteDictationBackend(CreateSession, selector, config, time);
         }
 
+        WindowsMediaPlaybackPause media = new(new WindowsMediaSessionManager(), _logger);
+
         _controller = new DictationController(
             _capture,
             backend,
@@ -217,6 +219,7 @@ public partial class App : Application
             sound,
             config,
             _telemetry,
+            media,
             time);
 
         _hooks = new LowLevelInputHooks(

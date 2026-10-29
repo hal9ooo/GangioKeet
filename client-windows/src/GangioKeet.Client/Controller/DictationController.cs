@@ -2,6 +2,7 @@ using GangioKeet.Client.Audio;
 using GangioKeet.Client.Configuration;
 using GangioKeet.Client.Context;
 using GangioKeet.Client.Paste;
+using GangioKeet.Client.Platform;
 using GangioKeet.Client.Protocol;
 using GangioKeet.Client.Recovery;
 
@@ -27,8 +28,10 @@ public sealed class DictationController : IAsyncDisposable
     private readonly ISoundPlayer _sound;
     private readonly ClientConfig _config;
     private readonly TelemetryStore _telemetry;
+    private readonly IMediaPlaybackPause _media;
     private readonly TimeProvider _time;
     private readonly RamAudioBuffer _audioBuffer;
+    private static readonly TimeSpan MediaPauseBudget = TimeSpan.FromMilliseconds(750);
 
     private readonly object _audioGate = new();
     private readonly List<byte[]> _pendingAudio = [];
@@ -37,6 +40,7 @@ public sealed class DictationController : IAsyncDisposable
 
     private int _generation;
     private int _disposed;
+    private volatile bool _stopRequested;
 
     private volatile IActiveDictationTurn? _turn;
     private bool _captureStarted;
@@ -60,6 +64,7 @@ public sealed class DictationController : IAsyncDisposable
         ISoundPlayer sound,
         ClientConfig config,
         TelemetryStore telemetry,
+        IMediaPlaybackPause media,
         TimeProvider time)
     {
         _capture = capture;
@@ -72,6 +77,7 @@ public sealed class DictationController : IAsyncDisposable
         _sound = sound;
         _config = config;
         _telemetry = telemetry;
+        _media = media;
         _time = time;
         _audioBuffer = new RamAudioBuffer();
 
@@ -142,6 +148,8 @@ public sealed class DictationController : IAsyncDisposable
     public void Start()
     {
         if (_state != ClientState.Idle) return;
+        _stopRequested = false;
+
         if (!_backend.IsReady)
         {
             int generation = Interlocked.Increment(ref _generation);
@@ -183,6 +191,7 @@ public sealed class DictationController : IAsyncDisposable
         if (turn is null) return;
         if (_state is not (ClientState.Recording or ClientState.Connecting)) return;
 
+        _stopRequested = true;
         _turnTiming?.MarkReleased(_time.GetTimestamp());
         try
         {
@@ -202,6 +211,7 @@ public sealed class DictationController : IAsyncDisposable
     /// </summary>
     public async Task AbortAsync(CancellationToken ct)
     {
+        _stopRequested = true;
         int generation = Interlocked.Increment(ref _generation);
         _ = generation;
         try { _pasteAbort?.Cancel(); } catch (ObjectDisposedException) { }
@@ -326,6 +336,15 @@ public sealed class DictationController : IAsyncDisposable
         }
 
         _captureStarted = false;
+        try
+        {
+            await _media.ResumeAsync().WaitAsync(MediaPauseBudget).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // la ripresa media è best-effort anche in chiusura
+        }
+
         await _capture.DisposeAsync().ConfigureAwait(false);
     }
 
@@ -360,6 +379,14 @@ public sealed class DictationController : IAsyncDisposable
 
             long connectStarted = _time.GetTimestamp();
             Task<TurnStartOutcome> startTask = turn.StartAsync(CancellationToken.None);
+
+            if (_stopRequested) return;
+            await PauseMediaAsync().ConfigureAwait(false);
+            if (_stopRequested)
+            {
+                ResumeMediaInBackground();
+                return;
+            }
 
             Task captureTask = StartCaptureAsync();
 
@@ -632,6 +659,7 @@ public sealed class DictationController : IAsyncDisposable
 
     private async Task StopCaptureAsync(CancellationToken ct)
     {
+        ResumeMediaInBackground();
         if (!_captureStarted) return;
 
         _captureStarted = false;
@@ -645,6 +673,40 @@ public sealed class DictationController : IAsyncDisposable
         catch (Exception)
         {
             // lo stop della cattura non deve mascherare l'esito della dettatura
+        }
+    }
+
+    private async Task PauseMediaAsync()
+    {
+        try
+        {
+            await _media.PauseAsync(CancellationToken.None)
+                .WaitAsync(MediaPauseBudget, CancellationToken.None)
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+        }
+        catch (Exception)
+        {
+            // la pausa media è best-effort e non deve mai fermare la dettatura
+        }
+    }
+
+    private void ResumeMediaInBackground()
+    {
+        _ = ResumeMediaAsync();
+    }
+
+    private async Task ResumeMediaAsync()
+    {
+        try
+        {
+            await _media.ResumeAsync().ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // la ripresa media è best-effort
         }
     }
 

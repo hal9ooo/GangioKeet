@@ -6,6 +6,7 @@ using GangioKeet.Client.Audio;
 using GangioKeet.Client.Configuration;
 using GangioKeet.Client.Context;
 using GangioKeet.Client.Controller;
+using GangioKeet.Client.Platform;
 using GangioKeet.Client.Protocol;
 using GangioKeet.Client.Recovery;
 
@@ -21,6 +22,7 @@ internal sealed class FakeCapture : IAudioCapture
     public int StartCalls { get; private set; }
     public int StopCalls { get; private set; }
     public string? LastDeviceId { get; private set; }
+    public Action<string>? Record { get; set; }
 
     public List<byte[]> EmittedChunks { get; } = [];
     public AudioSummary? StopResult { get; set; } = new(0, false, 0);
@@ -34,12 +36,14 @@ internal sealed class FakeCapture : IAudioCapture
     {
         StartCalls++;
         LastDeviceId = deviceId;
+        Record?.Invoke("capture_start");
         return Task.CompletedTask;
     }
 
     public Task<AudioSummary> StopAsync(CancellationToken ct)
     {
         StopCalls++;
+        Record?.Invoke("capture_stop");
         return Task.FromResult(StopResult ?? new AudioSummary(0, false, 0));
     }
 
@@ -47,6 +51,30 @@ internal sealed class FakeCapture : IAudioCapture
     {
         GC.SuppressFinalize(this);
         return ValueTask.CompletedTask;
+    }
+}
+
+internal sealed class FakeMediaPlaybackPause(Action<string>? record = null) : IMediaPlaybackPause
+{
+    public int PauseCalls { get; private set; }
+    public int ResumeCalls { get; private set; }
+    public TaskCompletionSource? PauseGate { get; set; }
+    public Exception? PauseException { get; set; }
+    public bool HasPausedSessions => PauseCalls > ResumeCalls;
+
+    public async Task PauseAsync(CancellationToken ct)
+    {
+        PauseCalls++;
+        if (PauseGate is not null) await PauseGate.Task.WaitAsync(ct);
+        if (PauseException is not null) throw PauseException;
+        record?.Invoke("media_pause");
+    }
+
+    public Task ResumeAsync()
+    {
+        ResumeCalls++;
+        record?.Invoke("media_resume");
+        return Task.CompletedTask;
     }
 }
 

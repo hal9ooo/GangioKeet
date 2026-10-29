@@ -81,6 +81,7 @@ public sealed class DictationControllerBackendSwapTests
             sound,
             config,
             telemetry,
+            new FakeMediaPlaybackPause(),
             time);
 
         Assert.Same(initialBackend, controller.CurrentBackend);
@@ -123,6 +124,7 @@ public sealed class DictationControllerBackendSwapTests
             sound,
             config,
             telemetry,
+            new FakeMediaPlaybackPause(),
             time);
 
         controller.SetBackend(nextBackend);
