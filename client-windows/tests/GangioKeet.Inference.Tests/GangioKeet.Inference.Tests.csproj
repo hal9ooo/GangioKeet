@@ -11,8 +11,8 @@
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="..\..\..\shared\prompts\conservative-local-v3.txt"
-             Link="shared\prompts\conservative-local-v3.txt"
+    <Content Include="..\..\prompts\conservative-local-v3.txt"
+             Link="prompts\conservative-local-v3.txt"
              CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
   <ItemGroup>

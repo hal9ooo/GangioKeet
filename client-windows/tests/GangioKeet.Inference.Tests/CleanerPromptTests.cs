@@ -9,7 +9,7 @@ public sealed class CleanerPromptTests
     public void SystemPromptMatchesSharedCanonicalFile()
     {
         string shared = File.ReadAllText(
-            Path.Combine(AppContext.BaseDirectory, "shared", "prompts",
+            Path.Combine(AppContext.BaseDirectory, "prompts",
                 "conservative-local-v3.txt"));
         Assert.Equal(shared, CleanerPrompt.RenderedSystem);
         Assert.Equal("e63fa4085c525b203bbd71897a25c03af0984b0a627ee229e6304081a349e907",

@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from stt_eval import load_manifest
+from stt_eval_manifest import load_manifest
 from stt_eval_metrics import aggregate_scores
 from stt_eval_punctuation import score_record, aggregate_punctuation
 

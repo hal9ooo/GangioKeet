@@ -12,7 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from stt_eval import load_manifest  # noqa: E402
+from stt_eval_manifest import load_manifest  # noqa: E402
 from stt_eval_ingest_fleurs import (  # noqa: E402
     ingest_fleurs,
     select_fleurs_clips,
