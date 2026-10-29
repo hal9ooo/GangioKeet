@@ -20,7 +20,6 @@ public sealed class TrayController : IDisposable
     private readonly TaskbarIcon _tray;
     private readonly DictationController _controller;
     private readonly RecoveryStore _recovery;
-    private readonly EndpointSelector? _selector;
     private readonly ClientConfig _config;
     private readonly IAudioDeviceProvider _devices;
     private readonly string _configPath;
@@ -37,7 +36,6 @@ public sealed class TrayController : IDisposable
         TaskbarIcon tray,
         DictationController controller,
         RecoveryStore recovery,
-        EndpointSelector? selector,
         ClientConfig config,
         IAudioDeviceProvider devices,
         string configPath,
@@ -49,7 +47,6 @@ public sealed class TrayController : IDisposable
         _tray = tray;
         _controller = controller;
         _recovery = recovery;
-        _selector = selector;
         _exit = exit;
         _config = config;
         _devices = devices;
@@ -72,7 +69,6 @@ public sealed class TrayController : IDisposable
             }
         });
 
-        if (_selector is not null) _selector.Changed += OnEndpointChanged;
         _recovery.Changed += OnRecoveryChanged;
 
         BuildContextMenu();
@@ -85,7 +81,6 @@ public sealed class TrayController : IDisposable
         if (_disposed) return;
         _disposed = true;
 
-        if (_selector is not null) _selector.Changed -= OnEndpointChanged;
         _recovery.Changed -= OnRecoveryChanged;
 
         _tray.Dispose();
@@ -244,25 +239,9 @@ public sealed class TrayController : IDisposable
         }
     }
 
-    private void OnEndpointChanged()
-    {
-        _post(UpdateTooltip);
-    }
-
     private void UpdateTooltip()
     {
-        if (_selector is null)
-        {
-            _tray.ToolTipText = "GangioKeet — Locale";
-            return;
-        }
-
-        EndpointConfig active = _selector.Active;
-        EndpointStats stats = _selector.StatsFor(active);
-
-        _tray.ToolTipText = stats.Measured && !stats.Reachable
-            ? "GangioKeet — Offline"
-            : $"GangioKeet — {active.Name} · {EndpointFormatPolicy.Latency(stats.MedianLatencyMs)}";
+        _tray.ToolTipText = "GangioKeet";
     }
 
     private void OnRecoveryChanged(object? sender, EventArgs e)

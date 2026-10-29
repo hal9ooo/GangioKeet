@@ -10,7 +10,7 @@ namespace GangioKeet.Client.Ui;
 /// </summary>
 public sealed partial class SplashWindow : Window
 {
-    public const string Payoff = "A one-user project putting unemployed Macs and local GPUs to work.";
+    public const string Payoff = "A one-user project putting local GPUs to work.";
 
     private static readonly TimeSpan FadeDuration = TimeSpan.FromMilliseconds(220);
 

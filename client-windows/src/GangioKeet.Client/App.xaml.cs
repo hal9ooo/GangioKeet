@@ -239,7 +239,6 @@ public partial class App : Application
             },
             _controller,
             _recovery,
-            _selector,
             config,
             new AudioDevices(),
             ConfigLoader.DefaultPath,
@@ -304,11 +303,13 @@ public partial class App : Application
             return;
         }
 
-        SettingsWindow window = _selector is null || _probe is null
-            ? new(null, null, _telemetry, ConfigLoader.DefaultPath, _ => { }, _logger,
-                LocalInfo, OnModeSaved, _recordingStore, OnModelPairSaved)
-            : new(_selector, _probe, _telemetry, ConfigLoader.DefaultPath, OnEndpointsSaved, _logger,
-                LocalInfo, OnModeSaved, _recordingStore, OnModelPairSaved);
+        SettingsWindow window = new(
+            _telemetry,
+            ConfigLoader.DefaultPath,
+            _logger,
+            LocalInfo,
+            _recordingStore,
+            OnModelPairSaved);
 
         window.Closed += (_, _) => _settings = null;
         _settings = window;
@@ -369,7 +370,6 @@ public partial class App : Application
             var localBackend = new LocalDictationBackend(_runtime.Pipeline, () => _runtime.IsReady, _recordingQueue);
             _controller.SetBackend(localBackend);
             _ = StartLocalRuntimeAsync(_runtime);
-            _settings?.SetEndpointServices(null, null);
             _logger?.Write("switched_local_pair", $"{setup.SttId} + {setup.CleanerId}");
         }
         catch (Exception ex)
@@ -412,7 +412,6 @@ public partial class App : Application
             var localBackend = new LocalDictationBackend(_runtime.Pipeline, () => _runtime.IsReady, _recordingQueue);
             _controller.SetBackend(localBackend);
             _ = StartLocalRuntimeAsync(_runtime);
-            _settings?.SetEndpointServices(null, null);
             _logger?.Write("switched_to_local", "Local runtime active and controller backend swapped");
         }
         else // remote
@@ -485,7 +484,6 @@ public partial class App : Application
 
             var remoteBackend = new RemoteDictationBackend(CreateSession, _selector, _config, time);
             _controller.SetBackend(remoteBackend);
-            _settings?.SetEndpointServices(_selector, _probe, OnEndpointsSaved);
             _logger?.Write("switched_to_remote", "Remote monitor active and controller backend swapped");
         }
     }

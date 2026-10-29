@@ -29,7 +29,7 @@
                 Background="#B3121212"
                 CornerRadius="6"
                 HorizontalAlignment="Center">
-            <TextBlock Text="A one-user project putting unemployed Macs and local GPUs to work."
+            <TextBlock Text="A one-user project putting local GPUs to work."
                        Foreground="#E0E0E0"
                        FontSize="12"
                        FontFamily="Segoe UI"

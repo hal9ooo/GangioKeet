@@ -242,7 +242,7 @@ public sealed partial class PillWindow : Window, IPillView
 
     private static string StateToDefaultMessage(PillState state) => state switch
     {
-        PillState.Arming => "Connessione…",
+        PillState.Arming => "Avvio…",
         PillState.Recording => "Registrazione…",
         PillState.Processing => "Elaborazione…",
         PillState.Warning => "Testo non rifinito",
