@@ -13,7 +13,7 @@
     "tool": "Inno Setup",
     "required_version": "6.7.3",
     "iscc_sha256": "0a8757031b33777e4c9cbffee40f11a5062b36d25cbe144c1db73b6102b80ad7",
-    "installer_sha256": "04a42096267913b9bdc5eb8dfe35d141fbbef36221e847e5633dcfac5f53571a",
+    "installer_sha256": "611ebf7bfde3174bc76f996d0bcc51a7e21257bf4214ed12ba8ad7cf21e464f7",
     "disk_spanning": false,
     "script": "client-windows/installer/GangioKeet.iss",
     "mode": "per-user, no service, no scheduled task, no firewall rule"
