@@ -7,7 +7,7 @@ clipboard-preserving paste, explicit recovery of a failed dictation, an
 always-copyable last result, and automatic media pause/resume while dictating.
 
 - Target: **Windows 11** (Windows 10 not certified).
-- Stack: C# / .NET 10, WPF, NAudio 3.3, YamlDotNet 17, Hardcodet.NotifyIcon.Wpf 2.
+- Stack: C# / .NET 10, WPF, NAudio 3.3, YamlDotNet 18.1, Hardcodet.NotifyIcon.Wpf 2.
 - Target framework: `net10.0-windows10.0.19041.0` (GSMTC/WinRT projections).
 - No HTTP server and no Python at runtime.
 

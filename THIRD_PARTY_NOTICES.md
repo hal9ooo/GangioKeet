@@ -90,7 +90,7 @@ All are MIT-licensed:
 
 - NAudio 3.3.0, copyright 2020 Mark Heath.
 - Hardcodet.NotifyIcon.Wpf 2.0.1, copyright (c) Philipp Sumi.
-- YamlDotNet 17.0.0, copyright (c) 2008-2014 Antoine Aubry and contributors.
+- YamlDotNet 18.1.0, copyright (c) 2008-2014 Antoine Aubry and contributors.
 - CommunityToolkit.HighPerformance, copyright (c) .NET Foundation and
   Contributors.
 - Microsoft.Extensions.* packages, copyright (c) .NET Foundation and
