@@ -218,7 +218,7 @@ public sealed partial class SettingsWindow : Window
 
     private static string FormatTelemetry(TelemetrySnapshot snapshot)
     {
-        if (snapshot.LastEndpoint is null)
+        if (snapshot.LastBackend is null)
         {
             return "Nessuna dettatura registrata in questa sessione.";
         }
@@ -226,11 +226,11 @@ public sealed partial class SettingsWindow : Window
         string last = snapshot.LastDictationMs is null
             ? "ultima dettatura: —"
             : $"ultima dettatura: {FormatMs(snapshot.LastDictationMs)}";
-        string startup = snapshot.LastConnectMs is null
+        string startup = snapshot.LastStartMs is null
             ? "avvio: —"
-            : $"avvio: {FormatMs(snapshot.LastConnectMs)}";
+            : $"avvio: {FormatMs(snapshot.LastStartMs)}";
         string counters = $"OK {snapshot.Successes} · errori {snapshot.Failures} · retry {snapshot.Retries}";
-        string backend = $"ultimo backend: {snapshot.LastEndpoint}";
+        string backend = $"ultimo backend: {snapshot.LastBackend}";
 
         return snapshot.LastError is null
             ? $"{last} · {startup} · {counters} · {backend}"

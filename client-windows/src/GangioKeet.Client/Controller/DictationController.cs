@@ -390,7 +390,7 @@ public sealed class DictationController : IAsyncDisposable
             Task captureTask = StartCaptureAsync();
 
             TurnStartOutcome connect = await startTask.ConfigureAwait(false);
-            TimeSpan connectElapsed = _time.GetElapsedTime(connectStarted);
+            TimeSpan startElapsed = _time.GetElapsedTime(connectStarted);
             await captureTask.ConfigureAwait(false);
 
             if (IsStale(generation)) return;
@@ -432,7 +432,7 @@ public sealed class DictationController : IAsyncDisposable
                 _telemetry.RecordDictation(
                     success: true,
                     _time.GetElapsedTime(_turnStarted),
-                    connectElapsed,
+                    startElapsed,
                     turn.BackendName,
                     errorCode: null);
             }
@@ -592,7 +592,7 @@ public sealed class DictationController : IAsyncDisposable
         _telemetry.RecordDictation(
             success: false,
             _time.GetElapsedTime(_turnStarted),
-            connect: null,
+            start: null,
             turn?.BackendName ?? "sconosciuto",
             errorCode: code);
     }

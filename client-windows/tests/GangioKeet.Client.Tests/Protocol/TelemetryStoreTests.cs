@@ -20,8 +20,8 @@ public sealed class TelemetryStoreTests
         Assert.Equal(1, snapshot.Failures);
         Assert.Equal(1, snapshot.Retries);
         Assert.Equal(2000d, snapshot.LastDictationMs);
-        Assert.Null(snapshot.LastConnectMs);
-        Assert.Equal("Mobilita", snapshot.LastEndpoint);
+        Assert.Null(snapshot.LastStartMs);
+        Assert.Equal("Mobilita", snapshot.LastBackend);
         Assert.Equal("connect_failed", snapshot.LastError);
     }
 

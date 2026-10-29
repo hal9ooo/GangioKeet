@@ -6,8 +6,8 @@ public readonly record struct TelemetrySnapshot(
     int Failures,
     int Retries,
     double? LastDictationMs,
-    double? LastConnectMs,
-    string? LastEndpoint,
+    double? LastStartMs,
+    string? LastBackend,
     string? LastError);
 
 public readonly record struct TurnTimingRecord(
@@ -25,16 +25,16 @@ public sealed class TelemetryStore
     private int _failures;
     private int _retries;
     private double? _lastDictationMs;
-    private double? _lastConnectMs;
-    private string? _lastEndpoint;
+    private double? _lastStartMs;
+    private string? _lastBackend;
     private string? _lastError;
     private readonly Dictionary<long, TurnTimingRecord> _timings = [];
 
     public void RecordDictation(
         bool success,
         TimeSpan total,
-        TimeSpan? connect,
-        string endpointName,
+        TimeSpan? start,
+        string backendName,
         string? errorCode)
     {
         lock (_gate)
@@ -51,8 +51,8 @@ public sealed class TelemetryStore
             }
 
             _lastDictationMs = total.TotalMilliseconds;
-            _lastConnectMs = connect?.TotalMilliseconds;
-            _lastEndpoint = endpointName;
+            _lastStartMs = start?.TotalMilliseconds;
+            _lastBackend = backendName;
         }
     }
 
@@ -89,8 +89,8 @@ public sealed class TelemetryStore
                 _failures,
                 _retries,
                 _lastDictationMs,
-                _lastConnectMs,
-                _lastEndpoint,
+                _lastStartMs,
+                _lastBackend,
                 _lastError);
         }
     }

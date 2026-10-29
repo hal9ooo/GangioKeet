@@ -319,9 +319,9 @@ public sealed class DictationControllerTests
         TelemetrySnapshot snapshot = h.Telemetry.Snapshot();
 
         Assert.Equal(1, snapshot.Successes);
-        Assert.Equal("fake", snapshot.LastEndpoint);
+        Assert.Equal("fake", snapshot.LastBackend);
         Assert.NotNull(snapshot.LastDictationMs);
-        Assert.NotNull(snapshot.LastConnectMs);
+        Assert.NotNull(snapshot.LastStartMs);
         Assert.Null(snapshot.LastError);
     }
 
@@ -339,7 +339,7 @@ public sealed class DictationControllerTests
 
         Assert.Equal(1, snapshot.Failures);
         Assert.Equal("start_failed", snapshot.LastError);
-        Assert.Equal("fake", snapshot.LastEndpoint);
+        Assert.Equal("fake", snapshot.LastBackend);
     }
 
     [Fact]
