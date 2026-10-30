@@ -40,11 +40,14 @@ public sealed class LocalModelResolver : ILocalModelResolver
 
     public string ModelRoot { get; }
 
+    public IReadOnlyList<ModelArtifact> Candidates { get; private set; } = [];
+
     public ResolvedModelSelection Resolve(ModelSelection selection)
     {
         IntegrityManifest manifest = IntegrityManifestFile.Load(_integrityPath);
         IntegrityManifestFile.Verify(manifest, _catalogPath, _runtimeLockPath, _cleanupPolicyPath);
         ModelCatalog catalog = ModelCatalog.Load(_catalogPath);
+        Candidates = catalog.Candidates;
         return ModelSelectionResolver.Resolve(selection, catalog);
     }
 

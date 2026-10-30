@@ -75,20 +75,40 @@
                                Margin="0,8,0,0"
                                TextWrapping="Wrap" />
 
-                    <StackPanel Margin="0,10,0,0">
-                        <TextBlock Text="stack modelli locale" Style="{StaticResource Label}" Margin="0,0,0,4" />
-                        <WrapPanel Orientation="Horizontal">
-                            <Button x:Name="StackDefaultBtn"
-                                    Content="Qwen3-ASR + Gemma 4"
-                                    Padding="10,5"
-                                    Margin="0,0,8,6"
-                                    Click="StackDefaultBtn_Click" />
-                            <Button x:Name="StackParakeetBtn"
-                                    Content="Parakeet + Qwen3"
-                                    Padding="10,5"
-                                    Margin="0,0,8,6"
-                                    Click="StackParakeetBtn_Click" />
-                        </WrapPanel>
+                    <StackPanel x:Name="ModelSelectionPanel" Margin="0,10,0,0">
+                        <TextBlock Text="combinazione modelli" Style="{StaticResource Label}" Margin="0,0,0,4" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="90" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="ASR" VerticalAlignment="Center" Foreground="#B0B0B0" />
+                            <ComboBox x:Name="AsrCombo"
+                                      Grid.Column="1"
+                                      DisplayMemberPath="DisplayName"
+                                      SelectionChanged="AsrCombo_SelectionChanged" />
+                        </Grid>
+                        <CheckBox x:Name="RefinementCheck"
+                                  Content="Refinement attivo"
+                                  Foreground="#E0E0E0"
+                                  Margin="0,6,0,4"
+                                  Click="RefinementCheck_Click" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="90" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="Refinement" VerticalAlignment="Center" Foreground="#B0B0B0" />
+                            <ComboBox x:Name="CleanerCombo"
+                                      Grid.Column="1"
+                                      DisplayMemberPath="DisplayName"
+                                      SelectionChanged="CleanerCombo_SelectionChanged" />
+                        </Grid>
+                        <ProgressBar x:Name="ModelProgress"
+                                     Height="4"
+                                     Margin="0,6,0,0"
+                                     Visibility="Collapsed"
+                                     IsIndeterminate="True" />
                     </StackPanel>
 
                     <TextBlock x:Name="LocalErrorText"

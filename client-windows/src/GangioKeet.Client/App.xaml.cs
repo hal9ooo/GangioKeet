@@ -22,7 +22,7 @@ namespace GangioKeet.Client;
 /// Composition root: crea e collega tutti i servizi all'avvio, gestisce il
 /// ciclo di vita (tray-only startup, shutdown pulito) e il reload della config.
 /// </summary>
-public partial class App : Application
+public partial class App : Application, IModelSelectionHost
 {
     private SingleInstanceGuard? _guard;
     private IDisposable? _instanceHandle;
@@ -331,6 +331,24 @@ public partial class App : Application
         _logger?.Write("model_selection_applied", LocalSettingsInfo.FormatPair(_localSttId, _localCleanerId));
     }
 
+    IReadOnlyList<ModelArtifact> IModelSelectionHost.AsrCandidates =>
+        _modelResolver is null ? [] : ModelSelectionChoices.Asr(_modelResolver.Candidates);
+
+    IReadOnlyList<ModelArtifact> IModelSelectionHost.CleanerCandidates =>
+        _modelResolver is null ? [] : ModelSelectionChoices.Cleaners(_modelResolver.Candidates);
+
+    ModelSelection IModelSelectionHost.Current =>
+        _modelSelectionService?.Current ?? _modelSelection
+        ?? throw new InvalidOperationException("Model selection is not ready.");
+
+    bool IModelSelectionHost.IsAvailable(ModelArtifact artifact) =>
+        _modelResolver is not null
+        && artifact.Files.All(file => File.Exists(Path.Combine(_modelResolver.ModelRoot, file.Path)));
+
+    Task IModelSelectionHost.ApplyAsync(ModelSelection selection,
+        IProgress<ModelProvisionProgress>? progress, CancellationToken ct) =>
+        ApplyModelSelectionAsync(selection, progress, ct);
+
     private void ShowSettings()
     {
         if (_settings is not null)
@@ -350,7 +368,8 @@ public partial class App : Application
             _logger,
             LocalInfo,
             _recordingStore,
-            OnModelPairSaved);
+            OnModelPairSaved,
+            modelSelection: this);
 
         window.Closed += (_, _) => _settings = null;
         _settings = window;

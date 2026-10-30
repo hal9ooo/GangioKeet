@@ -5,6 +5,7 @@ using GangioKeet.Client.Configuration;
 using GangioKeet.Client.Platform;
 using GangioKeet.Client.Protocol;
 using GangioKeet.Client.Recording;
+using GangioKeet.Inference;
 
 namespace GangioKeet.Client.Ui;
 
@@ -19,10 +20,14 @@ public sealed partial class SettingsWindow : Window
     private readonly FileLogger? _logger;
     private readonly Func<LocalSettingsInfo> _localInfo;
     private readonly Action<string>? _onModelPairSaved;
+    private readonly IModelSelectionHost? _modelSelection;
+    private readonly DispatcherTimer _timer;
+    private DispatcherTimer? _selectionTimer;
+    private bool _populatingSelection;
+    private bool _selectionApplying;
     private RecordingStore? _recordingStore;
     private RecordingStorage? _recordingStorage;
     private bool _recordingRefresh;
-    private readonly DispatcherTimer _timer;
 
     public SettingsWindow(
         TelemetryStore? telemetry,
@@ -30,7 +35,8 @@ public sealed partial class SettingsWindow : Window
         FileLogger? logger,
         Func<LocalSettingsInfo> localInfo,
         RecordingStore? recordingStore,
-        Action<string>? onModelPairSaved)
+        Action<string>? onModelPairSaved,
+        IModelSelectionHost? modelSelection = null)
     {
         _telemetry = telemetry;
         _configPath = configPath;
@@ -39,6 +45,7 @@ public sealed partial class SettingsWindow : Window
         _recordingStore = recordingStore;
         _recordingStorage = recordingStore is null ? null : new RecordingStorage(recordingStore);
         _onModelPairSaved = onModelPairSaved;
+        _modelSelection = modelSelection;
 
         InitializeComponent();
         UpdateLocal();
@@ -49,21 +56,29 @@ public sealed partial class SettingsWindow : Window
             (_, _) => Refresh(),
             Dispatcher);
         _timer.Start();
+        _selectionTimer = new DispatcherTimer(
+            TimeSpan.FromMilliseconds(250),
+            DispatcherPriority.Background,
+            (_, _) =>
+            {
+                _selectionTimer?.Stop();
+                _ = ApplySelectionAsync();
+            },
+            Dispatcher);
 
         Loaded += (_, _) => ReloadFromDisk();
-        Closed += (_, _) => _timer.Stop();
+        Closed += (_, _) => { _timer.Stop(); _selectionTimer?.Stop(); };
     }
 
     public bool UsesLocalServices => true;
     public bool IsLocalPanelVisible => LocalPanel.Visibility == Visibility.Visible;
     public string LocalState => LocalStateText.Text;
     public string LocalPair => LocalPairText.Text;
+    public bool HasModelSelection => ModelSelectionPanel.Visibility == Visibility.Visible;
+    public IReadOnlyList<string> AsrChoiceLabels =>
+        AsrCombo.Items.Cast<ModelArtifact>().Select(ModelSelectionChoices.Label).ToArray();
 
-    private void LoadFromConfig(ClientConfig config)
-    {
-        UpdateModelStackButtons(config.Inference.ModelSelectionPath);
-        UpdateLocal();
-    }
+    private void LoadFromConfig(ClientConfig config) => UpdateLocal();
 
     private void ReloadFromDisk()
     {
@@ -101,49 +116,121 @@ public sealed partial class SettingsWindow : Window
 
     private void UpdateLocal()
     {
-        LocalSettingsInfo info = _localInfo();        LocalBackendText.Text = info.Backend;
+        LocalSettingsInfo info = _localInfo();
+        LocalBackendText.Text = info.Backend;
         LocalStateText.Text = info.State;
         LocalPairText.Text = info.Pair;
         LocalErrorText.Text = info.Error ?? "";
-        UpdateModelStackButtons(info.ModelSelectionPath ?? info.Pair);
+        if (!_selectionApplying && !_populatingSelection
+            && !AsrCombo.IsDropDownOpen && !CleanerCombo.IsDropDownOpen)
+            PopulateModelSelection();
     }
 
-    private void UpdateModelStackButtons(string? pathOrPair)
+    private void PopulateModelSelection(bool force = false)
     {
-        bool isParakeet = pathOrPair is not null
-            && pathOrPair.Contains("parakeet", StringComparison.OrdinalIgnoreCase);
-        StackDefaultBtn.BorderBrush = isParakeet
-            ? System.Windows.Media.Brushes.Transparent
-            : System.Windows.Media.Brushes.MediumSpringGreen;
-        StackDefaultBtn.BorderThickness = isParakeet ? new Thickness(1) : new Thickness(2);
-        StackParakeetBtn.BorderBrush = isParakeet
-            ? System.Windows.Media.Brushes.MediumSpringGreen
-            : System.Windows.Media.Brushes.Transparent;
-        StackParakeetBtn.BorderThickness = isParakeet ? new Thickness(2) : new Thickness(1);
-    }
-
-    private void StackDefaultBtn_Click(object sender, RoutedEventArgs e)
-    {
-        SelectModelPair("models/selected.json");
-    }
-
-    private void StackParakeetBtn_Click(object sender, RoutedEventArgs e)
-    {
-        SelectModelPair("models/selected-parakeet-qwen.json");
-    }
-
-    private void SelectModelPair(string relativePath)
-    {
-        if (!ConfigWriter.SetModelSelectionPath(_configPath, relativePath))
+        if (_modelSelection is null)
         {
-            StatusText.Text = "Salvataggio stack modelli non riuscito.";
+            ModelSelectionPanel.Visibility = Visibility.Collapsed;
             return;
         }
 
-        UpdateModelStackButtons(relativePath);
-        _onModelPairSaved?.Invoke(relativePath);
-        UpdateLocal();
-        StatusText.Text = $"Stack {Path.GetFileNameWithoutExtension(relativePath)} applicato a caldo.";
+        ModelSelection current;
+        try { current = _modelSelection.Current; }
+        catch (InvalidOperationException) { return; }
+
+        ModelSelectionPanel.Visibility = Visibility.Visible;
+        _populatingSelection = true;
+        try
+        {
+            if (force || AsrCombo.Items.Count == 0)
+            {
+                AsrCombo.ItemsSource = ModelSelectionChoices.Asr(_modelSelection.AsrCandidates);
+                CleanerCombo.ItemsSource = ModelSelectionChoices.Cleaners(_modelSelection.CleanerCandidates);
+            }
+            AsrCombo.SelectedItem = AsrCombo.Items.Cast<ModelArtifact>()
+                .FirstOrDefault(candidate => candidate.Id == current.SttId);
+            CleanerCombo.SelectedItem = CleanerCombo.Items.Cast<ModelArtifact>()
+                .FirstOrDefault(candidate => candidate.Id == current.CleanerId);
+            RefinementCheck.IsChecked = current.RefinementEnabled;
+            CleanerCombo.IsEnabled = ModelSelectionChoices.CleanerEnabled(current.RefinementEnabled);
+        }
+        finally { _populatingSelection = false; }
+    }
+
+    private void AsrCombo_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (_populatingSelection || _selectionApplying) return;
+        ScheduleSelectionApply();
+    }
+
+    private void CleanerCombo_SelectionChanged(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        if (_populatingSelection || _selectionApplying) return;
+        ScheduleSelectionApply();
+    }
+
+    private void RefinementCheck_Click(object sender, RoutedEventArgs e)
+    {
+        CleanerCombo.IsEnabled = ModelSelectionChoices.CleanerEnabled(RefinementCheck.IsChecked == true);
+        ScheduleSelectionApply(immediate: true);
+    }
+
+    private void ScheduleSelectionApply(bool immediate = false)
+    {
+        if (_modelSelection is null || _selectionApplying) return;
+        if (_selectionTimer is null)
+        {
+            if (immediate) _ = ApplySelectionAsync();
+            return;
+        }
+        _selectionTimer.Stop();
+        if (immediate) _ = ApplySelectionAsync();
+        else _selectionTimer.Start();
+    }
+
+    private async Task ApplySelectionAsync()
+    {
+        if (_modelSelection is null || _selectionApplying) return;
+        if (AsrCombo.SelectedItem is not ModelArtifact asr) return;
+        ModelSelection current;
+        try { current = _modelSelection.Current; }
+        catch (InvalidOperationException) { return; }
+
+        ModelArtifact? cleaner = CleanerCombo.SelectedItem as ModelArtifact;
+        bool refinement = RefinementCheck.IsChecked == true;
+        string? cleanerId = cleaner?.Id ?? current.CleanerId;
+        if (refinement && string.IsNullOrWhiteSpace(cleanerId))
+        {
+            StatusText.Text = "Seleziona un cleaner per il refinement.";
+            return;
+        }
+
+        _selectionApplying = true;
+        AsrCombo.IsEnabled = false;
+        CleanerCombo.IsEnabled = false;
+        RefinementCheck.IsEnabled = false;
+        ModelProgress.Visibility = Visibility.Visible;
+        try
+        {
+            ModelSelection desired = new(2, asr.Id, cleanerId, refinement);
+            await _modelSelection.ApplyAsync(desired,
+                new Progress<ModelProvisionProgress>(p => StatusText.Text = $"Modelli: {p.Status}"),
+                CancellationToken.None);
+            StatusText.Text = "Combinazione applicata a caldo.";
+        }
+        catch (Exception error) when (error is IOException or InvalidDataException or InvalidOperationException)
+        {
+            StatusText.Text = "Applicazione non riuscita: " + error.Message;
+        }
+        finally
+        {
+            _selectionApplying = false;
+            ModelProgress.Visibility = Visibility.Collapsed;
+            AsrCombo.IsEnabled = true;
+            RefinementCheck.IsEnabled = true;
+            CleanerCombo.IsEnabled = RefinementCheck.IsChecked == true;
+            PopulateModelSelection();
+        }
     }
 
     private async void RecordingCheck_Click(object sender, RoutedEventArgs e)
