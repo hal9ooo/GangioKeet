@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>Local push-to-talk dictation for Windows.</strong><br/>
-  One process, two local model stacks, no cloud and no subscription.
+  One process, selectable local models, no cloud and no subscription.
 </p>
 
 <p align="center">
@@ -33,9 +33,9 @@ machine; the only network access is model provisioning from Hugging Face.
 
 - **Push-to-talk, Wispr Flow style**: hold **Caps Lock** (or F8), talk, release.
   Double-tap for hands-free, **Esc** to abort.
-- **Fully local**: two selectable stacks, both on the Windows machine:
-  - **Qwen3-ASR + Gemma 4** (`client-windows/models/selected.json`);
-  - **Parakeet + Qwen3** (`client-windows/models/selected-parakeet-qwen.json`).
+- **Fully local**: choose any ASR + refinement combination on the Windows
+  machine, or turn refinement off entirely. The choice is global and applies
+  hot, without restarting.
 - **Media pause**: when dictation starts, playing media sessions are paused via
   Windows GSMTC; when the key is released, only the sessions paused by
   GangioKeet are resumed. Always on, no setting.
@@ -114,8 +114,8 @@ The tray menu has the microphone picker, the last-dictation actions, the
 settings window, and the exit command. **Copia ultimo testo** is available after
 any dictation with text, including a successful paste; **Riprova** and
 **Scarta recupero** are enabled only when there is a failed dictation to
-recover. The settings window switches between the two local stacks and toggles
-benchmark recording; both apply immediately.
+recover. The settings window selects the ASR and the optional refinement and
+toggles benchmark recording; all changes apply immediately.
 
 ## Configuration
 
@@ -150,23 +150,31 @@ The pause has a 750 ms budget: an unresponsive app cannot block the microphone.
 If you release the key while the pause is still in flight, the capture is
 cancelled and the media is resumed immediately.
 
-## The two local stacks
+## Model combinations
 
-| Selection file | ASR | Cleaner | Notes |
-|---|---|---|---|
-| `models/selected.json` | Qwen3-ASR-1.7B F16 | Gemma 4 E2B-it Q4_0 | Default stack |
-| `models/selected-parakeet-qwen.json` | Parakeet TDT 0.6B v3 int8 | Qwen3 1.7B | Lower ASR footprint |
+The global choice lives in `models/selection.json`:
 
-Both selections are plain JSON with model IDs, relative paths, SHA-256 hashes,
-and the pinned runtime lock. The client verifies the artifacts before loading
-them and can switch stacks without restarting.
+```json
+{"schema_version":2,"stt_id":"parakeet_v3","cleaner_id":"gemma4_e2b","refinement_enabled":true}
+```
+
+The settings window has an **ASR** selector, a **Refinement** on/off checkbox,
+and a **cleaner** selector. Any ASR can be paired with any cleaner, or
+refinement can be off. Changes apply hot: the ASR and cleaner are swapped in
+place, and a dictation already being processed finishes on the old engines.
+
+`models/candidates.json` is the single source for artifact paths and hashes,
+pinned by `models/integrity.json`. Legacy
+`selected.json`/`selected-parakeet-qwen.json` are migrated on first run.
+On the real-voice tests, **Parakeet + Nessuno** is the best fidelity/latency
+choice; **Parakeet + Gemma** preserves questions and normalizes technical terms.
 
 ## Privacy and security
 
 - **No audio or text over the network**: the runtime opens no HTTP listener and
   never sends audio, transcripts, window titles, or telemetry to a service.
 - **Model provisioning is the only network access**: on first run or when you
-  switch stack, the client downloads missing model files from
+  change model combination, the client downloads missing model files from
   `huggingface.co` over HTTPS. Hugging Face sees your IP address and the
   requested model/revision; it never receives audio or text.
 - **No history by default**: audio and transcripts live in RAM. If
@@ -206,7 +214,7 @@ dotnet test client-windows\GangioKeet.Client.sln
 
 The client tests cover the controller lifecycle, media pause/resume ordering,
 configuration compatibility, hotkeys, audio conversion, paste, recording,
-recovery, and the two-stack switch.
+recovery, and hot model-combination switching.
 
 Offline evaluation:
 

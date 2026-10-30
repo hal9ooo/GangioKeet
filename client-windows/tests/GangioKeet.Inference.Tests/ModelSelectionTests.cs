@@ -89,7 +89,7 @@ public sealed class ModelSelectionTests : IDisposable
     }
 
     [Fact]
-    public void MigrateWritesV2WithoutChangingThePair()
+    public void LegacySelectionMigratesToV2()
     {
         string legacy = Write("""
             {"schema_version":1,"stt":{"candidate_id":"parakeet_v3"},"cleaner":{"candidate_id":"qwen3_1_7b"}}

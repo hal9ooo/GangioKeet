@@ -56,20 +56,29 @@ loading as a local configuration and is not rewritten; every other unknown key
 is still rejected. `recording.store_context` is accepted for compatibility but
 has no effect: selected text is never stored.
 
-On first run or after a stack switch, missing model files are downloaded from
-`huggingface.co` over HTTPS. No audio, transcript, window title, or telemetry is
-sent; the request exposes the client IP and the requested model/revision.
+On first run or after a model-combination change, missing model files are
+downloaded from `huggingface.co` over HTTPS. No audio, transcript, window title,
+or telemetry is sent; the request exposes the client IP and the requested
+model/revision.
 
-## The two local stacks
+## Model combinations
 
-| Selection | ASR | Cleaner | Notes |
-|---|---|---|---|
-| `models/selected.json` | Qwen3-ASR-1.7B F16 | Gemma 4 E2B-it Q4_0 | Default |
-| `models/selected-parakeet-qwen.json` | Parakeet TDT 0.6B v3 int8 | Qwen3 1.7B | Lower ASR footprint |
+The global selection lives in `models/selection.json`:
 
-The settings window switches stacks at runtime. Both files pin model IDs,
-relative paths, SHA-256 hashes, the cleanup policy, and the runtime lock. The
-client verifies artifacts before loading them.
+```json
+{"schema_version":2,"stt_id":"parakeet_v3","cleaner_id":null,"refinement_enabled":false}
+```
+
+The settings window exposes an **ASR** selector, a **Refinement** checkbox, and
+a **cleaner** selector. Any ASR can be paired with any cleaner, or refinement
+can be off. Changes apply hot, without restarting the client; a dictation
+already being processed completes on the old engines.
+
+`models/candidates.json` is the single source for artifact paths and hashes and
+is pinned by `models/integrity.json`. Legacy `selected.json` and
+`selected-parakeet-qwen.json` files are migrated on first run. Real-voice tests
+favour **Parakeet + Nessuno** for fidelity/latency and **Parakeet + Gemma** for
+questions and technical terms.
 
 ## Media pause
 
@@ -130,7 +139,7 @@ text copyable for the rest of the session, so a focus change cannot lose it.
 The tray menu opens the settings window. It shows:
 
 - the local runtime state and the active backend;
-- the two stack buttons (applied immediately, no restart);
+- the ASR/refinement selectors (applied immediately, no restart);
 - the benchmark recording toggle and the recorded samples list;
 - read-only telemetry: last dictation duration, local start time, OK/error/retry
   counters, last backend and last error.
@@ -145,7 +154,7 @@ dotnet test client-windows/GangioKeet.Client.sln
 
 Coverage includes the controller lifecycle, media pause/resume ordering,
 configuration compatibility, hotkeys, audio conversion, paste, recording, and
-the two-stack switch. The inference tests additionally validate the prompt hash
+hot model-combination switching. The inference tests additionally validate the prompt hash
 against `prompts/conservative-local-v3.txt`.
 
 ## Packaging

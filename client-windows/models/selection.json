@@ -1,0 +1,6 @@
+{
+  "schema_version": 2,
+  "stt_id": "qwen3_asr_1_7b",
+  "cleaner_id": "gemma4_e2b",
+  "refinement_enabled": true
+}
