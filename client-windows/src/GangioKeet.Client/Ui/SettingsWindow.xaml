@@ -85,8 +85,18 @@
                             <TextBlock Grid.Column="0" Text="ASR" VerticalAlignment="Center" Foreground="#B0B0B0" />
                             <ComboBox x:Name="AsrCombo"
                                       Grid.Column="1"
-                                      DisplayMemberPath="DisplayName"
-                                      SelectionChanged="AsrCombo_SelectionChanged" />
+                                      SelectionChanged="AsrCombo_SelectionChanged">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding Label}" />
+                                            <TextBlock Text="{Binding AvailabilityText}"
+                                                       Foreground="#9E9E9E"
+                                                       Margin="8,0,0,0" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
                         </Grid>
                         <CheckBox x:Name="RefinementCheck"
                                   Content="Refinement attivo"
@@ -101,14 +111,29 @@
                             <TextBlock Grid.Column="0" Text="Refinement" VerticalAlignment="Center" Foreground="#B0B0B0" />
                             <ComboBox x:Name="CleanerCombo"
                                       Grid.Column="1"
-                                      DisplayMemberPath="DisplayName"
-                                      SelectionChanged="CleanerCombo_SelectionChanged" />
+                                      SelectionChanged="CleanerCombo_SelectionChanged">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding Label}" />
+                                            <TextBlock Text="{Binding AvailabilityText}"
+                                                       Foreground="#9E9E9E"
+                                                       Margin="8,0,0,0" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
                         </Grid>
                         <ProgressBar x:Name="ModelProgress"
                                      Height="4"
                                      Margin="0,6,0,0"
                                      Visibility="Collapsed"
                                      IsIndeterminate="True" />
+                        <TextBlock Text="Consigliato: Parakeet + Nessuno per fedeltà e latenza; Parakeet + Gemma per domande e termini."
+                                   Foreground="#9E9E9E"
+                                   FontSize="11"
+                                   TextWrapping="Wrap"
+                                   Margin="0,6,0,0" />
                     </StackPanel>
 
                     <TextBlock x:Name="LocalErrorText"

@@ -46,6 +46,23 @@ public sealed class InferencePipelineSelectionTests
     }
 
     [Fact]
+    public async Task SwapEnginesWhenCleanerWarmupFailsDisposesNewEngines()
+    {
+        Engines engines = new();
+        await using InferencePipeline pipeline = engines.Pipeline();
+        await pipeline.WarmUpAsync(default);
+        FakeStt newStt = new("nuovo");
+        FakeCleaner failing = new() { WarmupFailure = new InvalidDataException("warm-up failed") };
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            pipeline.SwapEnginesAsync(newStt, failing, true, default));
+
+        Assert.True(newStt.Disposed);
+        Assert.True(failing.Disposed);
+        Assert.Equal("Come funziona?", (await pipeline.ProcessAsync(new(new byte[4], "chat"), default)).FinalText);
+    }
+
+    [Fact]
     public async Task SwapEnginesWaitsForActiveTurn()
     {
         Engines engines = new();
@@ -83,27 +100,40 @@ public sealed class InferencePipelineSelectionTests
     private sealed class FakeStt(string text) : ISttEngine
     {
         private static readonly EngineIdentity Identity = new("fake-stt", "r", "h", "v", "vulkan", "F16", "fake");
+        public bool Disposed { get; private set; }
 
         public Task LoadAsync(CancellationToken ct) => Task.CompletedTask;
 
         public Task<SpeechTranscript> TranscribeAsync(ReadOnlyMemory<byte> pcm16, CancellationToken ct) =>
             Task.FromResult(new SpeechTranscript(text, Identity));
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            Disposed = true;
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class FakeCleaner : ITextCleaner
     {
         private static readonly EngineIdentity Identity = new("fake-cleaner", "r", "h", "v", "vulkan", "Q4_0", "fake");
         public Exception? LoadFailure { get; init; }
+        public Exception? WarmupFailure { get; init; }
+        public bool Disposed { get; private set; }
 
         public Task LoadAsync(CancellationToken ct) =>
             LoadFailure is null ? Task.CompletedTask : Task.FromException(LoadFailure);
 
         public Task<CleanedText> CleanAsync(string raw, string profile, CancellationToken ct) =>
-            Task.FromResult(new CleanedText(raw + "!", Identity));
+            WarmupFailure is null
+                ? Task.FromResult(new CleanedText(raw + "!", Identity))
+                : Task.FromException<CleanedText>(WarmupFailure);
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            Disposed = true;
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class Engines : ISttEngine, ITextCleaner

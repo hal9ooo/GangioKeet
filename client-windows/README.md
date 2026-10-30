@@ -63,7 +63,9 @@ model/revision.
 
 ## Model combinations
 
-The global selection lives in `models/selection.json`:
+The active choice lives in `%APPDATA%\GangioKeet\selection.json`; the
+installer ships a seed in `models/selection.json` and the app copies it on
+first run:
 
 ```json
 {"schema_version":2,"stt_id":"parakeet_v3","cleaner_id":null,"refinement_enabled":false}

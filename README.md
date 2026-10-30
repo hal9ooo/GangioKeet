@@ -152,7 +152,9 @@ cancelled and the media is resumed immediately.
 
 ## Model combinations
 
-The global choice lives in `models/selection.json`:
+The active choice lives in `%APPDATA%\GangioKeet\selection.json`; the
+installer ships a seed in `models/selection.json` and the app copies it on
+first run:
 
 ```json
 {"schema_version":2,"stt_id":"parakeet_v3","cleaner_id":"gemma4_e2b","refinement_enabled":true}

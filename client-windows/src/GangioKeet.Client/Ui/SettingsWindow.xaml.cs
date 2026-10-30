@@ -25,6 +25,7 @@ public sealed partial class SettingsWindow : Window
     private DispatcherTimer? _selectionTimer;
     private bool _populatingSelection;
     private bool _selectionApplying;
+    private string? _lastSelectionKey;
     private RecordingStore? _recordingStore;
     private RecordingStorage? _recordingStorage;
     private bool _recordingRefresh;
@@ -76,7 +77,7 @@ public sealed partial class SettingsWindow : Window
     public string LocalPair => LocalPairText.Text;
     public bool HasModelSelection => ModelSelectionPanel.Visibility == Visibility.Visible;
     public IReadOnlyList<string> AsrChoiceLabels =>
-        AsrCombo.Items.Cast<ModelArtifact>().Select(ModelSelectionChoices.Label).ToArray();
+        AsrCombo.Items.Cast<ModelSelectionChoices.ModelChoice>().Select(choice => choice.Label).ToArray();
 
     private void LoadFromConfig(ClientConfig config) => UpdateLocal();
 
@@ -121,8 +122,19 @@ public sealed partial class SettingsWindow : Window
         LocalStateText.Text = info.State;
         LocalPairText.Text = info.Pair;
         LocalErrorText.Text = info.Error ?? "";
-        if (!_selectionApplying && !_populatingSelection
-            && !AsrCombo.IsDropDownOpen && !CleanerCombo.IsDropDownOpen)
+        if (_modelSelection is null)
+        {
+            ModelSelectionPanel.Visibility = Visibility.Collapsed;
+            return;
+        }
+        ModelSelection current;
+        try { current = _modelSelection.Current; }
+        catch (InvalidOperationException) { return; }
+        string key = ModelSelectionChoices.Key(current);
+        if (ModelSelectionChoices.ShouldPopulate(_selectionApplying, _populatingSelection,
+                _selectionTimer?.IsEnabled == true,
+                AsrCombo.IsDropDownOpen || CleanerCombo.IsDropDownOpen,
+                _lastSelectionKey, key))
             PopulateModelSelection();
     }
 
@@ -137,6 +149,8 @@ public sealed partial class SettingsWindow : Window
         ModelSelection current;
         try { current = _modelSelection.Current; }
         catch (InvalidOperationException) { return; }
+        string key = ModelSelectionChoices.Key(current);
+        if (!force && string.Equals(_lastSelectionKey, key, StringComparison.Ordinal)) return;
 
         ModelSelectionPanel.Visibility = Visibility.Visible;
         _populatingSelection = true;
@@ -144,15 +158,18 @@ public sealed partial class SettingsWindow : Window
         {
             if (force || AsrCombo.Items.Count == 0)
             {
-                AsrCombo.ItemsSource = ModelSelectionChoices.Asr(_modelSelection.AsrCandidates);
-                CleanerCombo.ItemsSource = ModelSelectionChoices.Cleaners(_modelSelection.CleanerCandidates);
+                AsrCombo.ItemsSource = ModelSelectionChoices.AsrChoices(
+                    _modelSelection.AsrCandidates, _modelSelection.IsAvailable);
+                CleanerCombo.ItemsSource = ModelSelectionChoices.CleanerChoices(
+                    _modelSelection.CleanerCandidates, _modelSelection.IsAvailable);
             }
-            AsrCombo.SelectedItem = AsrCombo.Items.Cast<ModelArtifact>()
-                .FirstOrDefault(candidate => candidate.Id == current.SttId);
-            CleanerCombo.SelectedItem = CleanerCombo.Items.Cast<ModelArtifact>()
-                .FirstOrDefault(candidate => candidate.Id == current.CleanerId);
+            AsrCombo.SelectedItem = AsrCombo.Items.Cast<ModelSelectionChoices.ModelChoice>()
+                .FirstOrDefault(choice => choice.Artifact.Id == current.SttId);
+            CleanerCombo.SelectedItem = CleanerCombo.Items.Cast<ModelSelectionChoices.ModelChoice>()
+                .FirstOrDefault(choice => choice.Artifact.Id == current.CleanerId);
             RefinementCheck.IsChecked = current.RefinementEnabled;
             CleanerCombo.IsEnabled = ModelSelectionChoices.CleanerEnabled(current.RefinementEnabled);
+            _lastSelectionKey = key;
         }
         finally { _populatingSelection = false; }
     }
@@ -191,12 +208,13 @@ public sealed partial class SettingsWindow : Window
     private async Task ApplySelectionAsync()
     {
         if (_modelSelection is null || _selectionApplying) return;
-        if (AsrCombo.SelectedItem is not ModelArtifact asr) return;
+        if (AsrCombo.SelectedItem is not ModelSelectionChoices.ModelChoice asrChoice) return;
+        ModelArtifact asr = asrChoice.Artifact;
         ModelSelection current;
         try { current = _modelSelection.Current; }
         catch (InvalidOperationException) { return; }
 
-        ModelArtifact? cleaner = CleanerCombo.SelectedItem as ModelArtifact;
+        ModelArtifact? cleaner = (CleanerCombo.SelectedItem as ModelSelectionChoices.ModelChoice)?.Artifact;
         bool refinement = RefinementCheck.IsChecked == true;
         string? cleanerId = cleaner?.Id ?? current.CleanerId;
         if (refinement && string.IsNullOrWhiteSpace(cleanerId))
@@ -218,8 +236,9 @@ public sealed partial class SettingsWindow : Window
                 CancellationToken.None);
             StatusText.Text = "Combinazione applicata a caldo.";
         }
-        catch (Exception error) when (error is IOException or InvalidDataException or InvalidOperationException)
+        catch (Exception error) when (error is not OperationCanceledException)
         {
+            _logger?.Write("model_selection_apply_failed", error.Message);
             StatusText.Text = "Applicazione non riuscita: " + error.Message;
         }
         finally
@@ -229,7 +248,7 @@ public sealed partial class SettingsWindow : Window
             AsrCombo.IsEnabled = true;
             RefinementCheck.IsEnabled = true;
             CleanerCombo.IsEnabled = RefinementCheck.IsChecked == true;
-            PopulateModelSelection();
+            PopulateModelSelection(force: true);
         }
     }
 

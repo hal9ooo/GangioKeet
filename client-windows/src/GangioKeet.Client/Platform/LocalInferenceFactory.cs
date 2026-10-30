@@ -62,8 +62,12 @@ public static class LocalInferenceFactory
                 stt, cleaner, true);
         }
 
-        string catalogPath = Path.Combine(selectedRoot, "candidates.json");
-        string integrityPath = Path.Combine(selectedRoot, "integrity.json");
+        string catalogPath = File.Exists(Path.Combine(selectedRoot, "candidates.json"))
+            ? Path.Combine(selectedRoot, "candidates.json")
+            : Path.Combine(models, "candidates.json");
+        string integrityPath = File.Exists(Path.Combine(selectedRoot, "integrity.json"))
+            ? Path.Combine(selectedRoot, "integrity.json")
+            : Path.Combine(models, "integrity.json");
         LocalModelResolver resolver = new(models, catalogPath, integrityPath, lockPath,
             config.Inference.CleanupPolicyPath, transcribe, llama, backend, policy);
         ResolvedModelSelection resolved = resolver.Resolve(selection);

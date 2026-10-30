@@ -29,7 +29,9 @@ public sealed class ModelSelectionTests : IDisposable
                 files = new[] { new { path = $"{id}.gguf", sha256 = new string('a', 64) } },
                 precision = "F16",
                 license = "Apache-2.0",
-                runtime_id = "fake-runtime"
+                runtime_id = id is "gemma4_e2b" or "qwen3_1_7b" or "qwen3_4b"
+                    ? "llama-vulkan"
+                    : "transcribe-vulkan"
             })
         }));
         return ModelCatalog.Load(path);
@@ -86,6 +88,30 @@ public sealed class ModelSelectionTests : IDisposable
         ModelCatalog catalog = CatalogWith("parakeet_v3");
         Assert.Throws<InvalidDataException>(() =>
             ModelSelectionResolver.Resolve(new(2, "parakeet_v3", null, true), catalog));
+    }
+
+    [Fact]
+    public void ResolveUnknownSttThrowsInvalidData()
+    {
+        ModelCatalog catalog = CatalogWith("parakeet_v3");
+        Assert.Throws<InvalidDataException>(() =>
+            ModelSelectionResolver.Resolve(new(2, "missing", null, false), catalog));
+    }
+
+    [Fact]
+    public void ResolveUnknownCleanerThrowsInvalidData()
+    {
+        ModelCatalog catalog = CatalogWith("parakeet_v3", "gemma4_e2b");
+        Assert.Throws<InvalidDataException>(() =>
+            ModelSelectionResolver.Resolve(new(2, "parakeet_v3", "missing", true), catalog));
+    }
+
+    [Fact]
+    public void ResolveWrongRuntimeRolesThrows()
+    {
+        ModelCatalog catalog = CatalogWith("parakeet_v3", "gemma4_e2b");
+        Assert.Throws<InvalidDataException>(() =>
+            ModelSelectionResolver.Resolve(new(2, "gemma4_e2b", "parakeet_v3", true), catalog));
     }
 
     [Fact]

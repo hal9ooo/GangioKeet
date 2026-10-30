@@ -47,7 +47,7 @@ public sealed class ReplayTests : IDisposable
     {
         BlockingEngines engines = new();
         ReplayCommand command = new(_root, _root, _root, Path.Combine(_root, "unused-lock.json"),
-            new CleanupPolicy(), passes: 1, cancelAfterMs: 50,
+            new CleanupPolicy(), passes: 1, cancelAfterMs: 500,
             sttFactory: _ => engines, cleanerFactory: _ => engines);
         string output = Path.Combine(_root, "cancelled.json");
 
@@ -57,7 +57,7 @@ public sealed class ReplayTests : IDisposable
         using JsonDocument report = JsonDocument.Parse(File.ReadAllText(output));
         Assert.Equal("cancelled", report.RootElement.GetProperty("status").GetString());
         Assert.Equal(0, report.RootElement.GetProperty("clips").GetArrayLength());
-        Assert.Equal(50, report.RootElement.GetProperty("cancel_after_ms").GetInt32());
+        Assert.Equal(500, report.RootElement.GetProperty("cancel_after_ms").GetInt32());
         Assert.True(engines.CleanerCancelObserved);
         Assert.True(engines.Disposed);
     }

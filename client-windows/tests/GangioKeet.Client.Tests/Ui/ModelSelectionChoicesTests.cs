@@ -42,4 +42,26 @@ public sealed class ModelSelectionChoicesTests
         Assert.False(ModelSelectionChoices.CleanerEnabled(false));
         Assert.True(ModelSelectionChoices.CleanerEnabled(true));
     }
+
+    [Fact]
+    public void MarksAvailability()
+    {
+        ModelArtifact present = Artifact("parakeet_v3", "transcribe-vulkan", "Parakeet");
+        ModelArtifact missing = Artifact("qwen3_asr_1_7b", "transcribe-vulkan", "Qwen3-ASR");
+        IReadOnlyList<ModelSelectionChoices.ModelChoice> choices =
+            ModelSelectionChoices.AsrChoices([present, missing], artifact => artifact.Id == "parakeet_v3");
+
+        Assert.Equal("presente", choices.Single(c => c.Artifact.Id == "parakeet_v3").AvailabilityText);
+        Assert.Equal("da scaricare", choices.Single(c => c.Artifact.Id == "qwen3_asr_1_7b").AvailabilityText);
+    }
+
+    [Fact]
+    public void DebouncePendingSkipsPopulate()
+    {
+        Assert.False(ModelSelectionChoices.ShouldPopulate(false, false, true, false, null, "k"));
+        Assert.True(ModelSelectionChoices.ShouldPopulate(false, false, false, false, null, "k"));
+        Assert.False(ModelSelectionChoices.ShouldPopulate(false, false, false, false, "k", "k"));
+        Assert.True(ModelSelectionChoices.ShouldPopulate(false, false, false, false, "old", "k"));
+        Assert.False(ModelSelectionChoices.ShouldPopulate(true, false, false, false, null, "k"));
+    }
 }

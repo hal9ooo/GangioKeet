@@ -140,8 +140,6 @@ public sealed class InferencePipeline : IInferencePipeline
         if (refinementEnabled && cleaner is null && Volatile.Read(ref _cleaner) is null)
             throw new InvalidOperationException("Refinement requires a cleaner.");
 
-        bool sttLoaded = false;
-        bool cleanerLoaded = false;
         try
         {
             if (stt is not null)
@@ -149,20 +147,17 @@ public sealed class InferencePipeline : IInferencePipeline
                 await stt.LoadAsync(ct).ConfigureAwait(false);
                 ct.ThrowIfCancellationRequested();
                 await stt.TranscribeAsync(new byte[32000], ct).ConfigureAwait(false);
-                sttLoaded = true;
             }
             if (cleaner is not null)
             {
                 await cleaner.LoadAsync(ct).ConfigureAwait(false);
                 ct.ThrowIfCancellationRequested();
                 await cleaner.CleanAsync("prova di riscaldamento", "default", ct).ConfigureAwait(false);
-                cleanerLoaded = true;
             }
         }
         catch
         {
-            if (sttLoaded && stt is not null) await stt.DisposeAsync().ConfigureAwait(false);
-            if (cleanerLoaded && cleaner is not null) await cleaner.DisposeAsync().ConfigureAwait(false);
+            await DisposeNewAsync(stt, cleaner).ConfigureAwait(false);
             throw;
         }
 
@@ -172,11 +167,11 @@ public sealed class InferencePipeline : IInferencePipeline
         }
         catch
         {
-            if (sttLoaded && stt is not null) await stt.DisposeAsync().ConfigureAwait(false);
-            if (cleanerLoaded && cleaner is not null) await cleaner.DisposeAsync().ConfigureAwait(false);
+            await DisposeNewAsync(stt, cleaner).ConfigureAwait(false);
             throw;
         }
 
+        bool committed = false;
         try
         {
             ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
@@ -185,12 +180,30 @@ public sealed class InferencePipeline : IInferencePipeline
             if (stt is not null) _stt = stt;
             if (cleaner is not null) Volatile.Write(ref _cleaner, cleaner);
             Volatile.Write(ref _refinementEnabled, refinementEnabled);
+            committed = true;
             if (stt is not null && !ReferenceEquals(oldStt, stt))
                 await oldStt.DisposeAsync().ConfigureAwait(false);
             if (cleaner is not null && !ReferenceEquals(oldCleaner, cleaner) && oldCleaner is not null)
                 await oldCleaner.DisposeAsync().ConfigureAwait(false);
         }
+        catch
+        {
+            if (!committed) await DisposeNewAsync(stt, cleaner).ConfigureAwait(false);
+            throw;
+        }
         finally { _gate.Release(); }
+    }
+
+    private static async Task DisposeNewAsync(ISttEngine? stt, ITextCleaner? cleaner)
+    {
+        if (stt is not null)
+        {
+            try { await stt.DisposeAsync().ConfigureAwait(false); } catch { /* best effort */ }
+        }
+        if (cleaner is not null)
+        {
+            try { await cleaner.DisposeAsync().ConfigureAwait(false); } catch { /* best effort */ }
+        }
     }
 
     public ValueTask DisposeAsync()

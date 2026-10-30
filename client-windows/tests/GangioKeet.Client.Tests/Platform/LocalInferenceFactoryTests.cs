@@ -46,7 +46,9 @@ public sealed class LocalInferenceFactoryTests : IDisposable
                 files = new[] { new { path = $"{id}.gguf", sha256 = new string('a', 64) } },
                 precision = "F16",
                 license = "Apache-2.0",
-                runtime_id = id.StartsWith("gemma") || id.StartsWith("qwen3_") ? "llama-vulkan" : "transcribe-vulkan",
+                runtime_id = id is "gemma4_e2b" or "qwen3_1_7b" or "qwen3_4b"
+                    ? "llama-vulkan"
+                    : "transcribe-vulkan",
                 display_name = id
             })
         }));
@@ -119,6 +121,22 @@ public sealed class LocalInferenceFactoryTests : IDisposable
     {
         WriteFixture(catalogHashOverride: new string('0', 64));
         Assert.Throws<InvalidDataException>(() => Create());
+    }
+
+    [Fact]
+    public void CreateV2FallsBackToInstallCatalog()
+    {
+        WriteFixture(sttId: "parakeet_v3", cleanerId: "gemma4_e2b", refinement: true);
+        string userDirectory = Path.Combine(_root, "user");
+        Directory.CreateDirectory(userDirectory);
+        string userSelection = Path.Combine(userDirectory, "selection.json");
+        File.Move(Path.Combine(_root, "selection.json"), userSelection);
+        _config.Inference.ModelSelectionPath = userSelection;
+
+        LocalInferenceSetup setup = Create();
+
+        Assert.Equal("parakeet_v3", setup.SttId);
+        Assert.Equal("gemma4_e2b", setup.CleanerId);
     }
 
     [Fact]

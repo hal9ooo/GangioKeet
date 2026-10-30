@@ -10,6 +10,8 @@ public sealed class ModelSelectionService
     private readonly string _selectionPath;
     private readonly SemaphoreSlim _applyGate = new(1, 1);
     private ModelSelection _current;
+    private string _loadedSttId;
+    private string? _loadedCleanerId;
 
     public ModelSelectionService(InferencePipeline pipeline, ILocalModelResolver resolver,
         IModelProvisioner provisioner, string selectionPath, ModelSelection initial)
@@ -19,6 +21,8 @@ public sealed class ModelSelectionService
         _provisioner = provisioner ?? throw new ArgumentNullException(nameof(provisioner));
         _selectionPath = selectionPath ?? throw new ArgumentNullException(nameof(selectionPath));
         _current = initial ?? throw new ArgumentNullException(nameof(initial));
+        _loadedSttId = initial.SttId;
+        _loadedCleanerId = initial.CleanerId;
     }
 
     public ModelSelection Current => _current;
@@ -31,22 +35,27 @@ public sealed class ModelSelectionService
         try
         {
             ResolvedModelSelection resolved = _resolver.Resolve(desired);
-            List<ModelArtifact> artifacts = [resolved.Stt];
-            if (desired.RefinementEnabled && resolved.Cleaner is not null)
-                artifacts.Add(resolved.Cleaner);
-            await _provisioner.EnsureModelsAsync(artifacts, _resolver.ModelRoot, progress, ct).ConfigureAwait(false);
+            bool sttChanged = !string.Equals(desired.SttId, _loadedSttId, StringComparison.Ordinal);
+            bool cleanerChanged = !string.Equals(desired.CleanerId, _loadedCleanerId, StringComparison.Ordinal);
+            bool needsCleaner = desired.RefinementEnabled && resolved.Cleaner is not null;
+            bool needsProvisioning = sttChanged || (needsCleaner && (cleanerChanged || !_pipeline.HasCleaner));
+            if (needsProvisioning)
+            {
+                List<ModelArtifact> artifacts = [resolved.Stt];
+                if (needsCleaner) artifacts.Add(resolved.Cleaner!);
+                await _provisioner.EnsureModelsAsync(artifacts, _resolver.ModelRoot, progress, ct).ConfigureAwait(false);
+            }
 
-            bool sttChanged = !string.Equals(desired.SttId, _current.SttId, StringComparison.Ordinal);
-            bool cleanerChanged = !string.Equals(desired.CleanerId, _current.CleanerId, StringComparison.Ordinal);
             ISttEngine? newStt = sttChanged ? _resolver.CreateStt(resolved.Stt) : null;
             ITextCleaner? newCleaner = null;
-            if (desired.RefinementEnabled && resolved.Cleaner is not null
-                && (cleanerChanged || !_pipeline.HasCleaner))
-                newCleaner = _resolver.CreateCleaner(resolved.Cleaner);
+            if (needsCleaner && (cleanerChanged || !_pipeline.HasCleaner))
+                newCleaner = _resolver.CreateCleaner(resolved.Cleaner!);
 
             if (sttChanged || newCleaner is not null || desired.RefinementEnabled != _current.RefinementEnabled)
                 await _pipeline.SwapEnginesAsync(newStt, newCleaner, desired.RefinementEnabled, ct).ConfigureAwait(false);
 
+            if (newStt is not null) _loadedSttId = desired.SttId;
+            if (newCleaner is not null) _loadedCleanerId = desired.CleanerId;
             ModelSelectionFile.Save(_selectionPath, desired);
             _current = desired;
         }

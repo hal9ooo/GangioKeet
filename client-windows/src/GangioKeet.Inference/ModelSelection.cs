@@ -130,12 +130,30 @@ public static class ModelSelectionResolver
     {
         ArgumentNullException.ThrowIfNull(selection);
         ArgumentNullException.ThrowIfNull(catalog);
-        ModelArtifact stt = catalog.Get(selection.SttId);
+        ModelArtifact stt = Required(catalog, selection.SttId, "stt_id");
+        if (stt.RuntimeId != "transcribe-vulkan")
+            throw new InvalidDataException(
+                $"stt_id '{selection.SttId}' must use transcribe-vulkan, got '{stt.RuntimeId}'.");
+
         ModelArtifact? cleaner = null;
         if (!string.IsNullOrWhiteSpace(selection.CleanerId))
-            cleaner = catalog.Get(selection.CleanerId);
+        {
+            cleaner = Required(catalog, selection.CleanerId, "cleaner_id");
+            if (cleaner.RuntimeId != "llama-vulkan")
+                throw new InvalidDataException(
+                    $"cleaner_id '{selection.CleanerId}' must use llama-vulkan, got '{cleaner.RuntimeId}'.");
+        }
         if (selection.RefinementEnabled && cleaner is null)
             throw new InvalidDataException("Refinement requires a cleaner_id.");
         return new(selection, stt, cleaner);
+    }
+
+    private static ModelArtifact Required(ModelCatalog catalog, string id, string field)
+    {
+        try { return catalog.Get(id); }
+        catch (KeyNotFoundException error)
+        {
+            throw new InvalidDataException($"Unknown {field}: {id}.", error);
+        }
     }
 }

@@ -172,7 +172,11 @@ public partial class App : Application, IModelSelectionHost
         _telemetry = new TelemetryStore();
 
         IDictationBackend backend;
-        LocalInferenceSetup setup = LocalInferenceFactory.Create(config);
+        string selectionPath = ModelSelectionPaths.Prepare(config);
+        if (!ConfigWriter.SetModelSelectionPath(ConfigLoader.DefaultPath, selectionPath))
+            _logger?.Write("model_selection_config_write_failed", selectionPath);
+        LocalInferenceSetup setup = LocalInferenceFactory.Create(config,
+            modelRoot: ModelSelectionPaths.InstallModelsRoot);
         _localSttId = setup.SttId;
         _localCleanerId = setup.CleanerId;
         _localBackend = setup.Backend;
@@ -242,16 +246,6 @@ public partial class App : Application, IModelSelectionHost
             ClientConfig config = _config ?? throw new InvalidOperationException("Configuration is not loaded.");
             string selectionPath = ResolveSelectionPath(config);
             ModelSelection selection = ModelSelectionFile.Load(selectionPath);
-            if (selection.SchemaVersion == 1)
-            {
-                string migratedPath = Path.Combine(Path.GetDirectoryName(selectionPath)!, "selection.json");
-                ModelSelectionFile.Migrate(selectionPath, migratedPath);
-                ConfigWriter.SetModelSelectionPath(ConfigLoader.DefaultPath, migratedPath);
-                config.Inference.ModelSelectionPath = migratedPath;
-                selectionPath = migratedPath;
-                selection = ModelSelectionFile.Load(migratedPath);
-                _logger?.Write("model_selection_migrated", migratedPath);
-            }
 
             LocalModelResolver resolver = CreateModelResolver(config, selectionPath);
             ResolvedModelSelection resolved = resolver.Resolve(selection);
@@ -303,8 +297,7 @@ public partial class App : Application, IModelSelectionHost
 
     private static LocalModelResolver CreateModelResolver(ClientConfig config, string selectionPath)
     {
-        string selectedRoot = Path.GetDirectoryName(selectionPath)
-            ?? throw new InvalidDataException("Model selection has no parent directory.");
+        string modelsRoot = ModelSelectionPaths.InstallModelsRoot;
         string install = AppContext.BaseDirectory;
         string native = Environment.GetEnvironmentVariable("GANGIOKEET_TRANSCRIBE_DIR")
             ?? Path.Combine(install, "native", "transcribe");
@@ -313,8 +306,8 @@ public partial class App : Application, IModelSelectionHost
         string lockPath = Environment.GetEnvironmentVariable("GANGIOKEET_RUNTIME_LOCK")
             ?? Path.Combine(install, "native", "runtime-lock.json");
         CleanupPolicy policy = CleanupPolicy.Load(config.Inference.CleanupPolicyPath);
-        return new LocalModelResolver(selectedRoot, Path.Combine(selectedRoot, "candidates.json"),
-            Path.Combine(selectedRoot, "integrity.json"), lockPath, config.Inference.CleanupPolicyPath,
+        return new LocalModelResolver(modelsRoot, Path.Combine(modelsRoot, "candidates.json"),
+            Path.Combine(modelsRoot, "integrity.json"), lockPath, config.Inference.CleanupPolicyPath,
             native, llama, config.Inference.Backend, policy);
     }
 

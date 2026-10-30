@@ -58,6 +58,7 @@ public sealed class ModelSelectionServiceTests : IDisposable
     private sealed class FakeProvisioner : IModelProvisioner
     {
         public bool Fail { get; set; }
+        public int Calls { get; set; }
 
         public Task EnsureModelsAsync(string selectionPath, string? modelRoot = null,
             IProgress<ModelProvisionProgress>? progress = null, CancellationToken ct = default) =>
@@ -66,6 +67,7 @@ public sealed class ModelSelectionServiceTests : IDisposable
         public Task EnsureModelsAsync(IReadOnlyList<ModelArtifact> artifacts, string modelRoot,
             IProgress<ModelProvisionProgress>? progress = null, CancellationToken ct = default)
         {
+            Calls++;
             if (Fail) throw new InvalidDataException("provisioning failed");
             return Task.CompletedTask;
         }
@@ -135,6 +137,15 @@ public sealed class ModelSelectionServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ToggleOffDoesNotProvision()
+    {
+        Fixture f = Fixture.Create(refinement: true);
+        f.Provisioner.Calls = 0;
+        await f.Service.ApplyAsync(f.Selection with { RefinementEnabled = false }, null, default);
+        Assert.Equal(0, f.Provisioner.Calls);
+    }
+
+    [Fact]
     public async Task ChangeCleanerSwapsOnlyCleaner()
     {
         Fixture f = Fixture.Create(refinement: true);
@@ -143,6 +154,27 @@ public sealed class ModelSelectionServiceTests : IDisposable
         await f.Service.ApplyAsync(f.Selection with { CleanerId = "qwen3_1_7b" }, null, default);
         Assert.Equal(stt, f.Engines.Stt);
         Assert.Equal(cleaner + 1, f.Engines.Cleaner);
+    }
+
+    [Fact]
+    public async Task EnablingAfterCleanerChangeWhileOffLoadsTheSelectedCleaner()
+    {
+        Fixture f = Fixture.Create(refinement: true);
+        int cleanerLoads = f.Engines.Cleaner;
+
+        await f.Service.ApplyAsync(f.Selection with
+        {
+            RefinementEnabled = false,
+            CleanerId = "qwen3_1_7b"
+        }, null, default);
+        Assert.Equal(cleanerLoads, f.Engines.Cleaner);
+
+        await f.Service.ApplyAsync(f.Selection with
+        {
+            RefinementEnabled = true,
+            CleanerId = "qwen3_1_7b"
+        }, null, default);
+        Assert.Equal(cleanerLoads + 1, f.Engines.Cleaner);
     }
 
     [Fact]
