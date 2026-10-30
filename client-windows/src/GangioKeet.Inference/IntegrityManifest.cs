@@ -36,6 +36,23 @@ public static class IntegrityManifestFile
         await VerifyOneAsync("cleanup policy", manifest.CleanupPolicySha256, cleanupPolicyPath, ct).ConfigureAwait(false);
     }
 
+    public static void Verify(IntegrityManifest manifest, string catalogPath,
+        string runtimeLockPath, string cleanupPolicyPath)
+    {
+        ArgumentNullException.ThrowIfNull(manifest);
+        VerifyOne("catalog", manifest.CatalogSha256, catalogPath);
+        VerifyOne("runtime lock", manifest.RuntimeLockSha256, runtimeLockPath);
+        VerifyOne("cleanup policy", manifest.CleanupPolicySha256, cleanupPolicyPath);
+    }
+
+    private static void VerifyOne(string label, string expected, string path)
+    {
+        using FileStream stream = File.OpenRead(path);
+        string actual = Convert.ToHexStringLower(SHA256.HashData(stream));
+        if (!string.Equals(actual, expected, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"Integrity mismatch for {label}: expected {expected}, got {actual}.");
+    }
+
     private static async Task VerifyOneAsync(string label, string expected, string path, CancellationToken ct)
     {
         await using FileStream stream = File.OpenRead(path);

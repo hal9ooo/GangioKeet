@@ -9,16 +9,20 @@ using GangioKeet.Inference.Stt;
 namespace GangioKeet.Client.Platform;
 
 public sealed record LocalInferenceSetup(IInferencePipeline Pipeline, string SttId, string CleanerId,
-    string Backend, string PromptVersion, string PromptSha256, string PolicySha256);
+    string Backend, string PromptVersion, string PromptSha256, string PolicySha256,
+    ModelArtifact SttArtifact, ModelArtifact? CleanerArtifact, bool RefinementEnabled);
 
 /// <summary>
-/// Costruisce la pipeline locale da <c>selected.json</c> e dagli artefatti
-/// installati. Non crea client HTTP, monitor o processi figli.
+/// Costruisce la pipeline locale da <c>selected.json</c> (v1) o
+/// <c>selection.json</c> (v2) e dagli artefatti installati. Non crea client
+/// HTTP, monitor o processi figli.
 /// </summary>
 public static class LocalInferenceFactory
 {
     public static LocalInferenceSetup Create(ClientConfig config, string? nativeDirectory = null,
-        string? llamaDirectory = null, string? runtimeLockPath = null, string? modelRoot = null)
+        string? llamaDirectory = null, string? runtimeLockPath = null, string? modelRoot = null,
+        Func<ModelArtifact, ISttEngine>? sttFactory = null,
+        Func<ModelArtifact, ITextCleaner>? cleanerFactory = null)
     {
         string rawSelection = config.Inference.ModelSelectionPath;
         string selectionPath = Path.IsPathRooted(rawSelection)
@@ -26,15 +30,10 @@ public static class LocalInferenceFactory
             : (File.Exists(Path.Combine(AppContext.BaseDirectory, rawSelection))
                 ? Path.Combine(AppContext.BaseDirectory, rawSelection)
                 : Path.GetFullPath(rawSelection));
-        using JsonDocument document = JsonDocument.Parse(File.ReadAllText(selectionPath));
-        JsonElement root = document.RootElement;
-        if (root.GetProperty("schema_version").GetInt32() != 1)
-            throw new InvalidDataException("selected.json requires schema_version 1.");
-        ModelArtifact stt = ReadModel(root.GetProperty("stt"));
-        ModelArtifact cleaner = ReadModel(root.GetProperty("cleaner"));
+        ModelSelection selection = ModelSelectionFile.Load(selectionPath);
 
         string selectedRoot = Path.GetDirectoryName(selectionPath)
-            ?? throw new InvalidDataException("selected.json has no parent directory.");
+            ?? throw new InvalidDataException("Model selection has no parent directory.");
         string models = modelRoot ?? selectedRoot;
         string install = AppContext.BaseDirectory;
         string transcribe = nativeDirectory ?? Environment.GetEnvironmentVariable("GANGIOKEET_TRANSCRIBE_DIR")
@@ -44,13 +43,45 @@ public static class LocalInferenceFactory
         string lockPath = runtimeLockPath ?? Environment.GetEnvironmentVariable("GANGIOKEET_RUNTIME_LOCK")
             ?? Path.Combine(install, "native", "runtime-lock.json");
         string backend = config.Inference.Backend;
-
         CleanupPolicy policy = CleanupPolicy.Load(config.Inference.CleanupPolicyPath);
-        VerifySelection(root, lockPath, policy);
-        TranscribeSttEngine sttEngine = new(stt, models, transcribe, backend, runtimeLock: lockPath);
-        LlamaTextCleaner textCleaner = new(new LlamaGenerator(cleaner, models, llama, lockPath, backend), policy);
-        return new(new InferencePipeline(sttEngine, textCleaner, policy, TimeProvider.System),
-            stt.Id, cleaner.Id, backend, CleanerPrompt.Version, CleanerPrompt.Sha256, policy.Sha256);
+
+        if (selection.SchemaVersion == 1)
+        {
+            using JsonDocument document = JsonDocument.Parse(File.ReadAllText(selectionPath));
+            JsonElement root = document.RootElement;
+            ModelArtifact stt = ReadModel(root.GetProperty("stt"));
+            ModelArtifact cleaner = ReadModel(root.GetProperty("cleaner"));
+            VerifySelection(root, lockPath, policy);
+
+            ISttEngine sttEngine = sttFactory?.Invoke(stt)
+                ?? new TranscribeSttEngine(stt, models, transcribe, backend, runtimeLock: lockPath);
+            ITextCleaner cleanerEngine = cleanerFactory?.Invoke(cleaner)
+                ?? new LlamaTextCleaner(new LlamaGenerator(cleaner, models, llama, lockPath, backend), policy);
+            return new(new InferencePipeline(sttEngine, cleanerEngine, policy, TimeProvider.System),
+                stt.Id, cleaner.Id, backend, CleanerPrompt.Version, CleanerPrompt.Sha256, policy.Sha256,
+                stt, cleaner, true);
+        }
+
+        string catalogPath = Path.Combine(selectedRoot, "candidates.json");
+        string integrityPath = Path.Combine(selectedRoot, "integrity.json");
+        LocalModelResolver resolver = new(models, catalogPath, integrityPath, lockPath,
+            config.Inference.CleanupPolicyPath, transcribe, llama, backend, policy);
+        ResolvedModelSelection resolved = resolver.Resolve(selection);
+
+        ISttEngine selectedStt = sttFactory?.Invoke(resolved.Stt) ?? resolver.CreateStt(resolved.Stt);
+        ITextCleaner? selectedCleaner = null;
+        if (selection.RefinementEnabled && resolved.Cleaner is not null)
+        {
+            selectedCleaner = cleanerFactory?.Invoke(resolved.Cleaner) ?? resolver.CreateCleaner(resolved.Cleaner);
+        }
+
+        InferencePipeline pipeline = new(selectedStt, selectedCleaner, policy, TimeProvider.System,
+            selection.RefinementEnabled);
+        string cleanerId = selection.RefinementEnabled && resolved.Cleaner is not null
+            ? resolved.Cleaner.Id
+            : "nessuno";
+        return new(pipeline, resolved.Stt.Id, cleanerId, backend, CleanerPrompt.Version,
+            CleanerPrompt.Sha256, policy.Sha256, resolved.Stt, resolved.Cleaner, selection.RefinementEnabled);
     }
 
     private static void VerifySelection(JsonElement selected, string lockPath, CleanupPolicy policy)
