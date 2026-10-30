@@ -5,6 +5,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using GangioKeet.Client.Platform;
+using GangioKeet.Inference;
 using Xunit;
 
 namespace GangioKeet.Client.Tests.Platform;
@@ -17,6 +18,56 @@ public sealed class ModelProvisionerTests : IDisposable
     {
         _tempDir = Path.Combine(Path.GetTempPath(), "GangioKeet_ModelProvisionerTests_" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_tempDir);
+    }
+
+    private static ModelArtifact Artifact(string id, string relativePath, byte[] payload, string repository)
+    {
+        string sha = Convert.ToHexStringLower(SHA256.HashData(payload));
+        return new(id, "fake", "owner/model", "1234567890123456789012345678901234567890",
+            [new ModelFile(relativePath, sha)], "F16", "Apache-2.0", "transcribe-vulkan", repository);
+    }
+
+    [Fact]
+    public async Task EnsureModelsAsync_WithArtifacts_DownloadsOnlyListed()
+    {
+        byte[] payload = Encoding.UTF8.GetBytes("selected artifact payload");
+        ModelArtifact wanted = Artifact("wanted", "w/model.gguf", payload, "test-org/wanted");
+        ModelArtifact other = Artifact("other", "o/other.gguf", payload, "test-org/other");
+        List<string> requested = [];
+
+        var handler = new MockHttpMessageHandler(request =>
+        {
+            requested.Add(request.RequestUri!.ToString());
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(payload) };
+        });
+
+        using var client = new HttpClient(handler);
+        using var provisioner = new ModelProvisioner(client);
+
+        await provisioner.EnsureModelsAsync([wanted], _tempDir);
+
+        Assert.True(File.Exists(Path.Combine(_tempDir, "w/model.gguf")));
+        Assert.False(File.Exists(Path.Combine(_tempDir, "o/other.gguf")));
+        Assert.Single(requested);
+        Assert.Contains("test-org/wanted", requested[0]);
+    }
+
+    [Fact]
+    public async Task EnsureModelsAsync_WithArtifacts_EmptyListMakesNoRequest()
+    {
+        bool called = false;
+        var handler = new MockHttpMessageHandler(_ =>
+        {
+            called = true;
+            throw new InvalidOperationException("HTTP should not be called for an empty list");
+        });
+
+        using var client = new HttpClient(handler);
+        using var provisioner = new ModelProvisioner(client);
+
+        await provisioner.EnsureModelsAsync([], _tempDir);
+
+        Assert.False(called);
     }
 
     public void Dispose()

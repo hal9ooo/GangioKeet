@@ -2,6 +2,7 @@ using System.IO;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text.Json;
+using GangioKeet.Inference;
 
 namespace GangioKeet.Client.Platform;
 
@@ -25,6 +26,12 @@ public interface IModelProvisioner
     Task EnsureModelsAsync(
         string selectionPath,
         string? modelRoot = null,
+        IProgress<ModelProvisionProgress>? progress = null,
+        CancellationToken ct = default);
+
+    Task EnsureModelsAsync(
+        IReadOnlyList<ModelArtifact> artifacts,
+        string modelRoot,
         IProgress<ModelProvisionProgress>? progress = null,
         CancellationToken ct = default);
 }
@@ -75,6 +82,21 @@ public sealed class ModelProvisioner : IModelProvisioner, IDisposable
         }
     }
 
+    public async Task EnsureModelsAsync(
+        IReadOnlyList<ModelArtifact> artifacts,
+        string modelRoot,
+        IProgress<ModelProvisionProgress>? progress = null,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(artifacts);
+        foreach (ModelArtifact artifact in artifacts)
+        {
+            ct.ThrowIfCancellationRequested();
+            await EnsureModelArtifactAsync(artifact.Id, artifact.ArtifactRepository, artifact.Revision,
+                artifact.Files, modelRoot, progress, ct).ConfigureAwait(false);
+        }
+    }
+
     private async Task EnsureModelArtifactAsync(
         JsonElement modelElement,
         string rootDir,
@@ -90,17 +112,34 @@ public sealed class ModelProvisioner : IModelProvisioner, IDisposable
             return;
         }
 
+        List<ModelFile> files = [];
         foreach (JsonElement fileElem in filesElem.EnumerateArray())
         {
-            ct.ThrowIfCancellationRequested();
             string? relativePath = fileElem.TryGetProperty("path", out JsonElement pElem) ? pElem.GetString() : null;
             string? expectedSha256 = fileElem.TryGetProperty("sha256", out JsonElement shaElem) ? shaElem.GetString() : null;
-
-            if (string.IsNullOrWhiteSpace(relativePath) || string.IsNullOrWhiteSpace(expectedSha256))
+            if (!string.IsNullOrWhiteSpace(relativePath) && !string.IsNullOrWhiteSpace(expectedSha256))
             {
-                continue;
+                files.Add(new ModelFile(relativePath, expectedSha256));
             }
+        }
 
+        await EnsureModelArtifactAsync(candidateId, repo, revision, files, rootDir, progress, ct).ConfigureAwait(false);
+    }
+
+    private async Task EnsureModelArtifactAsync(
+        string candidateId,
+        string? repo,
+        string? revision,
+        IReadOnlyList<ModelFile> files,
+        string rootDir,
+        IProgress<ModelProvisionProgress>? progress,
+        CancellationToken ct)
+    {
+        foreach (ModelFile file in files)
+        {
+            ct.ThrowIfCancellationRequested();
+            string relativePath = file.Path;
+            string expectedSha256 = file.Sha256;
             string fullPath = ResolveInsideRoot(rootDir, relativePath);
 
             // 1. Check if file already exists and hash matches
