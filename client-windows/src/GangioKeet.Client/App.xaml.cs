@@ -12,6 +12,8 @@ using GangioKeet.Client.Protocol;
 using GangioKeet.Client.Recovery;
 using GangioKeet.Client.Recording;
 using GangioKeet.Client.Ui;
+using GangioKeet.Inference;
+using GangioKeet.Inference.Cleaning;
 using Hardcodet.Wpf.TaskbarNotification;
 
 namespace GangioKeet.Client;
@@ -55,6 +57,9 @@ public partial class App : Application
     private string? _localSttId;
     private string? _localCleanerId;
     private string? _localBackend;
+    private ModelSelection? _modelSelection;
+    private ModelSelectionService? _modelSelectionService;
+    private LocalModelResolver? _modelResolver;
     private readonly object _shutdownGate = new();
     private Task? _shutdownTask;
     private int _shutdownRequested;
@@ -234,19 +239,47 @@ public partial class App : Application
         try
         {
             _logger?.Write("local_runtime", "Ensuring local models are present and valid...");
-            string selectionPath = _config?.Inference.ModelSelectionPath ?? "models/selected.json";
-            await _modelProvisioner.EnsureModelsAsync(selectionPath, progress: new Progress<ModelProvisionProgress>(p =>
+            ClientConfig config = _config ?? throw new InvalidOperationException("Configuration is not loaded.");
+            string selectionPath = ResolveSelectionPath(config);
+            ModelSelection selection = ModelSelectionFile.Load(selectionPath);
+            if (selection.SchemaVersion == 1)
             {
-                if (p.Status == ModelProvisionStatus.Downloading && p.TotalBytes.HasValue && p.TotalBytes > 0)
+                string migratedPath = Path.Combine(Path.GetDirectoryName(selectionPath)!, "selection.json");
+                ModelSelectionFile.Migrate(selectionPath, migratedPath);
+                ConfigWriter.SetModelSelectionPath(ConfigLoader.DefaultPath, migratedPath);
+                config.Inference.ModelSelectionPath = migratedPath;
+                selectionPath = migratedPath;
+                selection = ModelSelectionFile.Load(migratedPath);
+                _logger?.Write("model_selection_migrated", migratedPath);
+            }
+
+            LocalModelResolver resolver = CreateModelResolver(config, selectionPath);
+            ResolvedModelSelection resolved = resolver.Resolve(selection);
+            List<ModelArtifact> artifacts = [resolved.Stt];
+            if (selection.RefinementEnabled && resolved.Cleaner is not null)
+                artifacts.Add(resolved.Cleaner);
+
+            await _modelProvisioner.EnsureModelsAsync(artifacts, resolver.ModelRoot,
+                progress: new Progress<ModelProvisionProgress>(p =>
                 {
-                    double pct = (double)p.BytesTransferred / p.TotalBytes.Value;
-                    _logger?.Write("model_download", $"{p.ModelId} ({p.RelativePath}): {pct:P0}");
-                }
-                else
-                {
-                    _logger?.Write("model_download", $"{p.ModelId} ({p.RelativePath}): {p.Status}");
-                }
-            })).ConfigureAwait(false);
+                    if (p.Status == ModelProvisionStatus.Downloading && p.TotalBytes.HasValue && p.TotalBytes > 0)
+                    {
+                        double pct = (double)p.BytesTransferred / p.TotalBytes.Value;
+                        _logger?.Write("model_download", $"{p.ModelId} ({p.RelativePath}): {pct:P0}");
+                    }
+                    else
+                    {
+                        _logger?.Write("model_download", $"{p.ModelId} ({p.RelativePath}): {p.Status}");
+                    }
+                })).ConfigureAwait(false);
+
+            _modelResolver = resolver;
+            _modelSelection = selection;
+            _modelSelectionService = new ModelSelectionService(
+                (InferencePipeline)runtime.Pipeline, resolver, _modelProvisioner, selectionPath, selection);
+            _localSttId = selection.SttId;
+            _localCleanerId = selection.RefinementEnabled ? selection.CleanerId : "nessuno";
+            _localBackend = config.Inference.Backend;
 
             await runtime.StartAsync(CancellationToken.None).ConfigureAwait(true);
             _logger?.Write("local_runtime", runtime.State.ToString());
@@ -256,6 +289,46 @@ public partial class App : Application
             _localError = error.Message;
             _logger?.Write("local_runtime_failed", error.Message);
         }
+    }
+
+    private static string ResolveSelectionPath(ClientConfig config)
+    {
+        string rawSelection = config.Inference.ModelSelectionPath;
+        return Path.IsPathRooted(rawSelection)
+            ? rawSelection
+            : (File.Exists(Path.Combine(AppContext.BaseDirectory, rawSelection))
+                ? Path.Combine(AppContext.BaseDirectory, rawSelection)
+                : Path.GetFullPath(rawSelection));
+    }
+
+    private static LocalModelResolver CreateModelResolver(ClientConfig config, string selectionPath)
+    {
+        string selectedRoot = Path.GetDirectoryName(selectionPath)
+            ?? throw new InvalidDataException("Model selection has no parent directory.");
+        string install = AppContext.BaseDirectory;
+        string native = Environment.GetEnvironmentVariable("GANGIOKEET_TRANSCRIBE_DIR")
+            ?? Path.Combine(install, "native", "transcribe");
+        string llama = Environment.GetEnvironmentVariable("GANGIOKEET_LLAMA_DIR")
+            ?? Path.Combine(install, "native", "llama");
+        string lockPath = Environment.GetEnvironmentVariable("GANGIOKEET_RUNTIME_LOCK")
+            ?? Path.Combine(install, "native", "runtime-lock.json");
+        CleanupPolicy policy = CleanupPolicy.Load(config.Inference.CleanupPolicyPath);
+        return new LocalModelResolver(selectedRoot, Path.Combine(selectedRoot, "candidates.json"),
+            Path.Combine(selectedRoot, "integrity.json"), lockPath, config.Inference.CleanupPolicyPath,
+            native, llama, config.Inference.Backend, policy);
+    }
+
+    internal async Task ApplyModelSelectionAsync(ModelSelection desired,
+        IProgress<ModelProvisionProgress>? progress, CancellationToken ct)
+    {
+        if (_modelSelectionService is null)
+            throw new InvalidOperationException("The local model selection service is not ready.");
+        await _modelSelectionService.ApplyAsync(desired, progress, ct).ConfigureAwait(false);
+        _modelSelection = desired;
+        _localSttId = desired.SttId;
+        _localCleanerId = desired.RefinementEnabled ? desired.CleanerId : "nessuno";
+        _localBackend = _config?.Inference.Backend;
+        _logger?.Write("model_selection_applied", LocalSettingsInfo.FormatPair(_localSttId, _localCleanerId));
     }
 
     private void ShowSettings()
@@ -287,7 +360,7 @@ public partial class App : Application
 
     private LocalSettingsInfo LocalInfo() => new(
         _localBackend ?? _config?.Inference.Backend ?? "vulkan",
-        _localSttId is null || _localCleanerId is null ? "—" : $"{_localSttId} + {_localCleanerId}",
+        LocalSettingsInfo.FormatPair(_localSttId, _localCleanerId),
         _localError is not null ? "Error" : (_runtime?.State.ToString() ?? "Stopped"),
         _localError ?? _runtime?.Failure?.Message,
         _config?.Inference.ModelSelectionPath ?? "models/selected.json");
