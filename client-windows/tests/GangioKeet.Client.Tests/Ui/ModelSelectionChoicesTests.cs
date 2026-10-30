@@ -17,9 +17,10 @@ public sealed class ModelSelectionChoicesTests
         ModelArtifact[] all =
         [
             Artifact("parakeet_v3", "transcribe-vulkan"),
+            Artifact("nemotron_transcribe_30b_a4b", "nemo-speech-vulkan"),
             Artifact("gemma4_e2b", "llama-vulkan")
         ];
-        Assert.Single(ModelSelectionChoices.Asr(all));
+        Assert.Equal(2, ModelSelectionChoices.Asr(all).Count);
         Assert.Single(ModelSelectionChoices.Cleaners(all));
     }
 

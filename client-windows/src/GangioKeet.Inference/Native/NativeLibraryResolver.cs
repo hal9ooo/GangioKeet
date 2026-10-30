@@ -9,7 +9,23 @@ public static class NativeLibraryResolver
 {
     private static readonly object Gate = new();
     private static nint _transcribe;
+    private static nint _nemoSpeech;
     private static string? _directory;
+    private static string? _nemoSpeechDirectory;
+    private static bool _resolverInstalled;
+
+    private static void EnsureResolver()
+    {
+        if (_resolverInstalled) return;
+        NativeLibrary.SetDllImportResolver(typeof(NativeLibraryResolver).Assembly,
+            (name, _, _) => name switch
+            {
+                "gk-transcribe" => _transcribe,
+                "nemo_speech_asr_c" => _nemoSpeech,
+                _ => 0
+            });
+        _resolverInstalled = true;
+    }
 
     public static void VerifyTranscribeRuntime(string directory, string lockPath)
     {
@@ -48,15 +64,34 @@ public static class NativeLibraryResolver
             using JsonDocument contract = JsonDocument.Parse(File.ReadAllText(Path.Combine(absolute, "contract.json")));
             if (contract.RootElement.GetProperty("version").GetString() != "0.4.1")
                 throw new InvalidDataException("The transcribe ABI requires the pinned 0.4.1 native package.");
+            EnsureResolver();
             nint loaded = NativeLibrary.Load(Path.Combine(absolute, "transcribe.dll"),
                 typeof(NativeLibraryResolver).Assembly,
                 DllImportSearchPath.UseDllDirectoryForDependencies | DllImportSearchPath.SafeDirectories);
             // The runtime and its registration callbacks are process-scoped. Do not
             // unload DLLs while ggml may still hold backend/function pointers.
-            NativeLibrary.SetDllImportResolver(typeof(NativeLibraryResolver).Assembly,
-                (name, _, _) => name == "gk-transcribe" ? _transcribe : 0);
             _transcribe = loaded;
             _directory = absolute;
+        }
+    }
+
+    public static void LoadNeMoSpeech(string directory)
+    {
+        string absolute = Path.GetFullPath(directory);
+        lock (Gate)
+        {
+            if (_nemoSpeech != 0)
+            {
+                if (!string.Equals(_nemoSpeechDirectory, absolute, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidOperationException("A different NeMo-Speech runtime is already loaded in this process.");
+                return;
+            }
+            EnsureResolver();
+            nint loaded = NativeLibrary.Load(Path.Combine(absolute, "nemo_speech_asr_c.dll"),
+                typeof(NativeLibraryResolver).Assembly,
+                DllImportSearchPath.UseDllDirectoryForDependencies | DllImportSearchPath.SafeDirectories);
+            _nemoSpeech = loaded;
+            _nemoSpeechDirectory = absolute;
         }
     }
 }

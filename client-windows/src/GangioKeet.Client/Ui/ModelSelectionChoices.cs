@@ -10,9 +10,12 @@ public static class ModelSelectionChoices
     }
 
     public static IReadOnlyList<ModelArtifact> Asr(IEnumerable<ModelArtifact> candidates) =>
-        candidates.Where(candidate => candidate.RuntimeId == "transcribe-vulkan")
+        candidates.Where(candidate => IsAsr(candidate))
             .OrderBy(Label, StringComparer.OrdinalIgnoreCase)
             .ToArray();
+
+    public static bool IsAsr(ModelArtifact candidate) =>
+        candidate.RuntimeId is "transcribe-vulkan" or "nemo-speech-vulkan";
 
     public static IReadOnlyList<ModelArtifact> Cleaners(IEnumerable<ModelArtifact> candidates) =>
         candidates.Where(candidate => candidate.RuntimeId == "llama-vulkan")

@@ -142,7 +142,17 @@ public sealed class ModelProvisioner : IModelProvisioner, IDisposable
             string expectedSha256 = file.Sha256;
             string fullPath = ResolveInsideRoot(rootDir, relativePath);
 
-            // 1. Check if file already exists and hash matches
+            // 1. Check the verification sidecar first: re-hashing a 20+ GB
+            // model on every launch would keep the app NotReady for minutes.
+            if (File.Exists(fullPath) && VerifiedCacheMatches(fullPath, expectedSha256))
+            {
+                long length = new FileInfo(fullPath).Length;
+                progress?.Report(new ModelProvisionProgress(candidateId, relativePath,
+                    ModelProvisionStatus.Completed, length, length));
+                continue;
+            }
+
+            // 2. Check if file already exists and hash matches
             if (File.Exists(fullPath))
             {
                 long existingLength = new FileInfo(fullPath).Length;
@@ -150,12 +160,14 @@ public sealed class ModelProvisioner : IModelProvisioner, IDisposable
                 bool valid = await CheckHashAsync(fullPath, expectedSha256, ct).ConfigureAwait(false);
                 if (valid)
                 {
+                    WriteVerified(fullPath, expectedSha256);
                     progress?.Report(new ModelProvisionProgress(candidateId, relativePath, ModelProvisionStatus.Completed, existingLength, existingLength));
                     continue;
                 }
+                DeleteVerified(fullPath);
             }
 
-            // 2. Download model file
+            // 3. Download model file
             if (string.IsNullOrWhiteSpace(repo) || string.IsNullOrWhiteSpace(revision))
             {
                 throw new InvalidOperationException($"Cannot download model '{candidateId}': missing repository or revision in the model selection.");
@@ -223,6 +235,7 @@ public sealed class ModelProvisioner : IModelProvisioner, IDisposable
             }
 
             File.Move(tempPath, destinationPath, overwrite: true);
+            WriteVerified(destinationPath, expectedSha256);
             progress?.Report(new ModelProvisionProgress(modelId, relativePath, ModelProvisionStatus.Completed, bytesDownloaded, totalBytes));
         }
         finally
@@ -231,6 +244,59 @@ public sealed class ModelProvisioner : IModelProvisioner, IDisposable
             {
                 try { File.Delete(tempPath); } catch { /* ignore */ }
             }
+        }
+    }
+
+    private static string VerifiedPath(string fullPath) => fullPath + ".verified";
+
+    private static bool VerifiedCacheMatches(string fullPath, string expectedSha256)
+    {
+        if (!File.Exists(fullPath)) return false;
+        string sidecar = VerifiedPath(fullPath);
+        if (!File.Exists(sidecar)) return false;
+        try
+        {
+            string[] parts = File.ReadAllText(sidecar).Trim().Split(' ');
+            if (parts.Length != 3
+                || !string.Equals(parts[0], expectedSha256, StringComparison.OrdinalIgnoreCase)
+                || !long.TryParse(parts[1], out long length)
+                || !long.TryParse(parts[2], out long ticks))
+                return false;
+            FileInfo info = new(fullPath);
+            return length == info.Length && ticks == info.LastWriteTimeUtc.Ticks;
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    private static void WriteVerified(string path, string expectedSha256)
+    {
+        string sidecar = VerifiedPath(path);
+        string temp = sidecar + ".tmp";
+        try
+        {
+            FileInfo info = new(path);
+            File.WriteAllText(temp, $"{expectedSha256} {info.Length} {info.LastWriteTimeUtc.Ticks}");
+            File.Move(temp, sidecar, overwrite: true);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            if (File.Exists(temp)) File.Delete(temp);
+        }
+    }
+
+    private static void DeleteVerified(string path)
+    {
+        try
+        {
+            string sidecar = VerifiedPath(path);
+            if (File.Exists(sidecar)) File.Delete(sidecar);
+        }
+        catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+        {
+            // A stale sidecar will fail the length/mtime check next time.
         }
     }
 

@@ -47,12 +47,15 @@ public partial class App : Application, IModelSelectionHost
     private RecordingStore? _recordingStore;
     private RecordingQueue? _recordingQueue;
     private readonly IModelProvisioner _modelProvisioner;
+    private readonly INativeRuntimeProvisioner _runtimeProvisioner;
 
     public App() : this(null) { }
 
-    internal App(IModelProvisioner? modelProvisioner = null)
+    internal App(IModelProvisioner? modelProvisioner = null,
+        INativeRuntimeProvisioner? runtimeProvisioner = null)
     {
         _modelProvisioner = modelProvisioner ?? new ModelProvisioner();
+        _runtimeProvisioner = runtimeProvisioner ?? new NeMoSpeechRuntimeProvisioner();
     }
     private string? _localSttId;
     private string? _localCleanerId;
@@ -179,7 +182,8 @@ public partial class App : Application, IModelSelectionHost
             if (!ConfigWriter.SetModelSelectionPath(ConfigLoader.DefaultPath, selectionPath))
                 _logger?.Write("model_selection_config_write_failed", selectionPath);
             setup = LocalInferenceFactory.Create(config,
-                modelRoot: ModelSelectionPaths.InstallModelsRoot);
+                modelRoot: ModelSelectionPaths.InstallModelsRoot,
+                runtimeProvisioner: _runtimeProvisioner);
         }
         catch (Exception error)
         {
@@ -263,19 +267,11 @@ public partial class App : Application, IModelSelectionHost
             if (selection.RefinementEnabled && resolved.Cleaner is not null)
                 artifacts.Add(resolved.Cleaner);
 
+            Progress<ModelProvisionProgress> progress = new(LogModelProgress);
             await _modelProvisioner.EnsureModelsAsync(artifacts, resolver.ModelRoot,
-                progress: new Progress<ModelProvisionProgress>(p =>
-                {
-                    if (p.Status == ModelProvisionStatus.Downloading && p.TotalBytes.HasValue && p.TotalBytes > 0)
-                    {
-                        double pct = (double)p.BytesTransferred / p.TotalBytes.Value;
-                        _logger?.Write("model_download", $"{p.ModelId} ({p.RelativePath}): {pct:P0}");
-                    }
-                    else
-                    {
-                        _logger?.Write("model_download", $"{p.ModelId} ({p.RelativePath}): {p.Status}");
-                    }
-                })).ConfigureAwait(false);
+                progress: progress).ConfigureAwait(false);
+            await resolver.EnsureRuntimeAsync(resolved.Stt, progress, CancellationToken.None)
+                .ConfigureAwait(false);
 
             await runtime.StartAsync(CancellationToken.None).ConfigureAwait(true);
             if (!runtime.IsReady)
@@ -303,6 +299,19 @@ public partial class App : Application, IModelSelectionHost
         }
     }
 
+    private void LogModelProgress(ModelProvisionProgress p)
+    {
+        if (p.Status == ModelProvisionStatus.Downloading && p.TotalBytes is > 0)
+        {
+            double pct = (double)p.BytesTransferred / p.TotalBytes.Value;
+            _logger?.Write("model_download", $"{p.ModelId} ({p.RelativePath}): {pct:P0}");
+        }
+        else
+        {
+            _logger?.Write("model_download", $"{p.ModelId} ({p.RelativePath}): {p.Status}");
+        }
+    }
+
     private static string ResolveSelectionPath(ClientConfig config)
     {
         string rawSelection = config.Inference.ModelSelectionPath;
@@ -313,7 +322,7 @@ public partial class App : Application, IModelSelectionHost
                 : Path.GetFullPath(rawSelection));
     }
 
-    private static LocalModelResolver CreateModelResolver(ClientConfig config, string selectionPath)
+    private LocalModelResolver CreateModelResolver(ClientConfig config, string selectionPath)
     {
         string modelsRoot = ModelSelectionPaths.InstallModelsRoot;
         string install = AppContext.BaseDirectory;
@@ -326,7 +335,7 @@ public partial class App : Application, IModelSelectionHost
         CleanupPolicy policy = CleanupPolicy.Load(config.Inference.CleanupPolicyPath);
         return new LocalModelResolver(modelsRoot, Path.Combine(modelsRoot, "candidates.json"),
             Path.Combine(modelsRoot, "integrity.json"), lockPath, config.Inference.CleanupPolicyPath,
-            native, llama, config.Inference.Backend, policy);
+            native, llama, config.Inference.Backend, policy, _runtimeProvisioner);
     }
 
     internal async Task ApplyModelSelectionAsync(ModelSelection desired,
@@ -375,7 +384,8 @@ public partial class App : Application, IModelSelectionHost
             if (!ConfigWriter.SetModelSelectionPath(ConfigLoader.DefaultPath, selectionPath))
                 _logger?.Write("model_selection_config_write_failed", selectionPath);
             LocalInferenceSetup setup = LocalInferenceFactory.Create(_config,
-                modelRoot: ModelSelectionPaths.InstallModelsRoot);
+                modelRoot: ModelSelectionPaths.InstallModelsRoot,
+                runtimeProvisioner: _runtimeProvisioner);
             AppRuntime runtime = new(setup.Pipeline, _recordingQueue);
             await StartLocalRuntimeAsync(runtime).ConfigureAwait(true);
             if (!runtime.IsReady)
@@ -454,7 +464,8 @@ public partial class App : Application, IModelSelectionHost
         try
         {
             _localError = null;
-            LocalInferenceSetup setup = LocalInferenceFactory.Create(_config);
+            LocalInferenceSetup setup = LocalInferenceFactory.Create(_config,
+                runtimeProvisioner: _runtimeProvisioner);
             _localSttId = setup.SttId;
             _localCleanerId = setup.CleanerId;
             _localBackend = setup.Backend;
@@ -591,6 +602,7 @@ public partial class App : Application, IModelSelectionHost
         _splash?.Close();
         _pill?.Close();
         _recovery?.Discard();
+        (_runtimeProvisioner as IDisposable)?.Dispose();
     }
 
     private async Task ShutdownCoreAsync()

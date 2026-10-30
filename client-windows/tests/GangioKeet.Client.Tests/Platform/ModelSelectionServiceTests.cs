@@ -37,12 +37,24 @@ public sealed class ModelSelectionServiceTests : IDisposable
     private sealed class FakeResolver(string modelRoot, Counter counter) : ILocalModelResolver
     {
         public string ModelRoot => modelRoot;
+        public int RuntimeCalls { get; private set; }
+        public string? RuntimeId { get; private set; }
+        public bool FailRuntime { get; set; }
 
         public ResolvedModelSelection Resolve(ModelSelection selection)
         {
             ModelArtifact stt = Artifact(selection.SttId);
             ModelArtifact? cleaner = selection.CleanerId is null ? null : Artifact(selection.CleanerId);
             return new(selection, stt, cleaner);
+        }
+
+        public Task EnsureRuntimeAsync(ModelArtifact artifact, IProgress<ModelProvisionProgress>? progress,
+            CancellationToken ct)
+        {
+            RuntimeCalls++;
+            RuntimeId = artifact.RuntimeId;
+            if (FailRuntime) throw new InvalidDataException("runtime provisioning failed");
+            return Task.CompletedTask;
         }
 
         public ISttEngine CreateStt(ModelArtifact artifact) => new FakeStt(counter, artifact.Id);
@@ -52,7 +64,12 @@ public sealed class ModelSelectionServiceTests : IDisposable
         private static ModelArtifact Artifact(string id) => new(id, "fake", "owner/model",
             "0123456789abcdef0123456789abcdef01234567",
             [new ModelFile($"{id}.gguf", new string('a', 64))],
-            "F16", "Apache-2.0", id.Contains("asr") || id == "parakeet_v3" ? "transcribe-vulkan" : "llama-vulkan");
+            "F16", "Apache-2.0", id switch
+            {
+                "gemma4_e2b" or "qwen3_1_7b" => "llama-vulkan",
+                "nemotron_transcribe_30b_a4b" => "nemo-speech-vulkan",
+                _ => "transcribe-vulkan"
+            });
     }
 
     private sealed class FakeProvisioner : IModelProvisioner
@@ -91,6 +108,7 @@ public sealed class ModelSelectionServiceTests : IDisposable
         public required Engine Engine { get; init; }
         public required InferencePipeline Pipeline { get; init; }
         public required FakeProvisioner Provisioner { get; init; }
+        public required FakeResolver Resolver { get; init; }
         public required ModelSelectionService Service { get; init; }
         public required ModelSelection Selection { get; init; }
         public required string SelectionPath { get; init; }
@@ -108,7 +126,8 @@ public sealed class ModelSelectionServiceTests : IDisposable
             Engine engine = new(counter);
             InferencePipeline pipeline = new(engine, engine, new CleanupPolicy(), TimeProvider.System, refinement);
             FakeProvisioner provisioner = new();
-            ModelSelectionService service = new(pipeline, new FakeResolver(root, counter), provisioner,
+            FakeResolver resolver = new(root, counter);
+            ModelSelectionService service = new(pipeline, resolver, provisioner,
                 selectionPath, selection);
             return new()
             {
@@ -116,6 +135,7 @@ public sealed class ModelSelectionServiceTests : IDisposable
                 Engine = engine,
                 Pipeline = pipeline,
                 Provisioner = provisioner,
+                Resolver = resolver,
                 Service = service,
                 Selection = selection,
                 SelectionPath = selectionPath,
@@ -186,6 +206,39 @@ public sealed class ModelSelectionServiceTests : IDisposable
         await f.Service.ApplyAsync(f.Selection with { SttId = "qwen3_asr_1_7b" }, null, default);
         Assert.Equal(stt + 1, f.Engines.Stt);
         Assert.Equal(cleaner, f.Engines.Cleaner);
+    }
+
+    [Fact]
+    public async Task ChangeToNemotronEnsuresItsNativeRuntime()
+    {
+        Fixture f = Fixture.Create(refinement: true);
+        await f.Service.ApplyAsync(f.Selection with
+        {
+            SttId = "nemotron_transcribe_30b_a4b",
+            RefinementEnabled = false
+        }, null, default);
+
+        Assert.Equal(1, f.Resolver.RuntimeCalls);
+        Assert.Equal("nemo-speech-vulkan", f.Resolver.RuntimeId);
+    }
+
+    [Fact]
+    public async Task ToggleOnlyDoesNotEnsureRuntime()
+    {
+        Fixture f = Fixture.Create(refinement: true);
+        await f.Service.ApplyAsync(f.Selection with { RefinementEnabled = false }, null, default);
+        Assert.Equal(0, f.Resolver.RuntimeCalls);
+    }
+
+    [Fact]
+    public async Task FailedRuntimeProvisioningLeavesCurrentSelection()
+    {
+        Fixture f = Fixture.Create(refinement: true);
+        f.Resolver.FailRuntime = true;
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            f.Service.ApplyAsync(f.Selection with { SttId = "nemotron_transcribe_30b_a4b" }, null, default));
+        Assert.Equal(f.Selection, f.Service.Current);
+        Assert.Equal(f.OriginalJson, File.ReadAllText(f.SelectionPath));
     }
 
     [Fact]

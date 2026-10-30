@@ -133,9 +133,9 @@ public static class ModelSelectionResolver
         ArgumentNullException.ThrowIfNull(selection);
         ArgumentNullException.ThrowIfNull(catalog);
         ModelArtifact stt = Required(catalog, selection.SttId, "stt_id");
-        if (stt.RuntimeId != "transcribe-vulkan")
+        if (stt.RuntimeId is not ("transcribe-vulkan" or "nemo-speech-vulkan"))
             throw new InvalidDataException(
-                $"stt_id '{selection.SttId}' must use transcribe-vulkan, got '{stt.RuntimeId}'.");
+                $"stt_id '{selection.SttId}' must use transcribe-vulkan or nemo-speech-vulkan, got '{stt.RuntimeId}'.");
 
         ModelArtifact? cleaner = null;
         if (!string.IsNullOrWhiteSpace(selection.CleanerId))

@@ -165,6 +165,12 @@ and a **cleaner** selector. Any ASR can be paired with any cleaner, or
 refinement can be off. Changes apply hot: the ASR and cleaner are swapped in
 place, and a dictation already being processed finishes on the old engines.
 
+**Nemotron 3.5 Transcribe 30B A4B** is an experimental third ASR. It needs about
+21 GB of GGUF files plus a ~22 MB NeMo-Speech Vulkan runtime, downloaded on
+demand from Hugging Face and GitHub and never bundled in the installer. The
+first selection asks for confirmation in Settings and then shows a percentage;
+it is slower to start and wants a Vulkan-capable GPU.
+
 `models/candidates.json` is the single source for artifact paths and hashes,
 pinned by `models/integrity.json`. Legacy
 `selected.json`/`selected-parakeet-qwen.json` are migrated on first run.
@@ -177,10 +183,11 @@ the settings window offers **Riprova modelli** to rebuild it.
 
 - **No audio or text over the network**: the runtime opens no HTTP listener and
   never sends audio, transcripts, window titles, or telemetry to a service.
-- **Model provisioning is the only network access**: on first run or when you
-  change model combination, the client downloads missing model files from
-  `huggingface.co` over HTTPS. Hugging Face sees your IP address and the
-  requested model/revision; it never receives audio or text.
+- **Model and runtime provisioning is the only network access**: on first run or
+  when you change model combination, the client downloads missing model files
+  from `huggingface.co` and, only for Nemotron, the NeMo-Speech runtime from
+  GitHub over HTTPS. Those hosts see your IP address and the requested
+  repository/asset; they never receive audio or text.
 - **No history by default**: audio and transcripts live in RAM. If
   `recording.enabled` is on, completed local dictations are written under
   `%LOCALAPPDATA%\GangioKeet\recordings` (or the configured `recording.directory`)

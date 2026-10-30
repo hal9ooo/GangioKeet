@@ -59,6 +59,22 @@ the per-user model combination. Native runtimes are pinned by
   `licenses/models/APACHE-2.0.txt`; attribution is in `licenses/models/MODELS.txt`.
 - SHA-256: `061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a`.
 
+### Experimental stack: Nemotron 3.5 Transcribe 30B A4B
+
+#### Nemotron 3.5 Transcribe 30B A4B (IQ4_NL + F16 encoder)
+
+- Source checkpoint: `nvidia/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B`, artifact
+  repository `AtomicChat/NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-GGUF`, revision
+  `dbd06c5cad7a2f33c8e06be2fb3ef814dbd9aa59`.
+- Files: `NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-AD-IQ4_NL.gguf` (19,678,656,672
+  bytes) and `NVIDIA-Nemotron-3.5-Transcribe-30B-A4B-Encoder-F16.gguf`
+  (1,670,410,080 bytes).
+- License: OpenMDW-1.1, <https://openmdw.ai/license/1-1/>.
+- SHA-256: `0c47d4ab6c783e7606ec03714b354fab0b2052027a7ea1991e7e2d3009c345ad`
+  and `4221029c8a565c4a80c507ffa760c716e595acf663f9f4273ce69910050e7ba2`.
+- The client downloads these files on demand; they are never bundled in the
+  installer.
+
 ## Native inference runtimes
 
 ### transcribe.cpp 0.4.1
@@ -84,6 +100,20 @@ the per-user model combination. Native runtimes are pinned by
   SciSharp STACK. The managed assembly is patched from that package with the
   same namespace-only change and shipped as `LLamaSharp.dll`.
 - The complete MIT texts ship under `licenses/llama/`.
+
+### NeMo-Speech.cpp (experimental, downloaded on demand)
+
+- Project: <https://github.com/NVIDIA/NeMo-Speech.cpp>, nightly build
+  `0.2.0+nightly.66d50d9`, asset
+  `nemo-speech-nightly-windows-x86_64-vulkan.zip`, SHA-256
+  `fddd6be11c47e98855bac10106fee64dcdc255e596e232023c76b120a9597ab0`.
+- License: Apache License 2.0, copyright (c) 2026 NVIDIA CORPORATION &
+  AFFILIATES. The downloaded archive carries the complete texts under
+  `share/licenses/nemo-speech/`, including its ggml and llama.cpp components.
+- The runtime is downloaded only when Nemotron is selected, under
+  `%LOCALAPPDATA%\GangioKeet\runtimes\nemo-speech\`. Its ggml and llama DLLs are
+  renamed to a private `ngml`/`nlama` namespace at extraction so they can
+  coexist in-process with the transcribe.cpp and LLamaSharp runtimes.
 
 ## Managed dependencies
 

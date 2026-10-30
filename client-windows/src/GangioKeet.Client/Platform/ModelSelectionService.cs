@@ -45,6 +45,8 @@ public sealed class ModelSelectionService
                 if (needsCleaner) artifacts.Add(resolved.Cleaner!);
                 await _provisioner.EnsureModelsAsync(artifacts, _resolver.ModelRoot, progress, ct).ConfigureAwait(false);
             }
+            if (sttChanged)
+                await _resolver.EnsureRuntimeAsync(resolved.Stt, progress, ct).ConfigureAwait(false);
 
             ISttEngine? newStt = sttChanged ? _resolver.CreateStt(resolved.Stt) : null;
             ITextCleaner? newCleaner = null;

@@ -57,9 +57,9 @@ is still rejected. `recording.store_context` is accepted for compatibility but
 has no effect: selected text is never stored.
 
 On first run or after a model-combination change, missing model files are
-downloaded from `huggingface.co` over HTTPS. No audio, transcript, window title,
-or telemetry is sent; the request exposes the client IP and the requested
-model/revision.
+downloaded from `huggingface.co` over HTTPS; selecting Nemotron also downloads
+its runtime from GitHub. No audio, transcript, window title, or telemetry is
+sent; those hosts see the client IP and the requested repository/asset.
 
 ## Model combinations
 
@@ -75,6 +75,12 @@ The settings window exposes an **ASR** selector, a **Refinement** checkbox, and
 a **cleaner** selector. Any ASR can be paired with any cleaner, or refinement
 can be off. Changes apply hot, without restarting the client; a dictation
 already being processed completes on the old engines.
+
+**Nemotron 3.5 Transcribe 30B A4B** is an experimental third ASR: it downloads
+about 21 GB of GGUF files and a ~22 MB NeMo-Speech Vulkan runtime on demand,
+never in the installer. Settings asks for confirmation before the first
+download and then shows a percentage. It is slower to start and needs a
+Vulkan-capable GPU.
 
 `models/candidates.json` is the single source for artifact paths and hashes and
 is pinned by `models/integrity.json`. Legacy `selected.json` and

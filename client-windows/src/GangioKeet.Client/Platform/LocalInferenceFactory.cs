@@ -27,7 +27,8 @@ public static class LocalInferenceFactory
     public static LocalInferenceSetup Create(ClientConfig config, string? nativeDirectory = null,
         string? llamaDirectory = null, string? runtimeLockPath = null, string? modelRoot = null,
         Func<ModelArtifact, ISttEngine>? sttFactory = null,
-        Func<ModelArtifact, ITextCleaner>? cleanerFactory = null)
+        Func<ModelArtifact, ITextCleaner>? cleanerFactory = null,
+        INativeRuntimeProvisioner? runtimeProvisioner = null)
     {
         string rawSelection = config.Inference.ModelSelectionPath;
         string selectionPath = Path.IsPathRooted(rawSelection)
@@ -74,7 +75,7 @@ public static class LocalInferenceFactory
             ? Path.Combine(selectedRoot, "integrity.json")
             : Path.Combine(models, "integrity.json");
         LocalModelResolver resolver = new(models, catalogPath, integrityPath, lockPath,
-            config.Inference.CleanupPolicyPath, transcribe, llama, backend, policy);
+            config.Inference.CleanupPolicyPath, transcribe, llama, backend, policy, runtimeProvisioner);
         ResolvedModelSelection resolved = resolver.Resolve(selection);
 
         ISttEngine selectedStt = sttFactory?.Invoke(resolved.Stt) ?? resolver.CreateStt(resolved.Stt);

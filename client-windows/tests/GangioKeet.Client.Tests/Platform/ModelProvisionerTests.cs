@@ -174,8 +174,41 @@ public sealed class ModelProvisionerTests : IDisposable
 
         string targetPath = Path.Combine(_tempDir, relativePath);
         Assert.True(File.Exists(targetPath));
+        Assert.True(File.Exists(targetPath + ".verified"));
         byte[] writtenBytes = await File.ReadAllBytesAsync(targetPath);
         Assert.Equal(payload, writtenBytes);
+    }
+
+    [Fact]
+    public async Task EnsureModelsAsync_WhenVerifiedFileChanges_RehashesAndReDownloads()
+    {
+        byte[] validPayload = Encoding.UTF8.GetBytes("valid model payload content");
+        string sha256 = Convert.ToHexStringLower(SHA256.HashData(validPayload));
+        string relativePath = "sub/model.gguf";
+        string fullPath = Path.Combine(_tempDir, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        await File.WriteAllBytesAsync(fullPath, validPayload);
+
+        int downloads = 0;
+        var handler = new MockHttpMessageHandler(_ =>
+        {
+            downloads++;
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(validPayload) };
+        });
+        using var client = new HttpClient(handler);
+        using var provisioner = new ModelProvisioner(client);
+        string selectionPath = CreateSelectedJson("test-model", "test-org/test-repo",
+            "1234567890123456789012345678901234567890", relativePath, sha256);
+
+        await provisioner.EnsureModelsAsync(selectionPath, modelRoot: _tempDir);
+        Assert.Equal(0, downloads);
+        Assert.True(File.Exists(fullPath + ".verified"));
+
+        await File.WriteAllBytesAsync(fullPath, Encoding.UTF8.GetBytes("tampered content goes here"));
+        await provisioner.EnsureModelsAsync(selectionPath, modelRoot: _tempDir);
+
+        Assert.Equal(1, downloads);
+        Assert.Equal(validPayload, await File.ReadAllBytesAsync(fullPath));
     }
 
     [Fact]

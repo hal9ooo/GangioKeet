@@ -231,12 +231,29 @@ public sealed partial class SettingsWindow : Window
         AsrCombo.IsEnabled = false;
         CleanerCombo.IsEnabled = false;
         RefinementCheck.IsEnabled = false;
-        ModelProgress.Visibility = Visibility.Visible;
         try
         {
+            bool needsDownload = !_modelSelection.IsAvailable(asr)
+                || (refinement && cleaner is not null && !_modelSelection.IsAvailable(cleaner));
+            if (needsDownload)
+            {
+                MessageBoxResult answer = MessageBox.Show(this,
+                    "I modelli selezionati non sono ancora sul disco. Scaricarli ora da Hugging Face?\n\n"
+                    + "Nemotron 3.5 richiede circa 21 GB e molto tempo; gli altri modelli molto meno.",
+                    "GangioKeet — download modelli", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                if (answer != MessageBoxResult.Yes)
+                {
+                    StatusText.Text = "Download annullato: resta attiva la combinazione precedente.";
+                    return;
+                }
+            }
+
+            ModelProgress.IsIndeterminate = true;
+            ModelProgress.Value = 0;
+            ModelProgress.Visibility = Visibility.Visible;
             ModelSelection desired = new(2, asr.Id, cleanerId, refinement);
             await _modelSelection.ApplyAsync(desired,
-                new Progress<ModelProvisionProgress>(p => StatusText.Text = $"Modelli: {p.Status}"),
+                new Progress<ModelProvisionProgress>(ShowProvisionProgress),
                 CancellationToken.None);
             StatusText.Text = "Combinazione applicata a caldo.";
         }
@@ -261,11 +278,13 @@ public sealed partial class SettingsWindow : Window
         if (_modelSelection is null || _selectionApplying) return;
         _selectionApplying = true;
         RetryModelsButton.IsEnabled = false;
+        ModelProgress.IsIndeterminate = true;
+        ModelProgress.Value = 0;
         ModelProgress.Visibility = Visibility.Visible;
         try
         {
             await _modelSelection.RetryAsync(
-                new Progress<ModelProvisionProgress>(p => StatusText.Text = $"Modelli: {p.Status}"),
+                new Progress<ModelProvisionProgress>(ShowProvisionProgress),
                 CancellationToken.None);
             StatusText.Text = "Riprova completata.";
         }
@@ -342,6 +361,65 @@ public sealed partial class SettingsWindow : Window
         {
             _recordingRefresh = false;
         }
+    }
+
+    private void ShowProvisionProgress(ModelProvisionProgress progress)
+    {
+        string label = ModelLabel(progress.ModelId);
+        string percent = "";
+        string size = "";
+        if (progress.TotalBytes is > 0)
+        {
+            double fraction = Math.Clamp(
+                (double)progress.BytesTransferred / progress.TotalBytes.Value, 0, 1);
+            percent = $" {fraction:P0}";
+            size = $" ({FormatBytes(progress.BytesTransferred)} / {FormatBytes(progress.TotalBytes.Value)})";
+        }
+
+        StatusText.Text = progress.Status switch
+        {
+            ModelProvisionStatus.Checking => $"Verifica {label}…",
+            ModelProvisionStatus.Downloading => $"Scaricamento {label}:{percent}{size}",
+            ModelProvisionStatus.Completed => $"{label}: completato{size}",
+            _ => $"{label}: {progress.Status}"
+        };
+
+        if (progress.Status == ModelProvisionStatus.Downloading && progress.TotalBytes is > 0)
+        {
+            ModelProgress.IsIndeterminate = false;
+            ModelProgress.Value = Math.Clamp(
+                (double)progress.BytesTransferred / progress.TotalBytes.Value, 0, 1);
+        }
+        else if (progress.Status == ModelProvisionStatus.Completed)
+        {
+            ModelProgress.IsIndeterminate = false;
+            ModelProgress.Value = 1;
+        }
+        else
+        {
+            ModelProgress.IsIndeterminate = true;
+        }
+    }
+
+    private string ModelLabel(string id)
+    {
+        if (id == "nemo-speech-runtime") return "runtime NeMo-Speech";
+        if (_modelSelection is null) return id;
+        ModelArtifact? artifact = _modelSelection.AsrCandidates
+            .Concat(_modelSelection.CleanerCandidates)
+            .FirstOrDefault(candidate => candidate.Id == id);
+        return artifact is null ? id : ModelSelectionChoices.Label(artifact);
+    }
+
+    private static string FormatBytes(long bytes)
+    {
+        const long kilobyte = 1024;
+        const long megabyte = kilobyte * 1024;
+        const long gigabyte = megabyte * 1024;
+        if (bytes >= gigabyte) return $"{bytes / (double)gigabyte:0.0} GB";
+        if (bytes >= megabyte) return $"{bytes / (double)megabyte:0.0} MB";
+        if (bytes >= kilobyte) return $"{bytes / (double)kilobyte:0.0} KB";
+        return $"{bytes} B";
     }
 
     private void Refresh()

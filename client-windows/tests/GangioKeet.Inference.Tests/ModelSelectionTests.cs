@@ -29,9 +29,12 @@ public sealed class ModelSelectionTests : IDisposable
                 files = new[] { new { path = $"{id}.gguf", sha256 = new string('a', 64) } },
                 precision = "F16",
                 license = "Apache-2.0",
-                runtime_id = id is "gemma4_e2b" or "qwen3_1_7b" or "qwen3_4b"
-                    ? "llama-vulkan"
-                    : "transcribe-vulkan"
+                runtime_id = id switch
+                {
+                    "gemma4_e2b" or "qwen3_1_7b" or "qwen3_4b" => "llama-vulkan",
+                    "nemotron_transcribe_30b_a4b" => "nemo-speech-vulkan",
+                    _ => "transcribe-vulkan"
+                }
             })
         }));
         return ModelCatalog.Load(path);
@@ -104,6 +107,16 @@ public sealed class ModelSelectionTests : IDisposable
         ModelCatalog catalog = CatalogWith("parakeet_v3", "gemma4_e2b");
         Assert.Throws<InvalidDataException>(() =>
             ModelSelectionResolver.Resolve(new(2, "parakeet_v3", "missing", true), catalog));
+    }
+
+    [Fact]
+    public void ResolveNemotronUsesTheSpeechLmRuntime()
+    {
+        ModelCatalog catalog = CatalogWith("nemotron_transcribe_30b_a4b");
+        ResolvedModelSelection resolved = ModelSelectionResolver.Resolve(
+            new(2, "nemotron_transcribe_30b_a4b", null, false), catalog);
+        Assert.Equal("nemo-speech-vulkan", resolved.Stt.RuntimeId);
+        Assert.Null(resolved.Cleaner);
     }
 
     [Fact]
