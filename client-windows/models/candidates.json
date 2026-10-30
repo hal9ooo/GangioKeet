@@ -4,6 +4,7 @@
     {
       "id": "qwen3_asr_1_7b",
       "family": "qwen3-asr",
+      "display_name": "Qwen3-ASR 1.7B",
       "source_checkpoint": "Qwen/Qwen3-ASR-1.7B",
       "revision": "0e0a596e3959c3f3f2ab7d443a5b6f0f4a4bba6f",
       "files": [
@@ -21,6 +22,7 @@
     {
       "id": "parakeet_v3",
       "family": "parakeet-tdt",
+      "display_name": "Parakeet TDT 0.6B v3",
       "source_checkpoint": "nvidia/parakeet-tdt-0.6b-v3",
       "revision": "d8d8c32cb2017c57e5307767343e97870f8a7f53",
       "files": [
@@ -38,6 +40,7 @@
     {
       "id": "whisper_large_v3",
       "family": "whisper",
+      "display_name": "Whisper large-v3",
       "source_checkpoint": "openai/whisper-large-v3",
       "revision": "274ad1d1cf680b7ee53cc70f78461394cd3a344b",
       "files": [
@@ -55,6 +58,7 @@
     {
       "id": "qwen3_1_7b",
       "family": "qwen3",
+      "display_name": "Qwen3 1.7B",
       "source_checkpoint": "Qwen/Qwen3-1.7B",
       "revision": "90862c4b9d2787eaed51d12237eafdfe7c5f6077",
       "files": [
@@ -72,6 +76,7 @@
     {
       "id": "gemma4_e2b",
       "family": "gemma4",
+      "display_name": "Gemma 4 E2B",
       "source_checkpoint": "google/gemma-4-E2B-it",
       "artifact_repository": "google/gemma-4-E2B-it-qat-q4_0-gguf",
       "revision": "675cff42a74c774d6cb76f76d8eacb49b48c9b93",
@@ -89,6 +94,7 @@
     {
       "id": "qwen3_4b",
       "family": "qwen3",
+      "display_name": "Qwen3 4B",
       "source_checkpoint": "Qwen/Qwen3-4B",
       "revision": "bc640142c66e1fdd12af0bd68f40445458f3869b",
       "files": [
