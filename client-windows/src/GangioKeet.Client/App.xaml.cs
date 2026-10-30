@@ -318,6 +318,7 @@ public partial class App : Application, IModelSelectionHost
             throw new InvalidOperationException("The local model selection service is not ready.");
         await _modelSelectionService.ApplyAsync(desired, progress, ct).ConfigureAwait(false);
         _modelSelection = desired;
+        _localError = null;
         _localSttId = desired.SttId;
         _localCleanerId = desired.RefinementEnabled ? desired.CleanerId : "nessuno";
         _localBackend = _config?.Inference.Backend;

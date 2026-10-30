@@ -114,6 +114,16 @@ public sealed class ModelSelectionTests : IDisposable
             ModelSelectionResolver.Resolve(new(2, "gemma4_e2b", "parakeet_v3", true), catalog));
     }
 
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("null")]
+    [InlineData("\"text\"")]
+    public void LoadNonObjectRootThrows(string json)
+    {
+        string path = Write(json);
+        Assert.Throws<InvalidDataException>(() => ModelSelectionFile.Load(path));
+    }
+
     [Fact]
     public void LegacySelectionMigratesToV2()
     {

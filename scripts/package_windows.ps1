@@ -44,11 +44,11 @@ $selected = Get-Content -LiteralPath $SelectionPath -Raw | ConvertFrom-Json
 New-Item -ItemType Directory -Path (Join-Path $Payload 'models') -Force | Out-Null
 $selectionSchema = if ($selected.PSObject.Properties.Name -contains 'schema_version') { [int]$selected.schema_version } else { 0 }
 $activeName = if ($selectionSchema -eq 2) { 'selection.json' } else { 'selected.json' }
-Copy-Item -LiteralPath $SelectionPath -Destination (Join-Path $Payload "models/$activeName") -Force
 $SelectionV2 = Join-Path $RepoRoot 'client-windows/models/selection.json'
 if (Test-Path -LiteralPath $SelectionV2 -PathType Leaf) {
     Copy-Item -LiteralPath $SelectionV2 -Destination (Join-Path $Payload 'models/selection.json') -Force
 }
+Copy-Item -LiteralPath $SelectionPath -Destination (Join-Path $Payload "models/$activeName") -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'client-windows/models/candidates.json') `
     -Destination (Join-Path $Payload 'models/candidates.json') -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'client-windows/models/integrity.json') `

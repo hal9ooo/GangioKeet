@@ -20,6 +20,8 @@ public static class ModelSelectionFile
         {
             using JsonDocument document = JsonDocument.Parse(File.ReadAllText(path));
             JsonElement root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+                throw new InvalidDataException("Model selection must be a JSON object.");
             if (!root.TryGetProperty("schema_version", out JsonElement schemaElement)
                 || !schemaElement.TryGetInt32(out int schemaVersion))
                 throw new InvalidDataException("Model selection requires schema_version.");

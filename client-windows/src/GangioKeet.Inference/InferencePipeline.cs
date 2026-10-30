@@ -29,7 +29,12 @@ public sealed class InferencePipeline : IInferencePipeline
     public bool RefinementEnabled
     {
         get => Volatile.Read(ref _refinementEnabled);
-        set => Volatile.Write(ref _refinementEnabled, value);
+        set
+        {
+            if (value && Volatile.Read(ref _cleaner) is null)
+                throw new InvalidOperationException("Refinement requires a cleaner.");
+            Volatile.Write(ref _refinementEnabled, value);
+        }
     }
 
     public bool HasCleaner => Volatile.Read(ref _cleaner) is not null;
@@ -218,10 +223,16 @@ public sealed class InferencePipeline : IInferencePipeline
         try
         {
             _lifetime.Cancel();
-            ITextCleaner? cleaner = Volatile.Read(ref _cleaner);
-            if (cleaner is not null) await cleaner.DisposeAsync().ConfigureAwait(false);
-            await _stt.DisposeAsync().ConfigureAwait(false);
-            _lifetime.Dispose();
+            try
+            {
+                ITextCleaner? cleaner = Volatile.Read(ref _cleaner);
+                if (cleaner is not null) await cleaner.DisposeAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                try { await _stt.DisposeAsync().ConfigureAwait(false); }
+                finally { _lifetime.Dispose(); }
+            }
         }
         finally { _gate.Release(); }
     }

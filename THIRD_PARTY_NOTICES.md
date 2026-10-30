@@ -3,9 +3,10 @@
 GangioKeet itself is distributed under the MIT license; see `LICENSE`.
 
 The Windows package does **not** bundle model weights. The client downloads
-missing model files on demand from Hugging Face; `models/selected.json` and
-`models/selected-parakeet-qwen.json` pin the revisions and SHA-256 hashes of the
-files used by the two selectable stacks. Native runtimes are pinned by
+missing model files on demand from Hugging Face; `models/candidates.json` pins
+the revisions and SHA-256 hashes, `models/integrity.json` pins the catalog,
+runtime and cleanup policy, and `models/selection.json` is the default seed for
+the per-user model combination. Native runtimes are pinned by
 `native/runtime-lock.json`.
 
 ## Model weights

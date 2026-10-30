@@ -19,6 +19,27 @@ public sealed class InferencePipelineSelectionTests
     }
 
     [Fact]
+    public async Task RefinementCannotEnableWithoutCleaner()
+    {
+        Engines engines = new();
+        await using InferencePipeline pipeline = new(engines, null, new CleanupPolicy(), TimeProvider.System, false);
+        Assert.Throws<InvalidOperationException>(() => pipeline.RefinementEnabled = true);
+    }
+
+    [Fact]
+    public async Task DisposeStillDisposesSttWhenCleanerDisposeThrows()
+    {
+        Engines engines = new();
+        FakeCleaner cleaner = new() { DisposeFailure = new InvalidDataException("dispose failed") };
+        InferencePipeline pipeline = new(engines, cleaner, new CleanupPolicy(), TimeProvider.System);
+        await pipeline.WarmUpAsync(default);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() => pipeline.DisposeAsync().AsTask());
+
+        Assert.True(engines.Disposed);
+    }
+
+    [Fact]
     public async Task SwapSttDoesNotReloadCleaner()
     {
         Engines engines = new();
@@ -119,6 +140,7 @@ public sealed class InferencePipelineSelectionTests
         private static readonly EngineIdentity Identity = new("fake-cleaner", "r", "h", "v", "vulkan", "Q4_0", "fake");
         public Exception? LoadFailure { get; init; }
         public Exception? WarmupFailure { get; init; }
+        public Exception? DisposeFailure { get; init; }
         public bool Disposed { get; private set; }
 
         public Task LoadAsync(CancellationToken ct) =>
@@ -132,7 +154,9 @@ public sealed class InferencePipelineSelectionTests
         public ValueTask DisposeAsync()
         {
             Disposed = true;
-            return ValueTask.CompletedTask;
+            return DisposeFailure is null
+                ? ValueTask.CompletedTask
+                : new ValueTask(Task.FromException(DisposeFailure));
         }
     }
 
@@ -143,6 +167,7 @@ public sealed class InferencePipelineSelectionTests
         public int CleanerCalls;
         public string Raw = "Come funziona";
         public Action? AfterStt;
+        public bool Disposed;
         public Func<string, CancellationToken, Task<string>> Clean = (raw, _) => Task.FromResult(raw + "?");
         private static readonly EngineIdentity Identity = new("fake", "r", "h", "v", "vulkan", "F16", "fake");
 
@@ -167,6 +192,10 @@ public sealed class InferencePipelineSelectionTests
             return new(await Clean(raw, ct), Identity);
         }
 
-        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+        public ValueTask DisposeAsync()
+        {
+            Disposed = true;
+            return ValueTask.CompletedTask;
+        }
     }
 }

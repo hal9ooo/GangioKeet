@@ -158,7 +158,7 @@ public sealed class ModelProvisioner : IModelProvisioner, IDisposable
             // 2. Download model file
             if (string.IsNullOrWhiteSpace(repo) || string.IsNullOrWhiteSpace(revision))
             {
-                throw new InvalidOperationException($"Cannot download model '{candidateId}': missing repository or revision in selected.json.");
+                throw new InvalidOperationException($"Cannot download model '{candidateId}': missing repository or revision in the model selection.");
             }
 
             string fileName = Path.GetFileName(relativePath);

@@ -17,11 +17,15 @@ stata eseguita.
   `9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732`.
   Nessuna installazione system-wide, nessun servizio, nessuna regola firewall.
 
-## Coppia e artefatti
+## Selezione e artefatti
 
-- Coppia: Qwen3-ASR-1.7B F16 + Gemma 4 E2B-it Q4_0, Vulkan.
+- Seed v1 legacy: Qwen3-ASR-1.7B F16 + Gemma 4 E2B-it Q4_0, Vulkan.
 - `client-windows/models/selected.json` SHA-256
   `e57502e28f87e89b17b398366aa4288623c21d882b6666583a304e3fdf6f8d73`.
+- `client-windows/models/selection.json` è il seed v2; la selezione attiva vive
+  in `%APPDATA%\GangioKeet\selection.json`.
+- `client-windows/models/candidates.json` è la fonte unica di path e hash,
+  pinnata da `client-windows/models/integrity.json`.
 - `client-windows/native/runtime-lock.json` SHA-256
   `e7ff49f052c9a37b917d2e844f8185215cda8a60d01e1eaa5bf6e925b1436846`.
 - Policy `cleanup.yaml` hash canonico
@@ -29,14 +33,14 @@ stata eseguita.
 - Prompt `conservative-local-v3` SHA-256
   `e63fa4085c525b203bbd71897a25c03af0984b0a627ee229e6304081a349e907`.
 - Modelli: `Qwen3-ASR-1.7B-F16.gguf` e `gemma-4-E2B_q4_0-it.gguf`, hash
-  verificati contro `selected.json`.
+  verificati contro `candidates.json`.
 
 ## Payload
 
 - Directory: `artifacts/package`.
 - File: **549**; dimensione **326.281.071 byte** (0,304 GiB).
 - Modelli: provisioning on demand; **nessun GGUF nel payload**. I file sono
-  scaricati dal client e verificati contro `models/selected.json`.
+  scaricati dal client e verificati contro `models/candidates.json`.
 - Runtime: `native/transcribe` (transcribe.cpp 0.4.1) e `native/llama`
   (LLamaSharp 0.30.0 patchato, namespace `lgml`). Le copie non patchate sotto
   `runtimes/` prodotte dal publish NuGet sono state rimosse.
@@ -50,9 +54,8 @@ stata eseguita.
   CommunityToolkit.HighPerformance), più le licenze già incluse in
   `native/transcribe/licenses`.
 - Esclusioni verificate: nessun `.py`, nessun `.pdb`, nessun
-  `GangioKeet.Eval`, nessun `tools`, nessun `candidates.json`, nessun GGUF,
-  nessuna DLL nativa di inferenza fuori da
-  `native/transcribe`/`native/llama`, nessun `runtimes/`.
+  `GangioKeet.Eval`, nessun `tools`, nessun GGUF, nessuna DLL nativa di
+  inferenza fuori da `native/transcribe`/`native/llama`, nessun `runtimes/`.
 
 ## Comandi eseguiti
 

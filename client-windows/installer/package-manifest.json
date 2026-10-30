@@ -21,6 +21,15 @@
     "path": "models/selected.json",
     "sha256": "e57502e28f87e89b17b398366aa4288623c21d882b6666583a304e3fdf6f8d73"
   },
+  "selection_v2": {
+    "path": "models/selection.json"
+  },
+  "catalog": {
+    "path": "models/candidates.json"
+  },
+  "integrity": {
+    "path": "models/integrity.json"
+  },
   "runtime_lock": {
     "path": "native/runtime-lock.json",
     "sha256": "e7ff49f052c9a37b917d2e844f8185215cda8a60d01e1eaa5bf6e925b1436846"
@@ -71,7 +80,7 @@
   "exclusions": [
     "GangioKeet.Eval",
     "Python, pytest and the .venv",
-    "non-selected model candidates and candidates.json",
+    "GGUF model bytes (provisioned on demand)",
     "debug symbols (*.pdb)",
     "developer native build logs and reports"
   ],

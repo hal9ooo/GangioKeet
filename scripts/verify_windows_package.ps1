@@ -95,9 +95,9 @@ if (-not (Test-Path -LiteralPath $integrityPath -PathType Leaf)) {
         } else {
             $v2 = Get-Content -LiteralPath $v2SelectionPath -Raw | ConvertFrom-Json
             if ($v2.schema_version -ne 2) { Add-Error 'models/selection.json must use schema_version 2' }
-            if ($catalogIds -notcontains [string]$v2.stt_id) { Add-Error 'models/selection.json has an unknown stt_id' }
+            if ($catalogIds -cnotcontains [string]$v2.stt_id) { Add-Error 'models/selection.json has an unknown stt_id' }
             if ($v2.refinement_enabled -and
-                    ($null -eq $v2.cleaner_id -or $catalogIds -notcontains [string]$v2.cleaner_id)) {
+                    ($null -eq $v2.cleaner_id -or $catalogIds -cnotcontains [string]$v2.cleaner_id)) {
                 Add-Error 'models/selection.json has an unknown cleaner_id'
             }
         }

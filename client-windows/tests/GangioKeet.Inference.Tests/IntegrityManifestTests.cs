@@ -60,6 +60,16 @@ public sealed class IntegrityManifestTests : IDisposable
         Assert.Throws<InvalidDataException>(() => IntegrityManifestFile.Load(path));
     }
 
+    [Theory]
+    [InlineData("[]")]
+    [InlineData("null")]
+    public void LoadNonObjectRootThrows(string json)
+    {
+        string path = Path.Combine(_root, "integrity.json");
+        File.WriteAllText(path, json);
+        Assert.Throws<InvalidDataException>(() => IntegrityManifestFile.Load(path));
+    }
+
     [Fact]
     public async Task VerifyMissingFileThrows()
     {

@@ -13,6 +13,8 @@ public static class IntegrityManifestFile
         {
             using JsonDocument document = JsonDocument.Parse(File.ReadAllText(path));
             JsonElement root = document.RootElement;
+            if (root.ValueKind != JsonValueKind.Object)
+                throw new InvalidDataException("Integrity manifest must be a JSON object.");
             if (!root.TryGetProperty("schema_version", out JsonElement schema)
                 || !schema.TryGetInt32(out int version) || version != 1)
                 throw new InvalidDataException("Integrity manifest requires schema_version 1.");
