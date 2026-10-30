@@ -80,7 +80,8 @@ already being processed completes on the old engines.
 is pinned by `models/integrity.json`. Legacy `selected.json` and
 `selected-parakeet-qwen.json` files are migrated on first run. Real-voice tests
 favour **Parakeet + Nessuno** for fidelity/latency and **Parakeet + Gemma** for
-questions and technical terms.
+questions and technical terms. If a combination cannot load, the tray stays in
+NotReady and Settings offers **Riprova modelli**.
 
 ## Media pause
 

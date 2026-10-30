@@ -10,7 +10,12 @@ namespace GangioKeet.Client.Platform;
 
 public sealed record LocalInferenceSetup(IInferencePipeline Pipeline, string SttId, string CleanerId,
     string Backend, string PromptVersion, string PromptSha256, string PolicySha256,
-    ModelArtifact SttArtifact, ModelArtifact? CleanerArtifact, bool RefinementEnabled);
+    ModelArtifact? SttArtifact, ModelArtifact? CleanerArtifact, bool RefinementEnabled)
+{
+    public static LocalInferenceSetup Failed(ClientConfig config, Exception error) => new(
+        new FailedInferencePipeline(error), "non disponibile", "nessuno", config.Inference.Backend,
+        CleanerPrompt.Version, CleanerPrompt.Sha256, "", null, null, false);
+}
 
 /// <summary>
 /// Costruisce la pipeline locale da <c>selected.json</c> (v1) o

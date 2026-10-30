@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using GangioKeet.Client.Platform;
 using GangioKeet.Client.Protocol;
 using GangioKeet.Client.Ui;
@@ -52,8 +53,35 @@ public sealed class LocalSettingsTests
                 modelSelection: host);
 
             Assert.True(window.HasModelSelection);
+            Assert.True(window.HasRetryAction);
             Assert.Single(window.AsrChoiceLabels);
             Assert.Contains("Parakeet", window.AsrChoiceLabels[0]);
+            window.Close();
+        });
+
+        Assert.Null(failure);
+    }
+
+    [Fact]
+    public void RetryButtonInvokesTheHost()
+    {
+        Exception? failure = RunOnStaThread(() =>
+        {
+            string path = Path.Combine(Path.GetTempPath(), $"gangio-settings-{Guid.NewGuid():N}.yaml");
+            FakeSelectionHost host = new();
+            SettingsWindow window = new(
+                telemetry: new TelemetryStore(),
+                configPath: path,
+                logger: null,
+                localInfo: () => new LocalSettingsInfo("vulkan", "non disponibile", "Error", "missing"),
+                recordingStore: null,
+                onModelPairSaved: null,
+                modelSelection: host);
+
+            Button? retry = window.FindName("RetryModelsButton") as Button;
+            Assert.NotNull(retry);
+            retry!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            Assert.Equal(1, host.RetryCalls);
             window.Close();
         });
 
@@ -68,8 +96,14 @@ public sealed class LocalSettingsTests
             [Artifact("gemma4_e2b", "Gemma 4 E2B", "llama-vulkan")];
         public ModelSelection Current { get; } = new(2, "parakeet_v3", "gemma4_e2b", true);
         public bool IsAvailable(ModelArtifact artifact) => true;
+        public int RetryCalls { get; private set; }
         public Task ApplyAsync(ModelSelection selection, IProgress<ModelProvisionProgress>? progress,
             CancellationToken ct) => Task.CompletedTask;
+        public Task RetryAsync(IProgress<ModelProvisionProgress>? progress, CancellationToken ct)
+        {
+            RetryCalls++;
+            return Task.CompletedTask;
+        }
 
         private static ModelArtifact Artifact(string id, string displayName, string runtime) => new(
             id, "fake", "owner/model", "0123456789abcdef0123456789abcdef01234567",

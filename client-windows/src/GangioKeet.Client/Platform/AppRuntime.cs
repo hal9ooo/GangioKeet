@@ -35,6 +35,16 @@ public sealed class AppRuntime : IAsyncDisposable
 
     public bool IsReady => State == RuntimeState.Ready;
 
+    public void Fail(Exception error)
+    {
+        lock (_gate)
+        {
+            if (_state == RuntimeState.Stopped) return;
+            Failure = error;
+            _state = RuntimeState.Failed;
+        }
+    }
+
     public Task StartAsync(CancellationToken ct)
     {
         lock (_gate)

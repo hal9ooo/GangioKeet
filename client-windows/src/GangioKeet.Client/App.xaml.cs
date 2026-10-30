@@ -172,11 +172,21 @@ public partial class App : Application, IModelSelectionHost
         _telemetry = new TelemetryStore();
 
         IDictationBackend backend;
-        string selectionPath = ModelSelectionPaths.Prepare(config);
-        if (!ConfigWriter.SetModelSelectionPath(ConfigLoader.DefaultPath, selectionPath))
-            _logger?.Write("model_selection_config_write_failed", selectionPath);
-        LocalInferenceSetup setup = LocalInferenceFactory.Create(config,
-            modelRoot: ModelSelectionPaths.InstallModelsRoot);
+        LocalInferenceSetup setup;
+        try
+        {
+            string selectionPath = ModelSelectionPaths.Prepare(config);
+            if (!ConfigWriter.SetModelSelectionPath(ConfigLoader.DefaultPath, selectionPath))
+                _logger?.Write("model_selection_config_write_failed", selectionPath);
+            setup = LocalInferenceFactory.Create(config,
+                modelRoot: ModelSelectionPaths.InstallModelsRoot);
+        }
+        catch (Exception error)
+        {
+            _localError = error.Message;
+            _logger?.Write("local_model_setup_failed", error.Message);
+            setup = LocalInferenceSetup.Failed(config, error);
+        }
         _localSttId = setup.SttId;
         _localCleanerId = setup.CleanerId;
         _localBackend = setup.Backend;
@@ -267,6 +277,14 @@ public partial class App : Application, IModelSelectionHost
                     }
                 })).ConfigureAwait(false);
 
+            await runtime.StartAsync(CancellationToken.None).ConfigureAwait(true);
+            if (!runtime.IsReady)
+            {
+                _localError = runtime.Failure?.Message ?? "Local models are not ready.";
+                _logger?.Write("local_runtime_failed", _localError);
+                return;
+            }
+
             _modelResolver = resolver;
             _modelSelection = selection;
             _modelSelectionService = new ModelSelectionService(
@@ -274,13 +292,13 @@ public partial class App : Application, IModelSelectionHost
             _localSttId = selection.SttId;
             _localCleanerId = selection.RefinementEnabled ? selection.CleanerId : "nessuno";
             _localBackend = config.Inference.Backend;
-
-            await runtime.StartAsync(CancellationToken.None).ConfigureAwait(true);
+            _localError = null;
             _logger?.Write("local_runtime", runtime.State.ToString());
         }
         catch (Exception error)
         {
             _localError = error.Message;
+            runtime.Fail(error);
             _logger?.Write("local_runtime_failed", error.Message);
         }
     }
@@ -333,7 +351,7 @@ public partial class App : Application, IModelSelectionHost
 
     ModelSelection IModelSelectionHost.Current =>
         _modelSelectionService?.Current ?? _modelSelection
-        ?? throw new InvalidOperationException("Model selection is not ready.");
+        ?? new ModelSelection(2, "non disponibile", null, false);
 
     bool IModelSelectionHost.IsAvailable(ModelArtifact artifact) =>
         _modelResolver is not null
@@ -342,6 +360,41 @@ public partial class App : Application, IModelSelectionHost
     Task IModelSelectionHost.ApplyAsync(ModelSelection selection,
         IProgress<ModelProvisionProgress>? progress, CancellationToken ct) =>
         ApplyModelSelectionAsync(selection, progress, ct);
+
+    Task IModelSelectionHost.RetryAsync(IProgress<ModelProvisionProgress>? progress, CancellationToken ct) =>
+        RetryLocalRuntimeAsync(progress, ct);
+
+    private async Task RetryLocalRuntimeAsync(IProgress<ModelProvisionProgress>? progress, CancellationToken ct)
+    {
+        if (_config is null || _controller is null) return;
+        AppRuntime? old = _runtime;
+        try
+        {
+            _localError = null;
+            string selectionPath = ModelSelectionPaths.Prepare(_config);
+            if (!ConfigWriter.SetModelSelectionPath(ConfigLoader.DefaultPath, selectionPath))
+                _logger?.Write("model_selection_config_write_failed", selectionPath);
+            LocalInferenceSetup setup = LocalInferenceFactory.Create(_config,
+                modelRoot: ModelSelectionPaths.InstallModelsRoot);
+            AppRuntime runtime = new(setup.Pipeline, _recordingQueue);
+            await StartLocalRuntimeAsync(runtime).ConfigureAwait(true);
+            if (!runtime.IsReady)
+            {
+                await runtime.DisposeAsync().ConfigureAwait(false);
+                return;
+            }
+
+            _controller.SetBackend(new LocalDictationBackend(setup.Pipeline,
+                () => runtime.IsReady, _recordingQueue));
+            _runtime = runtime;
+            if (old is not null) await old.DisposeAsync().ConfigureAwait(false);
+        }
+        catch (Exception error)
+        {
+            _localError = error.Message;
+            _logger?.Write("local_runtime_retry_failed", error.Message);
+        }
+    }
 
     private void ShowSettings()
     {

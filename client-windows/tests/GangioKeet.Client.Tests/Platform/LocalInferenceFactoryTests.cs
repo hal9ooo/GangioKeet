@@ -102,7 +102,7 @@ public sealed class LocalInferenceFactoryTests : IDisposable
         Assert.Equal("parakeet_v3", setup.SttId);
         Assert.Equal("gemma4_e2b", setup.CleanerId);
         Assert.True(setup.RefinementEnabled);
-        Assert.Equal("parakeet_v3", setup.SttArtifact.Id);
+        Assert.Equal("parakeet_v3", setup.SttArtifact!.Id);
         Assert.Equal("gemma4_e2b", setup.CleanerArtifact!.Id);
     }
 

@@ -29,6 +29,19 @@ public sealed class AppRuntimeTests
     }
 
     [Fact]
+    public async Task FailSetsFailedStateWithoutStarting()
+    {
+        FakePipeline pipeline = new();
+        await using AppRuntime runtime = new(pipeline);
+        InvalidDataException error = new("catalog missing");
+        runtime.Fail(error);
+
+        Assert.Equal(RuntimeState.Failed, runtime.State);
+        Assert.Same(error, runtime.Failure);
+        Assert.False(runtime.IsReady);
+    }
+
+    [Fact]
     public async Task WarmupFailureIsExposedAndLeavesNoReadyState()
     {
         FakePipeline pipeline = new() { WarmupFailure = new InvalidDataException("missing model") };

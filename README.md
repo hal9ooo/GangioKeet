@@ -170,6 +170,8 @@ pinned by `models/integrity.json`. Legacy
 `selected.json`/`selected-parakeet-qwen.json` are migrated on first run.
 On the real-voice tests, **Parakeet + Nessuno** is the best fidelity/latency
 choice; **Parakeet + Gemma** preserves questions and normalizes technical terms.
+If a combination cannot load, the client stays in the tray in a NotReady state;
+the settings window offers **Riprova modelli** to rebuild it.
 
 ## Privacy and security
 

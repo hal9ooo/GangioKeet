@@ -76,6 +76,7 @@ public sealed partial class SettingsWindow : Window
     public string LocalState => LocalStateText.Text;
     public string LocalPair => LocalPairText.Text;
     public bool HasModelSelection => ModelSelectionPanel.Visibility == Visibility.Visible;
+    public bool HasRetryAction => RetryModelsButton.Visibility == Visibility.Visible;
     public IReadOnlyList<string> AsrChoiceLabels =>
         AsrCombo.Items.Cast<ModelSelectionChoices.ModelChoice>().Select(choice => choice.Label).ToArray();
 
@@ -125,6 +126,7 @@ public sealed partial class SettingsWindow : Window
         if (_modelSelection is null)
         {
             ModelSelectionPanel.Visibility = Visibility.Collapsed;
+            RetryModelsButton.Visibility = Visibility.Collapsed;
             return;
         }
         ModelSelection current;
@@ -143,6 +145,7 @@ public sealed partial class SettingsWindow : Window
         if (_modelSelection is null)
         {
             ModelSelectionPanel.Visibility = Visibility.Collapsed;
+            RetryModelsButton.Visibility = Visibility.Collapsed;
             return;
         }
 
@@ -153,6 +156,7 @@ public sealed partial class SettingsWindow : Window
         if (!force && string.Equals(_lastSelectionKey, key, StringComparison.Ordinal)) return;
 
         ModelSelectionPanel.Visibility = Visibility.Visible;
+        RetryModelsButton.Visibility = Visibility.Visible;
         _populatingSelection = true;
         try
         {
@@ -249,6 +253,33 @@ public sealed partial class SettingsWindow : Window
             RefinementCheck.IsEnabled = true;
             CleanerCombo.IsEnabled = RefinementCheck.IsChecked == true;
             PopulateModelSelection(force: true);
+        }
+    }
+
+    private async void RetryModelsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_modelSelection is null || _selectionApplying) return;
+        _selectionApplying = true;
+        RetryModelsButton.IsEnabled = false;
+        ModelProgress.Visibility = Visibility.Visible;
+        try
+        {
+            await _modelSelection.RetryAsync(
+                new Progress<ModelProvisionProgress>(p => StatusText.Text = $"Modelli: {p.Status}"),
+                CancellationToken.None);
+            StatusText.Text = "Riprova completata.";
+        }
+        catch (Exception error) when (error is not OperationCanceledException)
+        {
+            _logger?.Write("model_retry_failed", error.Message);
+            StatusText.Text = "Riprova non riuscita: " + error.Message;
+        }
+        finally
+        {
+            _selectionApplying = false;
+            RetryModelsButton.IsEnabled = true;
+            ModelProgress.Visibility = Visibility.Collapsed;
+            UpdateLocal();
         }
     }
 

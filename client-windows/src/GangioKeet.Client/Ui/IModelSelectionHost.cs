@@ -10,4 +10,5 @@ public interface IModelSelectionHost
     ModelSelection Current { get; }
     bool IsAvailable(ModelArtifact artifact);
     Task ApplyAsync(ModelSelection selection, IProgress<ModelProvisionProgress>? progress, CancellationToken ct);
+    Task RetryAsync(IProgress<ModelProvisionProgress>? progress, CancellationToken ct);
 }
