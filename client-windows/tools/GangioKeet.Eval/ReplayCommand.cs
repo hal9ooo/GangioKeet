@@ -11,7 +11,7 @@ namespace GangioKeet.Eval;
 public sealed class ReplayCommand(string modelRoot, string nativeDirectory, string llamaDirectory,
     string runtimeLock, CleanupPolicy policy, int passes = 3, string backend = "vulkan",
     Func<ModelArtifact, ISttEngine>? sttFactory = null, Func<ModelArtifact, ITextCleaner>? cleanerFactory = null,
-    int? cancelAfterMs = null)
+    int? cancelAfterMs = null, string? nemoRuntimeDirectory = null)
 {
     public async Task<int> RunAsync(string catalog, string manifest, string? sttId, string? cleanerId,
         string phase, string output, CancellationToken ct)
@@ -54,11 +54,20 @@ public sealed class ReplayCommand(string modelRoot, string nativeDirectory, stri
                     throw new InvalidDataException("Audio PCM hash mismatch.");
                 return wav;
             }
+            ISttEngine CreateStt(ModelArtifact artifact)
+            {
+                if (artifact.RuntimeId != "nemo-speech-vulkan")
+                    return new TranscribeSttEngine(artifact, modelRoot, nativeDirectory, backend,
+                        runtimeLock: runtimeLock);
+                if (string.IsNullOrWhiteSpace(nemoRuntimeDirectory))
+                    throw new InvalidOperationException("--nemo-runtime is required for nemo-speech-vulkan.");
+                return new NeMoSpeechSttEngine(artifact, modelRoot, backend,
+                    _ => Task.FromResult(nemoRuntimeDirectory));
+            }
             if (phase != "cleaner")
             {
                 ModelArtifact artifact = models.Get(sttId!);
-                stt = sttFactory?.Invoke(artifact) ?? new TranscribeSttEngine(artifact, modelRoot,
-                    nativeDirectory, backend, runtimeLock: runtimeLock);
+                stt = sttFactory?.Invoke(artifact) ?? CreateStt(artifact);
             }
             if (phase != "asr")
             {
@@ -162,7 +171,8 @@ public sealed class ReplayCommand(string modelRoot, string nativeDirectory, stri
             }
         }
         string[] nativeModules = Process.GetCurrentProcess().Modules.Cast<ProcessModule>()
-            .Where(x => new[] { "ggml", "lgml", "llama", "transcribe" }.Any(prefix => x.ModuleName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+            .Where(x => new[] { "ggml", "lgml", "llama", "transcribe", "nemo", "ngml", "nlama" }
+                .Any(prefix => x.ModuleName.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
             .Select(x => x.FileName).Order().ToArray();
         await ReportWriter.WriteAsync(output, new { schema_version = 1, phase, stt_id = sttId, cleaner_id = cleanerId,
             status, error_type = errorType, manifest_sha256_utf8_lf = manifestSha, passes, cancel_after_ms = cancelAfterMs,
