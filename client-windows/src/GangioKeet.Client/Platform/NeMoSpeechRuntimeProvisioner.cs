@@ -13,10 +13,10 @@ public interface INativeRuntimeProvisioner
 public sealed class NeMoSpeechRuntimeProvisioner : INativeRuntimeProvisioner, IDisposable
 {
     public const string RuntimeId = "nemo-speech-vulkan";
-    public const string Version = "0.2.0+nightly.66d50d9";
+    public const string Version = "0.3.0";
     public const string ArchiveUrl =
-        "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/nightly/nemo-speech-nightly-windows-x86_64-vulkan.zip";
-    public const string ArchiveSha256 = "fddd6be11c47e98855bac10106fee64dcdc255e596e232023c76b120a9597ab0";
+        "https://github.com/NVIDIA/NeMo-Speech.cpp/releases/download/v0.3.0/nemo-speech-0.3.0-windows-x86_64-vulkan.zip";
+    public const string ArchiveSha256 = "72b3b8b41bfe2be0320eff4e9d310594e4f99deefcde4a157799a039656963ce";
 
     private readonly HttpClient _http;
     private readonly bool _disposeClient;

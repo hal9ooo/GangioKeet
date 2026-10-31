@@ -59,7 +59,7 @@ public sealed class NeMoSpeechRuntimeProvisionerTests : IDisposable
                 entryStream.Write(data);
             }
 
-            const string prefix = "nemo-speech-nightly-windows-x86_64-vulkan/";
+            const string prefix = "nemo-speech-0.3.0-windows-x86_64-vulkan/";
             Add(prefix + "bin/nemo_speech_asr_c.dll", "MZ\0llama.dll\0");
             Add(prefix + "bin/ggml.dll", "MZ\0ggml-vulkan.dll\0");
             Add(prefix + "bin/ggml-vulkan.dll", "MZ\0ggml-base.dll\0");

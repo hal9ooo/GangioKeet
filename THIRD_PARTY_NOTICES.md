@@ -103,10 +103,9 @@ the per-user model combination. Native runtimes are pinned by
 
 ### NeMo-Speech.cpp (experimental, downloaded on demand)
 
-- Project: <https://github.com/NVIDIA/NeMo-Speech.cpp>, nightly build
-  `0.2.0+nightly.66d50d9`, asset
-  `nemo-speech-nightly-windows-x86_64-vulkan.zip`, SHA-256
-  `fddd6be11c47e98855bac10106fee64dcdc255e596e232023c76b120a9597ab0`.
+- Project: <https://github.com/NVIDIA/NeMo-Speech.cpp>, release `v0.3.0`, asset
+  `nemo-speech-0.3.0-windows-x86_64-vulkan.zip`, SHA-256
+  `72b3b8b41bfe2be0320eff4e9d310594e4f99deefcde4a157799a039656963ce`.
 - License: Apache License 2.0, copyright (c) 2026 NVIDIA CORPORATION &
   AFFILIATES. The downloaded archive carries the complete texts under
   `share/licenses/nemo-speech/`, including its ggml and llama.cpp components.
