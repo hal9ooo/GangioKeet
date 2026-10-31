@@ -136,6 +136,11 @@
                                    FontSize="11"
                                    TextWrapping="Wrap"
                                    Margin="0,6,0,0" />
+                        <TextBlock Text="Cleaner disponibili: Gemma 4 E2B, Qwen3 1.7B e Qwen3 4B; tutti opzionali e scaricati solo se selezionati."
+                                   Foreground="#9E9E9E"
+                                   FontSize="11"
+                                   TextWrapping="Wrap"
+                                   Margin="0,2,0,0" />
                         <TextBlock Text="Nemotron 3.5 è sperimentale: al primo uso scarica circa 21 GB; il runtime NeMo-Speech (~22 MB) arriva da GitHub."
                                    Foreground="#9E9E9E"
                                    FontSize="11"

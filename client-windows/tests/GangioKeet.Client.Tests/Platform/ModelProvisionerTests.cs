@@ -1,6 +1,7 @@
 using System.IO;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -271,6 +272,184 @@ public sealed class ModelProvisionerTests : IDisposable
         Assert.Equal(1, downloadCalls);
         byte[] updatedBytes = await File.ReadAllBytesAsync(fullPath);
         Assert.Equal(validPayload, updatedBytes);
+    }
+
+    private sealed class Collector : IProgress<ModelProvisionProgress>
+    {
+        public List<ModelProvisionProgress> Items { get; } = [];
+        public void Report(ModelProvisionProgress value) => Items.Add(value);
+    }
+
+    [Fact]
+    public async Task EnsureModelsAsync_WhenPartialDownloadExists_ResumesWithRange()
+    {
+        byte[] payload = Encoding.UTF8.GetBytes("0123456789abcdefghijklmnopqrstuvwxyz");
+        string sha256 = Convert.ToHexStringLower(SHA256.HashData(payload));
+        string relativePath = "sub/model.gguf";
+        string fullPath = Path.Combine(_tempDir, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        int split = 12;
+        await File.WriteAllBytesAsync(fullPath + ".downloading", payload[..split]);
+        string selectionPath = CreateSelectedJson("test-model", "test-org/test-repo",
+            "1234567890123456789012345678901234567890", relativePath, sha256);
+
+        string? range = null;
+        int calls = 0;
+        var handler = new MockHttpMessageHandler(request =>
+        {
+            calls++;
+            range = request.Headers.Range?.ToString();
+            byte[] remaining = payload[split..];
+            HttpResponseMessage response = new(HttpStatusCode.PartialContent)
+            {
+                Content = new ByteArrayContent(remaining)
+            };
+            response.Content.Headers.ContentRange =
+                new ContentRangeHeaderValue(split, payload.Length - 1, payload.Length);
+            response.Content.Headers.ContentLength = remaining.Length;
+            return response;
+        });
+
+        using var client = new HttpClient(handler);
+        using var provisioner = new ModelProvisioner(client);
+        Collector progress = new();
+        await provisioner.EnsureModelsAsync(selectionPath, modelRoot: _tempDir, progress);
+
+        Assert.Equal(1, calls);
+        Assert.Equal($"bytes={split}-", range);
+        Assert.Equal(payload, await File.ReadAllBytesAsync(fullPath));
+        Assert.False(File.Exists(fullPath + ".downloading"));
+        Assert.True(File.Exists(fullPath + ".verified"));
+        Assert.Contains(progress.Items, item =>
+            item.Status == ModelProvisionStatus.Downloading
+            && item.BytesTransferred == payload.Length
+            && item.TotalBytes == payload.Length);
+    }
+
+    [Fact]
+    public async Task EnsureModelsAsync_WhenResumeRequestFails_KeepsPartialFile()
+    {
+        byte[] payload = Encoding.UTF8.GetBytes("0123456789abcdefghijklmnopqrstuvwxyz");
+        string sha256 = Convert.ToHexStringLower(SHA256.HashData(payload));
+        string relativePath = "sub/model.gguf";
+        string fullPath = Path.Combine(_tempDir, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        byte[] partial = payload[..12];
+        await File.WriteAllBytesAsync(fullPath + ".downloading", partial);
+        string selectionPath = CreateSelectedJson("test-model", "test-org/test-repo",
+            "1234567890123456789012345678901234567890", relativePath, sha256);
+
+        var handler = new MockHttpMessageHandler(_ => throw new HttpRequestException("connection lost"));
+        using var client = new HttpClient(handler);
+        using var provisioner = new ModelProvisioner(client);
+
+        await Assert.ThrowsAsync<HttpRequestException>(() =>
+            provisioner.EnsureModelsAsync(selectionPath, modelRoot: _tempDir));
+
+        Assert.Equal(partial, await File.ReadAllBytesAsync(fullPath + ".downloading"));
+        Assert.False(File.Exists(fullPath));
+    }
+
+    [Fact]
+    public async Task EnsureModelsAsync_WhenServerIgnoresRange_RestartsFromZero()
+    {
+        byte[] payload = Encoding.UTF8.GetBytes("0123456789abcdefghijklmnopqrstuvwxyz");
+        string sha256 = Convert.ToHexStringLower(SHA256.HashData(payload));
+        string relativePath = "sub/model.gguf";
+        string fullPath = Path.Combine(_tempDir, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        int split = 12;
+        await File.WriteAllBytesAsync(fullPath + ".downloading", payload[..split]);
+        string selectionPath = CreateSelectedJson("test-model", "test-org/test-repo",
+            "1234567890123456789012345678901234567890", relativePath, sha256);
+
+        string? range = null;
+        var handler = new MockHttpMessageHandler(request =>
+        {
+            range = request.Headers.Range?.ToString();
+            return new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(payload) };
+        });
+
+        using var client = new HttpClient(handler);
+        using var provisioner = new ModelProvisioner(client);
+        await provisioner.EnsureModelsAsync(selectionPath, modelRoot: _tempDir);
+
+        Assert.Equal($"bytes={split}-", range);
+        Assert.Equal(payload, await File.ReadAllBytesAsync(fullPath));
+        Assert.False(File.Exists(fullPath + ".downloading"));
+    }
+
+    [Fact]
+    public async Task EnsureModelsAsync_WhenPartialIsAlreadyComplete_VerifiesAndMoves()
+    {
+        byte[] payload = Encoding.UTF8.GetBytes("0123456789abcdefghijklmnopqrstuvwxyz");
+        string sha256 = Convert.ToHexStringLower(SHA256.HashData(payload));
+        string relativePath = "sub/model.gguf";
+        string fullPath = Path.Combine(_tempDir, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        await File.WriteAllBytesAsync(fullPath + ".downloading", payload);
+        string selectionPath = CreateSelectedJson("test-model", "test-org/test-repo",
+            "1234567890123456789012345678901234567890", relativePath, sha256);
+
+        string? range = null;
+        var handler = new MockHttpMessageHandler(request =>
+        {
+            range = request.Headers.Range?.ToString();
+            HttpResponseMessage response = new((HttpStatusCode)416)
+            {
+                Content = new ByteArrayContent([])
+            };
+            response.Content.Headers.ContentRange = new ContentRangeHeaderValue(payload.Length);
+            return response;
+        });
+
+        using var client = new HttpClient(handler);
+        using var provisioner = new ModelProvisioner(client);
+        await provisioner.EnsureModelsAsync(selectionPath, modelRoot: _tempDir);
+
+        Assert.Equal($"bytes={payload.Length}-", range);
+        Assert.Equal(payload, await File.ReadAllBytesAsync(fullPath));
+        Assert.False(File.Exists(fullPath + ".downloading"));
+        Assert.True(File.Exists(fullPath + ".verified"));
+    }
+
+    [Fact]
+    public async Task EnsureModelsAsync_WhenResumedHashMismatches_DeletesPartial()
+    {
+        byte[] payload = Encoding.UTF8.GetBytes("0123456789abcdefghijklmnopqrstuvwxyz");
+        string sha256 = Convert.ToHexStringLower(SHA256.HashData(payload));
+        string relativePath = "sub/model.gguf";
+        string fullPath = Path.Combine(_tempDir, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        int split = 12;
+        await File.WriteAllBytesAsync(fullPath + ".downloading", Encoding.UTF8.GetBytes("xxxxxxxxxxxx"));
+        string selectionPath = CreateSelectedJson("test-model", "test-org/test-repo",
+            "1234567890123456789012345678901234567890", relativePath, sha256);
+
+        string? range = null;
+        var handler = new MockHttpMessageHandler(request =>
+        {
+            range = request.Headers.Range?.ToString();
+            byte[] remaining = payload[split..];
+            HttpResponseMessage response = new(HttpStatusCode.PartialContent)
+            {
+                Content = new ByteArrayContent(remaining)
+            };
+            response.Content.Headers.ContentRange =
+                new ContentRangeHeaderValue(split, payload.Length - 1, payload.Length);
+            response.Content.Headers.ContentLength = remaining.Length;
+            return response;
+        });
+
+        using var client = new HttpClient(handler);
+        using var provisioner = new ModelProvisioner(client);
+
+        await Assert.ThrowsAsync<InvalidDataException>(() =>
+            provisioner.EnsureModelsAsync(selectionPath, modelRoot: _tempDir));
+
+        Assert.Equal($"bytes={split}-", range);
+        Assert.False(File.Exists(fullPath + ".downloading"));
+        Assert.False(File.Exists(fullPath));
     }
 
     [Fact]

@@ -189,62 +189,15 @@ public sealed class ModelProvisioner : IModelProvisioner, IDisposable
         IProgress<ModelProvisionProgress>? progress,
         CancellationToken ct)
     {
-        string? destinationDir = Path.GetDirectoryName(destinationPath);
-        if (!string.IsNullOrEmpty(destinationDir))
-        {
-            Directory.CreateDirectory(destinationDir);
-        }
+        ResumableDownload.Result result = await ResumableDownload.DownloadAsync(_httpClient, url,
+            destinationPath, expectedSha256,
+            (bytes, total) => progress?.Report(new ModelProvisionProgress(modelId, relativePath,
+                ModelProvisionStatus.Downloading, bytes, total)),
+            ct).ConfigureAwait(false);
 
-        string tempPath = destinationPath + ".downloading";
-        if (File.Exists(tempPath))
-        {
-            try { File.Delete(tempPath); } catch { /* ignore */ }
-        }
-
-        try
-        {
-            using HttpRequestMessage request = new(HttpMethod.Get, url);
-            using HttpResponseMessage response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-            response.EnsureSuccessStatusCode();
-
-            long? totalBytes = response.Content.Headers.ContentLength;
-            long bytesDownloaded = 0;
-
-            await using (Stream contentStream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false))
-            await using (FileStream fileStream = new(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 1024 * 1024, useAsync: true))
-            using (IncrementalHash hasher = IncrementalHash.CreateHash(HashAlgorithmName.SHA256))
-            {
-                byte[] buffer = new byte[256 * 1024];
-                int read;
-                while ((read = await contentStream.ReadAsync(buffer.AsMemory(0, buffer.Length), ct).ConfigureAwait(false)) > 0)
-                {
-                    hasher.AppendData(buffer.AsSpan(0, read));
-                    await fileStream.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
-                    bytesDownloaded += read;
-
-                    progress?.Report(new ModelProvisionProgress(modelId, relativePath, ModelProvisionStatus.Downloading, bytesDownloaded, totalBytes));
-                }
-
-                await fileStream.FlushAsync(ct).ConfigureAwait(false);
-
-                string actualHash = Convert.ToHexStringLower(hasher.GetHashAndReset());
-                if (!string.Equals(actualHash, expectedSha256, StringComparison.OrdinalIgnoreCase))
-                {
-                    throw new InvalidDataException($"Model file '{relativePath}' hash mismatch after download. Expected {expectedSha256}, got {actualHash}.");
-                }
-            }
-
-            File.Move(tempPath, destinationPath, overwrite: true);
-            WriteVerified(destinationPath, expectedSha256);
-            progress?.Report(new ModelProvisionProgress(modelId, relativePath, ModelProvisionStatus.Completed, bytesDownloaded, totalBytes));
-        }
-        finally
-        {
-            if (File.Exists(tempPath))
-            {
-                try { File.Delete(tempPath); } catch { /* ignore */ }
-            }
-        }
+        WriteVerified(destinationPath, expectedSha256);
+        progress?.Report(new ModelProvisionProgress(modelId, relativePath,
+            ModelProvisionStatus.Completed, result.Bytes, result.TotalBytes ?? result.Bytes));
     }
 
     private static string VerifiedPath(string fullPath) => fullPath + ".verified";

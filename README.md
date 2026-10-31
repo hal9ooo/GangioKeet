@@ -169,7 +169,9 @@ place, and a dictation already being processed finishes on the old engines.
 21 GB of GGUF files plus a ~22 MB NeMo-Speech Vulkan runtime, downloaded on
 demand from Hugging Face and GitHub and never bundled in the installer. The
 first selection asks for confirmation in Settings and then shows a percentage;
-it is slower to start and wants a Vulkan-capable GPU.
+it is slower to start and wants a Vulkan-capable GPU. Downloads keep the partial
+file and resume with HTTP Range after a crash or a dropped connection; this also
+works for Hugging Face's Xet-backed files.
 
 `models/candidates.json` is the single source for artifact paths and hashes,
 pinned by `models/integrity.json`. Legacy

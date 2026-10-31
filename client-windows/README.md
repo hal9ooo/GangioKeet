@@ -80,7 +80,11 @@ already being processed completes on the old engines.
 about 21 GB of GGUF files and a ~22 MB NeMo-Speech Vulkan runtime on demand,
 never in the installer. Settings asks for confirmation before the first
 download and then shows a percentage. It is slower to start and needs a
-Vulkan-capable GPU.
+Vulkan-capable GPU. Downloads resume from the partial `.downloading` file with
+HTTP Range, including on Hugging Face's Xet-backed CDN.
+
+The cleaner selector exposes Gemma 4 E2B, Qwen3 1.7B and Qwen3 4B. All three are
+optional and are downloaded only when selected; the same applies to every ASR.
 
 `models/candidates.json` is the single source for artifact paths and hashes and
 is pinned by `models/integrity.json`. Legacy `selected.json` and

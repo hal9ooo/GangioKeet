@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http;
+using System.Net.Http.Headers;
 using System.Security.Cryptography;
 using GangioKeet.Client.Platform;
 using Xunit;
@@ -14,14 +15,28 @@ public sealed class NeMoSpeechRuntimeProvisionerTests : IDisposable
     private sealed class Handler(byte[] payload) : HttpMessageHandler
     {
         public int Calls { get; private set; }
+        public string? Range { get; private set; }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request,
             CancellationToken cancellationToken)
         {
             Calls++;
-            ByteArrayContent content = new(payload);
-            content.Headers.ContentLength = payload.Length;
-            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
+            Range = request.Headers.Range?.ToString();
+            if (request.Headers.Range?.Ranges.FirstOrDefault()?.From is long from && from > 0)
+            {
+                byte[] rest = payload[(int)from..];
+                ByteArrayContent content = new(rest);
+                content.Headers.ContentLength = rest.Length;
+                content.Headers.ContentRange = new ContentRangeHeaderValue(from, payload.Length - 1,
+                    payload.Length);
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.PartialContent)
+                {
+                    Content = content
+                });
+            }
+            ByteArrayContent full = new(payload);
+            full.Headers.ContentLength = payload.Length;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = full });
         }
     }
 
@@ -89,6 +104,26 @@ public sealed class NeMoSpeechRuntimeProvisionerTests : IDisposable
         string again = await provisioner.EnsureAsync(NeMoSpeechRuntimeProvisioner.RuntimeId, null, default);
         Assert.Equal(bin, again);
         Assert.Equal(1, handler.Calls);
+    }
+
+    [Fact]
+    public async Task ResumesAnInterruptedArchiveDownload()
+    {
+        byte[] archive = Archive();
+        string sha = Convert.ToHexStringLower(SHA256.HashData(archive));
+        string runtimeRoot = Path.Combine(_root, sha);
+        Directory.CreateDirectory(runtimeRoot);
+        int split = archive.Length / 2;
+        string partial = Path.Combine(runtimeRoot, "nemo-speech.zip.downloading");
+        await File.WriteAllBytesAsync(partial, archive[..split]);
+        (NeMoSpeechRuntimeProvisioner provisioner, Handler handler) = Create(archive, sha);
+
+        string bin = await provisioner.EnsureAsync(NeMoSpeechRuntimeProvisioner.RuntimeId, null, default);
+
+        Assert.Equal(1, handler.Calls);
+        Assert.Equal($"bytes={split}-", handler.Range);
+        Assert.True(File.Exists(Path.Combine(bin, "nemo_speech_asr_c.dll")));
+        Assert.False(File.Exists(partial));
     }
 
     [Fact]

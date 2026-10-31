@@ -101,37 +101,13 @@ public sealed class NeMoSpeechRuntimeProvisioner : INativeRuntimeProvisioner, ID
     {
         progress?.Report(new ModelProvisionProgress("nemo-speech-runtime", "runtime.zip",
             ModelProvisionStatus.Checking, 0, null));
-        using HttpResponseMessage response = await _http.GetAsync(_archiveUrl,
-            HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-        response.EnsureSuccessStatusCode();
-        long? total = response.Content.Headers.ContentLength;
-        string temp = destination + ".downloading";
-        try
-        {
-            await using Stream source = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-            long done = 0;
-            await using (FileStream target = new(temp, FileMode.Create, FileAccess.Write, FileShare.None,
-                1024 * 1024, useAsync: true))
-            {
-                byte[] buffer = new byte[256 * 1024];
-                int read;
-                while ((read = await source.ReadAsync(buffer, ct).ConfigureAwait(false)) > 0)
-                {
-                    await target.WriteAsync(buffer.AsMemory(0, read), ct).ConfigureAwait(false);
-                    done += read;
-                    progress?.Report(new ModelProvisionProgress("nemo-speech-runtime", "runtime.zip",
-                        ModelProvisionStatus.Downloading, done, total));
-                }
-                await target.FlushAsync(ct).ConfigureAwait(false);
-            }
-            File.Move(temp, destination, overwrite: true);
-            progress?.Report(new ModelProvisionProgress("nemo-speech-runtime", "runtime.zip",
-                ModelProvisionStatus.Completed, done, total));
-        }
-        finally
-        {
-            if (File.Exists(temp)) File.Delete(temp);
-        }
+        ResumableDownload.Result result = await ResumableDownload.DownloadAsync(_http, _archiveUrl,
+            destination, _archiveSha256,
+            (bytes, total) => progress?.Report(new ModelProvisionProgress("nemo-speech-runtime",
+                "runtime.zip", ModelProvisionStatus.Downloading, bytes, total)),
+            ct).ConfigureAwait(false);
+        progress?.Report(new ModelProvisionProgress("nemo-speech-runtime", "runtime.zip",
+            ModelProvisionStatus.Completed, result.Bytes, result.TotalBytes ?? result.Bytes));
     }
 
     private bool HashMatches(string path)
