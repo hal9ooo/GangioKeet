@@ -19,6 +19,21 @@ public sealed class InferencePipelineSelectionTests
     }
 
     [Fact]
+    public async Task LightCleanerPreservesRawTextAndCleansOnlyTheFinalText()
+    {
+        FakeStt stt = new("Mi mi mandi un una lista");
+        await using LightTextCleaner cleaner = new();
+        await using InferencePipeline pipeline = new(stt, cleaner, new CleanupPolicy(), TimeProvider.System, true);
+        await pipeline.WarmUpAsync(default);
+
+        PipelineResult result = await pipeline.ProcessAsync(new(new byte[4], "chat"), default);
+
+        Assert.Equal("Mi mi mandi un una lista", result.RawText);
+        Assert.Equal("Mi mandi una lista", result.FinalText);
+        Assert.Equal("light_cleanup", result.Cleaner!.ModelId);
+    }
+
+    [Fact]
     public async Task RefinementCannotEnableWithoutCleaner()
     {
         Engines engines = new();

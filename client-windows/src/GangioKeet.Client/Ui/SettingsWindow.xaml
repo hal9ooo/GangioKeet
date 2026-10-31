@@ -136,7 +136,7 @@
                                    FontSize="11"
                                    TextWrapping="Wrap"
                                    Margin="0,6,0,0" />
-                        <TextBlock Text="Cleaner disponibili: Gemma 4 E2B, Qwen3 1.7B e Qwen3 4B; tutti opzionali e scaricati solo se selezionati."
+                        <TextBlock Text="Cleaner: Pulizia leggera (regole, nessun modello), Gemma 4 E2B, Qwen3 1.7B e Qwen3 4B; tutti opzionali e scaricati solo se selezionati."
                                    Foreground="#9E9E9E"
                                    FontSize="11"
                                    TextWrapping="Wrap"

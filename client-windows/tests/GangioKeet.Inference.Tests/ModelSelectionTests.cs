@@ -1,4 +1,5 @@
 using System.Text.Json;
+using GangioKeet.Inference.Cleaning;
 using Xunit;
 
 namespace GangioKeet.Inference.Tests;
@@ -107,6 +108,17 @@ public sealed class ModelSelectionTests : IDisposable
         ModelCatalog catalog = CatalogWith("parakeet_v3", "gemma4_e2b");
         Assert.Throws<InvalidDataException>(() =>
             ModelSelectionResolver.Resolve(new(2, "parakeet_v3", "missing", true), catalog));
+    }
+
+    [Fact]
+    public void ResolveLightCleanerUsesTheSyntheticArtifact()
+    {
+        ModelCatalog catalog = CatalogWith("parakeet_v3");
+        ResolvedModelSelection resolved = ModelSelectionResolver.Resolve(
+            new(2, "parakeet_v3", LightTextCleaner.Id, true), catalog);
+        Assert.Equal(LightTextCleaner.Id, resolved.Cleaner!.Id);
+        Assert.Equal("deterministic", resolved.Cleaner.RuntimeId);
+        Assert.Empty(resolved.Cleaner.Files);
     }
 
     [Fact]

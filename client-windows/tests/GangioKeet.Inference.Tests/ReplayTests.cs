@@ -29,6 +29,24 @@ public sealed class ReplayTests : IDisposable
     }
 
     [Fact]
+    public async Task LightCleanerPipelineDoesNotNeedACatalogEntry()
+    {
+        FakeEngines engines = new() { Raw = "Mi mi mandi un una lista" };
+        ReplayCommand command = new(_root, _root, _root, Path.Combine(_root, "unused-lock.json"),
+            new CleanupPolicy(), passes: 1, sttFactory: _ => engines);
+        string output = Path.Combine(_root, "light.json");
+
+        Assert.Equal(0, await command.RunAsync(Catalog(), Manifest(audio: true), "example",
+            GangioKeet.Inference.Cleaning.LightTextCleaner.Id, "pipeline", output, default));
+
+        using JsonDocument report = JsonDocument.Parse(File.ReadAllText(output));
+        Assert.Equal("Mi mi mandi un una lista",
+            report.RootElement.GetProperty("clips")[0].GetProperty("raw_text").GetString());
+        Assert.Equal("Mi mandi una lista",
+            report.RootElement.GetProperty("clips")[0].GetProperty("final_text").GetString());
+    }
+
+    [Fact]
     public async Task CleanerPhaseConsumesFrozenTextWithoutOpeningAudioOrStt()
     {
         FakeEngines engines = new();
@@ -98,11 +116,12 @@ public sealed class ReplayTests : IDisposable
     private sealed class FakeEngines : ISttEngine, ITextCleaner
     {
         public int SttLoads, SttCalls, CleanerCalls;
+        public string Raw = "ciao";
         private static readonly EngineIdentity Identity = new("fake", "r", "h", "v", "cpu", "F16", "fake");
         Task ISttEngine.LoadAsync(CancellationToken ct) { SttLoads++; return Task.CompletedTask; }
         Task ITextCleaner.LoadAsync(CancellationToken ct) => Task.CompletedTask;
         public Task<SpeechTranscript> TranscribeAsync(ReadOnlyMemory<byte> pcm, CancellationToken ct)
-        { SttCalls++; return Task.FromResult(new SpeechTranscript("ciao", Identity)); }
+        { SttCalls++; return Task.FromResult(new SpeechTranscript(Raw, Identity)); }
         public Task<CleanedText> CleanAsync(string raw, string profile, CancellationToken ct)
         { CleanerCalls++; return Task.FromResult(new CleanedText("Ciao?", Identity)); }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;

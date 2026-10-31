@@ -25,6 +25,21 @@ public sealed class ModelSelectionChoicesTests
     }
 
     [Fact]
+    public void IncludesTheBuiltInLightCleanerFirst()
+    {
+        ModelArtifact[] all =
+        [
+            Artifact("gemma4_e2b", "llama-vulkan", "Gemma 4 E2B"),
+            Artifact("light_cleanup", "deterministic", "Pulizia leggera"),
+            Artifact("parakeet_v3", "transcribe-vulkan", "Parakeet")
+        ];
+        IReadOnlyList<ModelArtifact> cleaners = ModelSelectionChoices.Cleaners(all);
+        Assert.Equal(2, cleaners.Count);
+        Assert.Equal("light_cleanup", cleaners[0].Id);
+        Assert.Equal("Pulizia leggera", ModelSelectionChoices.Label(cleaners[0]));
+    }
+
+    [Fact]
     public void LabelFallsBackToId()
     {
         Assert.Equal("parakeet_v3", ModelSelectionChoices.Label(Artifact("parakeet_v3", "transcribe-vulkan")));

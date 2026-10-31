@@ -4,6 +4,7 @@ using GangioKeet.Client.Platform;
 using GangioKeet.Client.Protocol;
 using GangioKeet.Client.Ui;
 using GangioKeet.Inference;
+using GangioKeet.Inference.Cleaning;
 using Xunit;
 
 namespace GangioKeet.Client.Tests.Ui;
@@ -56,6 +57,8 @@ public sealed class LocalSettingsTests
             Assert.True(window.HasRetryAction);
             Assert.Single(window.AsrChoiceLabels);
             Assert.Contains("Parakeet", window.AsrChoiceLabels[0]);
+            Assert.Equal("Pulizia leggera", window.CleanerChoiceLabels[0]);
+            Assert.Contains("Gemma 4 E2B", window.CleanerChoiceLabels);
             window.Close();
         });
 
@@ -93,7 +96,7 @@ public sealed class LocalSettingsTests
         public IReadOnlyList<ModelArtifact> AsrCandidates { get; } =
             [Artifact("parakeet_v3", "Parakeet TDT 0.6B v3", "transcribe-vulkan")];
         public IReadOnlyList<ModelArtifact> CleanerCandidates { get; } =
-            [Artifact("gemma4_e2b", "Gemma 4 E2B", "llama-vulkan")];
+            [LightTextCleaner.Artifact, Artifact("gemma4_e2b", "Gemma 4 E2B", "llama-vulkan")];
         public ModelSelection Current { get; } = new(2, "parakeet_v3", "gemma4_e2b", true);
         public bool IsAvailable(ModelArtifact artifact) => true;
         public int RetryCalls { get; private set; }

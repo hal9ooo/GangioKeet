@@ -1,4 +1,5 @@
 using System.Text.Json;
+using GangioKeet.Inference.Cleaning;
 
 namespace GangioKeet.Inference;
 
@@ -140,10 +141,17 @@ public static class ModelSelectionResolver
         ModelArtifact? cleaner = null;
         if (!string.IsNullOrWhiteSpace(selection.CleanerId))
         {
-            cleaner = Required(catalog, selection.CleanerId, "cleaner_id");
-            if (cleaner.RuntimeId != "llama-vulkan")
-                throw new InvalidDataException(
-                    $"cleaner_id '{selection.CleanerId}' must use llama-vulkan, got '{cleaner.RuntimeId}'.");
+            if (selection.CleanerId == LightTextCleaner.Id)
+            {
+                cleaner = LightTextCleaner.Artifact;
+            }
+            else
+            {
+                cleaner = Required(catalog, selection.CleanerId, "cleaner_id");
+                if (cleaner.RuntimeId != "llama-vulkan")
+                    throw new InvalidDataException(
+                        $"cleaner_id '{selection.CleanerId}' must use llama-vulkan, got '{cleaner.RuntimeId}'.");
+            }
         }
         if (selection.RefinementEnabled && cleaner is null)
             throw new InvalidDataException("Refinement requires a cleaner_id.");

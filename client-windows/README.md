@@ -83,8 +83,10 @@ download and then shows a percentage. It is slower to start and needs a
 Vulkan-capable GPU. Downloads resume from the partial `.downloading` file with
 HTTP Range, including on Hugging Face's Xet-backed CDN.
 
-The cleaner selector exposes Gemma 4 E2B, Qwen3 1.7B and Qwen3 4B. All three are
-optional and are downloaded only when selected; the same applies to every ASR.
+The cleaner selector exposes **Pulizia leggera** (built-in deterministic rules,
+no model), Gemma 4 E2B, Qwen3 1.7B and Qwen3 4B. The light cleaner removes only
+filled pauses and immediate repetitions; the other three are optional and are
+downloaded only when selected. The same applies to every ASR.
 
 `models/candidates.json` is the single source for artifact paths and hashes and
 is pinned by `models/integrity.json`. Legacy `selected.json` and

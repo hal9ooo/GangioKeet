@@ -57,6 +57,13 @@ public sealed class LocalModelResolverTests : IDisposable
     }
 
     [Fact]
+    public void CreatesTheBuiltInLightCleaner()
+    {
+        ITextCleaner cleaner = Create().CreateCleaner(LightTextCleaner.Artifact);
+        Assert.IsType<LightTextCleaner>(cleaner);
+    }
+
+    [Fact]
     public async Task EnsuresOnlyTheNemotronNativeRuntime()
     {
         FakeRuntimeProvisioner runtime = new();

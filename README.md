@@ -165,6 +165,13 @@ and a **cleaner** selector. Any ASR can be paired with any cleaner, or
 refinement can be off. Changes apply hot: the ASR and cleaner are swapped in
 place, and a dictation already being processed finishes on the old engines.
 
+The cleaner list includes **Pulizia leggera**, a built-in deterministic cleaner
+that removes only filled pauses and immediate repetitions (for example
+`Mi mi mandi un una lista` becomes `Mi mandi una lista`). It uses no model,
+adds no latency, and is useful with Nemotron, whose raw output preserves the
+speaker’s hesitations. The other cleaners are Gemma 4 E2B, Qwen3 1.7B and
+Qwen3 4B, all optional and downloaded on demand.
+
 **Nemotron 3.5 Transcribe 30B A4B** is an experimental third ASR. It needs about
 21 GB of GGUF files plus a ~22 MB NeMo-Speech Vulkan runtime, downloaded on
 demand from Hugging Face and GitHub and never bundled in the installer. The

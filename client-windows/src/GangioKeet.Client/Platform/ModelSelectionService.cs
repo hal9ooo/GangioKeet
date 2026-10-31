@@ -38,11 +38,14 @@ public sealed class ModelSelectionService
             bool sttChanged = !string.Equals(desired.SttId, _loadedSttId, StringComparison.Ordinal);
             bool cleanerChanged = !string.Equals(desired.CleanerId, _loadedCleanerId, StringComparison.Ordinal);
             bool needsCleaner = desired.RefinementEnabled && resolved.Cleaner is not null;
-            bool needsProvisioning = sttChanged || (needsCleaner && (cleanerChanged || !_pipeline.HasCleaner));
-            if (needsProvisioning)
+            bool needsNewCleaner = needsCleaner && (cleanerChanged || !_pipeline.HasCleaner);
+            bool provisionStt = sttChanged;
+            bool provisionCleaner = needsNewCleaner && resolved.Cleaner!.Files.Count > 0;
+            if (provisionStt || provisionCleaner)
             {
-                List<ModelArtifact> artifacts = [resolved.Stt];
-                if (needsCleaner) artifacts.Add(resolved.Cleaner!);
+                List<ModelArtifact> artifacts = [];
+                if (provisionStt) artifacts.Add(resolved.Stt);
+                if (provisionCleaner) artifacts.Add(resolved.Cleaner!);
                 await _provisioner.EnsureModelsAsync(artifacts, _resolver.ModelRoot, progress, ct).ConfigureAwait(false);
             }
             if (sttChanged)
@@ -50,7 +53,7 @@ public sealed class ModelSelectionService
 
             ISttEngine? newStt = sttChanged ? _resolver.CreateStt(resolved.Stt) : null;
             ITextCleaner? newCleaner = null;
-            if (needsCleaner && (cleanerChanged || !_pipeline.HasCleaner))
+            if (needsNewCleaner)
                 newCleaner = _resolver.CreateCleaner(resolved.Cleaner!);
 
             if (sttChanged || newCleaner is not null || desired.RefinementEnabled != _current.RefinementEnabled)

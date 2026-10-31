@@ -1,3 +1,5 @@
+using GangioKeet.Inference.Cleaning;
+
 namespace GangioKeet.Client.Platform;
 
 public sealed record LocalSettingsInfo(
@@ -12,5 +14,5 @@ public sealed record LocalSettingsInfo(
             ? "—"
             : string.IsNullOrWhiteSpace(cleanerId) || string.Equals(cleanerId, "nessuno", StringComparison.Ordinal)
                 ? $"{sttId} + refinement off"
-                : $"{sttId} + {cleanerId}";
+                : $"{sttId} + {(cleanerId == LightTextCleaner.Id ? "Pulizia leggera" : cleanerId)}";
 }

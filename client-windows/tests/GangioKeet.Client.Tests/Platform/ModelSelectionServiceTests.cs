@@ -59,17 +59,22 @@ public sealed class ModelSelectionServiceTests : IDisposable
 
         public ISttEngine CreateStt(ModelArtifact artifact) => new FakeStt(counter, artifact.Id);
 
-        public ITextCleaner CreateCleaner(ModelArtifact artifact) => new FakeCleaner(counter);
+        public ITextCleaner CreateCleaner(ModelArtifact artifact) =>
+            artifact.Id == LightTextCleaner.Id ? new LightTextCleaner() : new FakeCleaner(counter);
 
-        private static ModelArtifact Artifact(string id) => new(id, "fake", "owner/model",
-            "0123456789abcdef0123456789abcdef01234567",
-            [new ModelFile($"{id}.gguf", new string('a', 64))],
-            "F16", "Apache-2.0", id switch
-            {
-                "gemma4_e2b" or "qwen3_1_7b" => "llama-vulkan",
-                "nemotron_transcribe_30b_a4b" => "nemo-speech-vulkan",
-                _ => "transcribe-vulkan"
-            });
+        private static ModelArtifact Artifact(string id)
+        {
+            if (id == LightTextCleaner.Id) return LightTextCleaner.Artifact;
+            return new(id, "fake", "owner/model",
+                "0123456789abcdef0123456789abcdef01234567",
+                [new ModelFile($"{id}.gguf", new string('a', 64))],
+                "F16", "Apache-2.0", id switch
+                {
+                    "gemma4_e2b" or "qwen3_1_7b" => "llama-vulkan",
+                    "nemotron_transcribe_30b_a4b" => "nemo-speech-vulkan",
+                    _ => "transcribe-vulkan"
+                });
+        }
     }
 
     private sealed class FakeProvisioner : IModelProvisioner
@@ -163,6 +168,18 @@ public sealed class ModelSelectionServiceTests : IDisposable
         f.Provisioner.Calls = 0;
         await f.Service.ApplyAsync(f.Selection with { RefinementEnabled = false }, null, default);
         Assert.Equal(0, f.Provisioner.Calls);
+    }
+
+    [Fact]
+    public async Task SelectingLightCleanerDoesNotProvisionFiles()
+    {
+        Fixture f = Fixture.Create(refinement: true);
+        f.Provisioner.Calls = 0;
+
+        await f.Service.ApplyAsync(f.Selection with { CleanerId = LightTextCleaner.Id }, null, default);
+
+        Assert.Equal(0, f.Provisioner.Calls);
+        Assert.Equal(LightTextCleaner.Id, f.Service.Current.CleanerId);
     }
 
     [Fact]

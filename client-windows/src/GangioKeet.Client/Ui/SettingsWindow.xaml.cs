@@ -79,6 +79,8 @@ public sealed partial class SettingsWindow : Window
     public bool HasRetryAction => RetryModelsButton.Visibility == Visibility.Visible;
     public IReadOnlyList<string> AsrChoiceLabels =>
         AsrCombo.Items.Cast<ModelSelectionChoices.ModelChoice>().Select(choice => choice.Label).ToArray();
+    public IReadOnlyList<string> CleanerChoiceLabels =>
+        CleanerCombo.Items.Cast<ModelSelectionChoices.ModelChoice>().Select(choice => choice.Label).ToArray();
 
     private void LoadFromConfig(ClientConfig config) => UpdateLocal();
 

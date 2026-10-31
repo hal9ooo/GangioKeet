@@ -71,9 +71,16 @@ public sealed class ReplayCommand(string modelRoot, string nativeDirectory, stri
             }
             if (phase != "asr")
             {
-                ModelArtifact artifact = models.Get(cleanerId!);
-                cleaner = cleanerFactory?.Invoke(artifact) ?? new LlamaTextCleaner(new LlamaGenerator(artifact,
-                    modelRoot, llamaDirectory, runtimeLock, backend), policy);
+                if (cleanerId == LightTextCleaner.Id)
+                {
+                    cleaner = new LightTextCleaner();
+                }
+                else
+                {
+                    ModelArtifact artifact = models.Get(cleanerId!);
+                    cleaner = cleanerFactory?.Invoke(artifact) ?? new LlamaTextCleaner(new LlamaGenerator(artifact,
+                        modelRoot, llamaDirectory, runtimeLock, backend), policy);
+                }
             }
             if (phase == "pipeline")
             {

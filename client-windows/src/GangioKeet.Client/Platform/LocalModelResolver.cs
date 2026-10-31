@@ -53,7 +53,7 @@ public sealed class LocalModelResolver : ILocalModelResolver
         IntegrityManifest manifest = IntegrityManifestFile.Load(_integrityPath);
         IntegrityManifestFile.Verify(manifest, _catalogPath, _runtimeLockPath, _cleanupPolicyPath);
         ModelCatalog catalog = ModelCatalog.Load(_catalogPath);
-        Candidates = catalog.Candidates;
+        Candidates = [LightTextCleaner.Artifact, .. catalog.Candidates];
         return ModelSelectionResolver.Resolve(selection, catalog);
     }
 
@@ -78,5 +78,7 @@ public sealed class LocalModelResolver : ILocalModelResolver
     };
 
     public ITextCleaner CreateCleaner(ModelArtifact artifact) =>
-        new LlamaTextCleaner(new LlamaGenerator(artifact, ModelRoot, _llamaDirectory, _runtimeLockPath, _backend), _policy);
+        artifact.Id == LightTextCleaner.Id
+            ? new LightTextCleaner()
+            : new LlamaTextCleaner(new LlamaGenerator(artifact, ModelRoot, _llamaDirectory, _runtimeLockPath, _backend), _policy);
 }

@@ -1,4 +1,5 @@
 using GangioKeet.Inference;
+using GangioKeet.Inference.Cleaning;
 
 namespace GangioKeet.Client.Ui;
 
@@ -18,8 +19,9 @@ public static class ModelSelectionChoices
         candidate.RuntimeId is "transcribe-vulkan" or "nemo-speech-vulkan";
 
     public static IReadOnlyList<ModelArtifact> Cleaners(IEnumerable<ModelArtifact> candidates) =>
-        candidates.Where(candidate => candidate.RuntimeId == "llama-vulkan")
-            .OrderBy(Label, StringComparer.OrdinalIgnoreCase)
+        candidates.Where(candidate => candidate.RuntimeId is "llama-vulkan" or "deterministic")
+            .OrderBy(candidate => candidate.Id == LightTextCleaner.Id ? 0 : 1)
+            .ThenBy(Label, StringComparer.OrdinalIgnoreCase)
             .ToArray();
 
     public static IReadOnlyList<ModelChoice> AsrChoices(IEnumerable<ModelArtifact> candidates,
