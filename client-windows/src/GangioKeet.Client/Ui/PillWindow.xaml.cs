@@ -28,23 +28,22 @@ public sealed partial class PillWindow : Window, IPillView
     private static readonly SolidColorBrush GrayBrush = new(Color.FromRgb(0x9E, 0x9E, 0x9E));
     private static readonly SolidColorBrush OrangeBrush = new(Color.FromRgb(0xFF, 0x98, 0x00));
 
-    private readonly System.Windows.Threading.DispatcherTimer _levelTimer;
     private readonly WaveformHistory _waveform = new();
+    private readonly FrameGate _frameGate = new(TimeSpan.FromMilliseconds(16));
     private double _currentLevel;
+    private bool _rendering;
+    private TimeSpan _lastSample;
 
     public PillWindow()
     {
         InitializeComponent();
 
         SourceInitialized += OnSourceInitialized;
+        SizeChanged += (_, _) => ApplyRoundedRegion();
+        DpiChanged += (_, _) => ApplyRoundedRegion();
+        Closed += (_, _) => StopRendering();
         _ = new WindowInteropHelper(this).EnsureHandle();
         PositionPill();
-
-        _levelTimer = new System.Windows.Threading.DispatcherTimer(
-            TimeSpan.FromMilliseconds(50),
-            System.Windows.Threading.DispatcherPriority.Normal,
-            (_, _) => UpdateLevelDot(),
-            Dispatcher);
     }
 
     /// <summary>Modalità di posizionamento: <c>center_bottom</c> (default) o <c>cursor</c>.</summary>
@@ -67,11 +66,16 @@ public sealed partial class PillWindow : Window, IPillView
 
             if (recording)
             {
+                _frameGate.Reset();
+                _lastSample = default;
                 _waveform.Reset();
                 RenderWaveform();
+                StartRendering();
             }
-
-            _levelTimer.IsEnabled = recording;
+            else
+            {
+                StopRendering();
+            }
         });
     }
 
@@ -79,7 +83,7 @@ public sealed partial class PillWindow : Window, IPillView
     {
         RunOnUi(() =>
         {
-            _levelTimer.IsEnabled = false;
+            StopRendering();
             base.Hide();
         });
     }
@@ -106,6 +110,20 @@ public sealed partial class PillWindow : Window, IPillView
     private void OnSourceInitialized(object? sender, EventArgs e)
     {
         ActivateStyles();
+        ApplyRoundedRegion();
+    }
+
+    private void ApplyRoundedRegion()
+    {
+        if (PresentationSource.FromVisual(this) is not HwndSource hwnd) return;
+        if (!GetWindowRect(hwnd.Handle, out RECT rect)) return;
+        double scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
+        int radius = Math.Max(4, (int)Math.Round(28 * scale));
+        nint region = CreateRoundRectRgn(0, 0,
+            rect.Right - rect.Left + 1, rect.Bottom - rect.Top + 1, radius, radius);
+        if (region == 0) return;
+        if (SetWindowRgn(hwnd.Handle, region, redraw: true) == 0)
+            DeleteObject(region);
     }
 
     private void ActivateStyles()
@@ -118,7 +136,7 @@ public sealed partial class PillWindow : Window, IPillView
         }
     }
 
-    private void UpdateLevelDot()
+    private void UpdateLevelDot(TimeSpan elapsed)
     {
         double level = Volatile.Read(ref _currentLevel);
 
@@ -126,10 +144,37 @@ public sealed partial class PillWindow : Window, IPillView
         StatusDot.Width = size;
         StatusDot.Height = size;
 
-        // Il timer gira solo durante Recording: ogni tick è un campione della
-        // forma d'onda.
-        _waveform.Push(level);
+        _waveform.Push(level, elapsed);
         RenderWaveform();
+    }
+
+    private void StartRendering()
+    {
+        if (_rendering) return;
+        _rendering = true;
+        CompositionTarget.Rendering += OnRendering;
+    }
+
+    private void StopRendering()
+    {
+        if (!_rendering) return;
+        _rendering = false;
+        CompositionTarget.Rendering -= OnRendering;
+    }
+
+    private void OnRendering(object? sender, EventArgs e)
+    {
+        if (!_rendering) return;
+        TimeSpan now = e is RenderingEventArgs args
+            ? args.RenderingTime
+            : TimeSpan.FromTicks(Environment.TickCount64 * TimeSpan.TicksPerMillisecond);
+        if (!_frameGate.ShouldRender(now)) return;
+
+        TimeSpan elapsed = _lastSample == default
+            ? TimeSpan.FromMilliseconds(50)
+            : now - _lastSample;
+        _lastSample = now;
+        UpdateLevelDot(elapsed);
     }
 
     private void RenderWaveform()
@@ -259,6 +304,21 @@ public sealed partial class PillWindow : Window, IPillView
         int width,
         int height,
         uint flags);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetWindowRect(nint hWnd, out RECT rect);
+
+    [DllImport("gdi32.dll")]
+    private static extern nint CreateRoundRectRgn(int left, int top, int right, int bottom,
+        int width, int height);
+
+    [DllImport("user32.dll")]
+    private static extern int SetWindowRgn(nint hWnd, nint region, bool redraw);
+
+    [DllImport("gdi32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool DeleteObject(nint handle);
 
     private const int MdtEffectiveDpi = 0;
     private const uint SwpNoSize = 0x0001;

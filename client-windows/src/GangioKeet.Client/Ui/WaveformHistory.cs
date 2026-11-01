@@ -11,12 +11,13 @@ public sealed class WaveformHistory
     public const int BarCount = 32;
 
     private const double SilenceThreshold = 0.02;
-    private const int SilenceSamples = 8;
+    private const double SilenceMilliseconds = 400;
     private const double ReleaseFactor = 0.85;
+    private const double ReleaseStepMilliseconds = 50;
 
     private readonly Queue<double> _displayed = new();
     private double _last;
-    private int _silentSamples;
+    private double _silentMs;
 
     public IReadOnlyList<byte> Levels
     {
@@ -32,16 +33,19 @@ public sealed class WaveformHistory
         }
     }
 
-    public bool IsSilent => _silentSamples >= SilenceSamples;
+    public bool IsSilent => _silentMs >= SilenceMilliseconds;
 
-    public void Push(double level)
+    public void Push(double level) => Push(level, TimeSpan.FromMilliseconds(ReleaseStepMilliseconds));
+
+    public void Push(double level, TimeSpan elapsed)
     {
         level = Math.Clamp(level, 0, 1);
+        double elapsedMs = Math.Clamp(elapsed.TotalMilliseconds, 1, 500);
 
         if (level < SilenceThreshold)
         {
-            _silentSamples++;
-            if (_silentSamples >= SilenceSamples)
+            _silentMs += elapsedMs;
+            if (_silentMs >= SilenceMilliseconds)
             {
                 _displayed.Clear();
                 _last = 0;
@@ -50,10 +54,11 @@ public sealed class WaveformHistory
         }
         else
         {
-            _silentSamples = 0;
+            _silentMs = 0;
         }
 
-        double displayed = Math.Max(level, _last * ReleaseFactor);
+        double factor = Math.Pow(ReleaseFactor, elapsedMs / ReleaseStepMilliseconds);
+        double displayed = Math.Max(level, _last * factor);
         _last = displayed;
         _displayed.Enqueue(displayed);
 
@@ -68,7 +73,7 @@ public sealed class WaveformHistory
     {
         _displayed.Clear();
         _last = 0;
-        _silentSamples = 0;
+        _silentMs = 0;
     }
 
     private static byte Quantize(double level) => level switch

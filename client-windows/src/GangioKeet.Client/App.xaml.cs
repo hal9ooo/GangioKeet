@@ -1,6 +1,8 @@
 using System.IO;
 using System.Net.Http;
 using System.Windows;
+using System.Windows.Interop;
+using System.Windows.Media;
 using GangioKeet.Client.Audio;
 using GangioKeet.Client.Configuration;
 using GangioKeet.Client.Context;
@@ -70,6 +72,7 @@ public partial class App : Application, IModelSelectionHost
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
+        RenderOptions.ProcessRenderMode = RenderMode.Default;
         SessionEnding += OnSessionEnding;
 
         _guard = new SingleInstanceGuard("GangioKeet");
@@ -86,6 +89,7 @@ public partial class App : Application, IModelSelectionHost
         }
 
         _logger = new FileLogger();
+        _logger.Write("render_tier", (RenderCapability.Tier >> 16).ToString());
 
         // Su un'installazione pulita la cartella di configurazione può non
         // esistere: la finestra impostazioni deve poter scrivere il primo file.

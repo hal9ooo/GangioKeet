@@ -45,6 +45,32 @@ public sealed class WaveformHistoryTests
     }
 
     [Fact]
+    public void SilenceNeedsFourHundredMillisecondsEvenWithManySamples()
+    {
+        WaveformHistory h = new();
+        h.Push(0.9);
+        for (int i = 0; i < 8; i++)
+        {
+            h.Push(0.0, TimeSpan.FromMilliseconds(16.7));
+        }
+
+        Assert.False(h.IsSilent);
+    }
+
+    [Fact]
+    public void ReleaseUsesElapsedTime()
+    {
+        WaveformHistory h = new();
+        h.Push(0.9);
+        for (int i = 0; i < 30; i++)
+        {
+            h.Push(0.02, TimeSpan.FromMilliseconds(8));
+        }
+
+        Assert.Equal(2, h.Levels[^1]);
+    }
+
+    [Fact]
     public void Release_FallsSlowerThanAttack()
     {
         WaveformHistory h = new();

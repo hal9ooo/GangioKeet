@@ -8,8 +8,8 @@
         Topmost="True"
         ResizeMode="NoResize"
         WindowStyle="None"
-        Background="Transparent"
-        AllowsTransparency="True"
+        Background="#2D2D2D"
+        AllowsTransparency="False"
         Width="136"
         Height="28"
         WindowStartupLocation="Manual">
