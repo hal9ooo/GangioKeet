@@ -30,8 +30,6 @@ public sealed partial class PillWindow : Window, IPillView
 
     private readonly System.Windows.Threading.DispatcherTimer _levelTimer;
     private readonly WaveformHistory _waveform = new();
-    private readonly System.Windows.Shapes.Rectangle[] _bars =
-        new System.Windows.Shapes.Rectangle[WaveformHistory.BarCount];
     private double _currentLevel;
 
     public PillWindow()
@@ -42,33 +40,11 @@ public sealed partial class PillWindow : Window, IPillView
         _ = new WindowInteropHelper(this).EnsureHandle();
         PositionPill();
 
-        CreateWaveformBars();
-
         _levelTimer = new System.Windows.Threading.DispatcherTimer(
             TimeSpan.FromMilliseconds(50),
             System.Windows.Threading.DispatcherPriority.Normal,
             (_, _) => UpdateLevelDot(),
             Dispatcher);
-    }
-
-    private void CreateWaveformBars()
-    {
-        for (int i = 0; i < _bars.Length; i++)
-        {
-            var bar = new System.Windows.Shapes.Rectangle
-            {
-                Width = 3,
-                Height = 2,
-                RadiusX = 1,
-                RadiusY = 1,
-                Fill = GreenBrush,
-                Margin = new Thickness(0, 0, 2, 0),
-                VerticalAlignment = VerticalAlignment.Bottom,
-            };
-
-            _bars[i] = bar;
-            WaveformPanel.Children.Add(bar);
-        }
     }
 
     /// <summary>Modalità di posizionamento: <c>center_bottom</c> (default) o <c>cursor</c>.</summary>
@@ -158,18 +134,7 @@ public sealed partial class PillWindow : Window, IPillView
 
     private void RenderWaveform()
     {
-        IReadOnlyList<byte> levels = _waveform.Levels;
-        int offset = WaveformHistory.BarCount - levels.Count;
-
-        for (int i = 0; i < _bars.Length; i++)
-        {
-            byte level = i >= offset && i - offset < levels.Count
-                ? levels[i - offset]
-                : (byte)0;
-
-            // 2, 6, 10, 14 px: quantizzato, leggero, nessun ridimensionamento della pill.
-            _bars[i].Height = 2 + level * 4;
-        }
+        WaveformPanel.SetLevels(_waveform.Levels);
     }
 
     private void PositionPill()

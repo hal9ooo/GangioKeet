@@ -8,7 +8,7 @@ namespace GangioKeet.Client.Ui;
 /// </summary>
 public sealed class WaveformHistory
 {
-    public const int BarCount = 20;
+    public const int BarCount = 32;
 
     private const double SilenceThreshold = 0.02;
     private const int SilenceSamples = 8;
