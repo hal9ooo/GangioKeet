@@ -140,9 +140,10 @@ public sealed partial class PillWindow : Window, IPillView
     {
         double level = Volatile.Read(ref _currentLevel);
 
-        double size = 6 + level * 8; // da 6 a 14 px
-        StatusDot.Width = size;
-        StatusDot.Height = size;
+        // Scala solo il disegno: il layout della pill resta fermo a 60 Hz.
+        double scale = 0.43 + level * 0.57;
+        StatusDotScale.ScaleX = scale;
+        StatusDotScale.ScaleY = scale;
 
         _waveform.Push(level, elapsed);
         RenderWaveform();
