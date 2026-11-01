@@ -10,6 +10,12 @@ public interface IDictationBackend
     /// </summary>
     bool IsReady => true;
 
+    /// <summary>True while the local pipeline is warming up and early audio can be buffered.</summary>
+    bool AllowsEarlyAudio => false;
+
+    /// <summary>True when the local runtime has failed and cannot become ready.</summary>
+    bool IsFailed => false;
+
     IActiveDictationTurn CreateTurn(StartMessage start);
     Task<DictationOutcome> RetryAsync(ReadOnlyMemory<byte> pcm, StartMessage start, CancellationToken ct);
 }

@@ -48,6 +48,22 @@ public sealed class DictationControllerTests
     }
 
     [Fact]
+    public async Task Start_BackendWarmingUp_StartsCaptureImmediately()
+    {
+        Harness h = new();
+        h.Backend.IsReady = false;
+        h.Backend.AllowsEarlyAudio = true;
+        FakeTurn turn = h.Backend.EnqueueTurn();
+
+        h.Controller.Start();
+        await WaitUntilAsync(() => h.Capture.StartCalls == 1);
+
+        Assert.Equal(1, h.Capture.StartCalls);
+        Assert.Contains("modelli", h.Pill.Messages[0], StringComparison.OrdinalIgnoreCase);
+        turn.PublishResult("ciao");
+    }
+
+    [Fact]
     public void DoubleStart_SecondCallIsIgnored()
     {
         Harness h = new();

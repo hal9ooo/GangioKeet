@@ -80,8 +80,10 @@ already being processed completes on the old engines.
 about 21 GB of GGUF files and a ~22 MB NeMo-Speech Vulkan runtime on demand,
 never in the installer. Settings asks for confirmation before the first
 download and then shows a percentage. It is slower to start and needs a
-Vulkan-capable GPU. Downloads resume from the partial `.downloading` file with
-HTTP Range, including on Hugging Face's Xet-backed CDN.
+Vulkan-capable GPU. While it is warming up, pressing the dictation hotkey starts
+capturing immediately and buffers the audio until the model is ready. Downloads
+resume from the partial `.downloading` file with HTTP Range, including on
+Hugging Face's Xet-backed CDN.
 
 The cleaner selector exposes **Pulizia leggera** (built-in deterministic rules,
 no model), Gemma 4 E2B, Qwen3 1.7B and Qwen3 4B. The light cleaner removes only

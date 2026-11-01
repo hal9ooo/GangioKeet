@@ -16,6 +16,7 @@ public sealed class AppRuntime : IAsyncDisposable
     private readonly object _gate = new();
     private Task? _startTask;
     private Task? _stopTask;
+    private volatile bool _warmingUp;
     private RuntimeState _state = RuntimeState.Loading;
 
     public AppRuntime(IInferencePipeline pipeline, RecordingQueue? recordings = null)
@@ -34,6 +35,12 @@ public sealed class AppRuntime : IAsyncDisposable
     public Exception? Failure { get; private set; }
 
     public bool IsReady => State == RuntimeState.Ready;
+
+    /// <summary>
+    /// True while the pipeline is loading and warming up. Audio captured in
+    /// this window can be buffered and processed as soon as the runtime is ready.
+    /// </summary>
+    public bool IsWarmingUp => _warmingUp;
 
     public void Fail(Exception error)
     {
@@ -58,6 +65,7 @@ public sealed class AppRuntime : IAsyncDisposable
     private async Task StartCoreAsync(CancellationToken ct)
     {
         using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(ct, _lifetime.Token);
+        _warmingUp = true;
         try
         {
             await _pipeline.WarmUpAsync(linked.Token).ConfigureAwait(false);
@@ -76,6 +84,10 @@ public sealed class AppRuntime : IAsyncDisposable
         {
             Failure = error;
             lock (_gate) _state = RuntimeState.Failed;
+        }
+        finally
+        {
+            _warmingUp = false;
         }
     }
 

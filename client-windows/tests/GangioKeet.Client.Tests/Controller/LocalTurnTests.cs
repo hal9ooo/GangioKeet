@@ -86,6 +86,47 @@ public sealed class LocalTurnTests
     }
 
     [Fact]
+    public async Task WarmingUpBuffersAudioAndProcessesWhenReady()
+    {
+        Pipeline pipeline = new();
+        bool ready = false;
+        LocalDictationBackend backend = new(pipeline, () => ready, isWarmingUp: () => true);
+        await using IActiveDictationTurn turn = backend.CreateTurn(Start);
+
+        TurnStartOutcome started = await turn.StartAsync(default);
+        Assert.True(started.Ready);
+        Assert.True(turn.TryEnqueueAudio(new byte[] { 1, 2 }));
+
+        Task<DictationOutcome> finish = turn.FinishAsync(default);
+        await Task.Delay(100);
+        Assert.False(finish.IsCompleted);
+
+        ready = true;
+        DictationOutcome outcome = await finish;
+        Assert.Equal(DictationStatus.Result, outcome.Status);
+        Assert.Equal(1, pipeline.Calls);
+        Assert.Equal(new byte[] { 1, 2 }, pipeline.Seen);
+    }
+
+    [Fact]
+    public async Task WarmupFailureReturnsLocalNotReadyWithoutInference()
+    {
+        Pipeline pipeline = new();
+        InvalidOperationException failure = new("model failed");
+        LocalDictationBackend backend = new(pipeline, () => false, isWarmingUp: () => true,
+            failure: () => failure);
+        await using IActiveDictationTurn turn = backend.CreateTurn(Start);
+
+        Assert.True((await turn.StartAsync(default)).Ready);
+        Assert.True(turn.TryEnqueueAudio(new byte[] { 1, 2 }));
+        DictationOutcome outcome = await turn.FinishAsync(default);
+
+        Assert.Equal(DictationStatus.Error, outcome.Status);
+        Assert.Equal("local_not_ready", outcome.Error!.Code);
+        Assert.Equal(0, pipeline.Calls);
+    }
+
+    [Fact]
     public async Task NotReadyUsesLocalMessageAndDoesNotStartInference()
     {
         Pipeline pipeline = new();

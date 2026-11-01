@@ -152,7 +152,15 @@ public sealed class DictationController : IAsyncDisposable
         if (_state != ClientState.Idle) return;
         _stopRequested = false;
 
-        if (!_backend.IsReady)
+        if (_backend.IsFailed)
+        {
+            int generation = Interlocked.Increment(ref _generation);
+            _pill.Show(PillState.Error, "Modelli locali non disponibili", null);
+            _ = HidePillAfterAsync(TimeSpan.FromMilliseconds(2500), generation);
+            return;
+        }
+
+        if (!_backend.IsReady && !_backend.AllowsEarlyAudio)
         {
             int generation = Interlocked.Increment(ref _generation);
             _pill.Show(PillState.Error, "Modelli locali non pronti", null);
@@ -366,7 +374,7 @@ public sealed class DictationController : IAsyncDisposable
 
     private async Task RunDictationAsync(int generation, ForegroundWindowInfo target)
     {
-        _pill.Show(PillState.Arming, "Avvio…", _profile);
+        _pill.Show(PillState.Arming, _backend.IsReady ? "Avvio…" : "Carico modelli…", _profile);
         _audioBuffer.Clear();
         ClearPendingAudio();
 

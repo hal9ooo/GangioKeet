@@ -125,16 +125,16 @@ internal sealed class WindowsMediaPlaybackPause : IMediaPlaybackPause
                 _paused.Clear();
             }
 
-            HashSet<object>? alive = null;
+            HashSet<string>? alive = null;
             try
             {
                 using CancellationTokenSource probe = new(TimeSpan.FromMilliseconds(250));
                 IReadOnlyList<IMediaSessionControl> current =
                     await _sessions.GetSessionsAsync(probe.Token).ConfigureAwait(false);
-                alive = new HashSet<object>(ReferenceEqualityComparer.Instance);
+                alive = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 foreach (IMediaSessionControl session in current)
                 {
-                    alive.Add(session.NativeIdentity);
+                    alive.Add(session.SourceAppUserModelId);
                 }
             }
             catch (Exception)
@@ -145,7 +145,7 @@ internal sealed class WindowsMediaPlaybackPause : IMediaPlaybackPause
             int resumed = 0;
             foreach (IMediaSessionControl session in snapshot)
             {
-                if (alive is not null && !alive.Contains(session.NativeIdentity)) continue;
+                if (alive is not null && !alive.Contains(session.SourceAppUserModelId)) continue;
 
                 try
                 {
@@ -164,6 +164,11 @@ internal sealed class WindowsMediaPlaybackPause : IMediaPlaybackPause
             if (resumed > 0)
             {
                 _logger?.Write("media_resume", $"{resumed} session(s)");
+            }
+            else if (snapshot.Length > 0)
+            {
+                _logger?.Write("media_resume_skipped",
+                    $"{snapshot.Length} session(s), {alive?.Count ?? 0} still present");
             }
         }
         catch (Exception error)

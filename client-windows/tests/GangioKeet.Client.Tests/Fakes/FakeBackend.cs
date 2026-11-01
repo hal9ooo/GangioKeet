@@ -8,6 +8,8 @@ internal sealed class FakeBackend : IDictationBackend
     private readonly Queue<FakeTurn> _queued = [];
 
     public bool IsReady { get; set; } = true;
+    public bool AllowsEarlyAudio { get; set; }
+    public bool IsFailed { get; set; }
     public List<FakeTurn> Turns { get; } = [];
 
     public FakeTurn EnqueueTurn()

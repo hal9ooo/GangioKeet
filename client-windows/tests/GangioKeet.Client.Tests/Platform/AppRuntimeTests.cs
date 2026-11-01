@@ -19,6 +19,7 @@ public sealed class AppRuntimeTests
 
         Assert.Equal(RuntimeState.Loading, runtime.State);
         Assert.False(runtime.IsReady);
+        Assert.True(runtime.IsWarmingUp);
         Assert.Equal(1, pipeline.WarmupCalls);
 
         pipeline.ReleaseWarmup();
@@ -26,6 +27,7 @@ public sealed class AppRuntimeTests
 
         Assert.Equal(RuntimeState.Ready, runtime.State);
         Assert.True(runtime.IsReady);
+        Assert.False(runtime.IsWarmingUp);
     }
 
     [Fact]

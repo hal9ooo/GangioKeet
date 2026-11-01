@@ -12,6 +12,8 @@ public sealed class LocalDictationTurn : IActiveDictationTurn
     private readonly Func<bool> _isReady;
     private readonly IRecordingSink? _recordings;
     private readonly int _maxBytes;
+    private readonly bool _allowEarlyAudio;
+    private readonly Func<Exception?>? _failure;
     private readonly object _gate = new();
     private readonly CancellationTokenSource _abort = new();
     private readonly TaskCompletionSource<DictationOutcome> _completion = new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -22,10 +24,11 @@ public sealed class LocalDictationTurn : IActiveDictationTurn
     public string BackendName => "Locale";
     public Task<DictationOutcome> Completion => _completion.Task;
 
-    public LocalDictationTurn(IInferencePipeline pipeline, StartMessage start, int maxBytes = 67108864, Func<bool>? isReady = null, IRecordingSink? recordings = null)
+    public LocalDictationTurn(IInferencePipeline pipeline, StartMessage start, int maxBytes = 67108864, Func<bool>? isReady = null, IRecordingSink? recordings = null, bool allowEarlyAudio = false, Func<Exception?>? failure = null)
     {
         if (maxBytes < 2) throw new ArgumentOutOfRangeException(nameof(maxBytes));
         _pipeline = pipeline; _start = start; _maxBytes = maxBytes; _isReady = isReady ?? (() => true); _recordings = recordings;
+        _allowEarlyAudio = allowEarlyAudio; _failure = failure;
         _audio = new(Math.Min(maxBytes, 16384));
     }
 
@@ -36,7 +39,7 @@ public sealed class LocalDictationTurn : IActiveDictationTurn
             ObjectDisposedException.ThrowIf(_disposed, this);
             ct.ThrowIfCancellationRequested();
             if (_aborted || _completion.Task.IsCompleted) return Task.FromResult(new TurnStartOutcome(false, new("aborted", "Dettatura annullata", false)));
-            if (!_isReady())
+            if (!_isReady() && !_allowEarlyAudio)
             {
                 DictationError error = new("local_not_ready", "Modelli locali non pronti", true);
                 Fail(error);
@@ -88,6 +91,7 @@ public sealed class LocalDictationTurn : IActiveDictationTurn
         try
         {
             _abort.Token.ThrowIfCancellationRequested();
+            await WaitForReadyAsync(_abort.Token).ConfigureAwait(false);
             PipelineResult result = await _pipeline.ProcessAsync(new(pcm, _start.Profile), _abort.Token).ConfigureAwait(false);
             _recordings?.TryEnqueue(pcm, result, _start);
             lock (_gate)
@@ -98,7 +102,26 @@ public sealed class LocalDictationTurn : IActiveDictationTurn
             }
         }
         catch (OperationCanceledException) { lock (_gate) PublishAborted(); }
+        catch (TimeoutException)
+        {
+            lock (_gate) Fail(new("local_not_ready", "Modelli locali non pronti", true));
+        }
         catch (Exception) { lock (_gate) Fail(new("local_inference_failed", "Elaborazione locale non riuscita", true)); }
+    }
+
+    private async Task WaitForReadyAsync(CancellationToken ct)
+    {
+        if (_isReady()) return;
+        DateTimeOffset deadline = DateTimeOffset.UtcNow.AddSeconds(120);
+        while (!_isReady())
+        {
+            ct.ThrowIfCancellationRequested();
+            Exception? startup = _failure?.Invoke();
+            if (startup is not null) throw new TimeoutException(startup.Message, startup);
+            if (DateTimeOffset.UtcNow >= deadline)
+                throw new TimeoutException("Modelli locali non pronti.");
+            await Task.Delay(50, ct).ConfigureAwait(false);
+        }
     }
 
     private void Fail(DictationError error)

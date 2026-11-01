@@ -153,6 +153,21 @@ public sealed class WindowsMediaPlaybackPauseTests
     }
 
     [Fact]
+    public async Task ResumeAsync_WorksWhenTheManagerReturnsNewWrappers()
+    {
+        SharedMediaSession shared = new();
+        WindowsMediaPlaybackPause sut = new(new ChurnManager(shared),
+            pauseBudget: TimeSpan.FromMilliseconds(500));
+
+        await sut.PauseAsync(CancellationToken.None);
+        await sut.ResumeAsync();
+
+        Assert.Equal(1, shared.PauseCalls);
+        Assert.Equal(1, shared.PlayCalls);
+        Assert.False(sut.HasPausedSessions);
+    }
+
+    [Fact]
     public async Task ResumeAsync_SkipsSessionNoLongerPresentInManager()
     {
         FakeSessionControl session = new("spotify.exe", MediaSessionPlaybackStatus.Playing);
@@ -169,6 +184,40 @@ public sealed class WindowsMediaPlaybackPauseTests
 
     private static WindowsMediaPlaybackPause Create(params FakeSessionControl[] sessions) =>
         new(new FakeSessionManager(sessions), pauseBudget: TimeSpan.FromMilliseconds(500));
+
+    private sealed class SharedMediaSession
+    {
+        public MediaSessionPlaybackStatus Status = MediaSessionPlaybackStatus.Playing;
+        public int PauseCalls;
+        public int PlayCalls;
+    }
+
+    private sealed class ChurnManager(SharedMediaSession shared) : IMediaSessionManager
+    {
+        public Task<IReadOnlyList<IMediaSessionControl>> GetSessionsAsync(CancellationToken ct) =>
+            Task.FromResult<IReadOnlyList<IMediaSessionControl>>([new ChurnSession(shared)]);
+    }
+
+    private sealed class ChurnSession(SharedMediaSession shared) : IMediaSessionControl
+    {
+        public string SourceAppUserModelId => "spotify.exe";
+        public object NativeIdentity => this;
+        public MediaSessionPlaybackStatus PlaybackStatus => shared.Status;
+
+        public Task<bool> TryPauseAsync(CancellationToken ct)
+        {
+            shared.PauseCalls++;
+            shared.Status = MediaSessionPlaybackStatus.Paused;
+            return Task.FromResult(true);
+        }
+
+        public Task<bool> TryPlayAsync(CancellationToken ct)
+        {
+            shared.PlayCalls++;
+            shared.Status = MediaSessionPlaybackStatus.Playing;
+            return Task.FromResult(true);
+        }
+    }
 
     private sealed class FakeSessionManager(params FakeSessionControl[] sessions) : IMediaSessionManager
     {

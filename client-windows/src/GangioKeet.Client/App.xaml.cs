@@ -200,7 +200,8 @@ public partial class App : Application, IModelSelectionHost
             _logger?.Write("recording", warning),
             enabled: () => _recordingStore?.Enabled == true);
         _runtime = new AppRuntime(setup.Pipeline, _recordingQueue);
-        backend = new LocalDictationBackend(setup.Pipeline, () => _runtime.IsReady, _recordingQueue);
+        backend = new LocalDictationBackend(setup.Pipeline, () => _runtime.IsReady, _recordingQueue,
+            () => _runtime.IsWarmingUp, () => _runtime.Failure);
         _ = StartLocalRuntimeAsync(_runtime);
 
         WindowsMediaPlaybackPause media = new(new WindowsMediaSessionManager(), _logger);
@@ -395,7 +396,7 @@ public partial class App : Application, IModelSelectionHost
             }
 
             _controller.SetBackend(new LocalDictationBackend(setup.Pipeline,
-                () => runtime.IsReady, _recordingQueue));
+                () => runtime.IsReady, _recordingQueue, () => runtime.IsWarmingUp, () => runtime.Failure));
             _runtime = runtime;
             if (old is not null) await old.DisposeAsync().ConfigureAwait(false);
         }
@@ -477,7 +478,8 @@ public partial class App : Application, IModelSelectionHost
                 enabled: () => _recordingStore?.Enabled == true);
             _runtime = new AppRuntime(setup.Pipeline, _recordingQueue);
 
-            var localBackend = new LocalDictationBackend(_runtime.Pipeline, () => _runtime.IsReady, _recordingQueue);
+            var localBackend = new LocalDictationBackend(_runtime.Pipeline, () => _runtime.IsReady, _recordingQueue,
+                () => _runtime.IsWarmingUp, () => _runtime.Failure);
             _controller.SetBackend(localBackend);
             _ = StartLocalRuntimeAsync(_runtime);
             _logger?.Write("switched_local_pair", $"{setup.SttId} + {setup.CleanerId}");
