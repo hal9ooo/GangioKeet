@@ -16,6 +16,10 @@
   <a href="https://github.com/hal9ooo/GangioKeet/actions/workflows/security.yml"><img alt="Security" src="https://github.com/hal9ooo/GangioKeet/actions/workflows/security.yml/badge.svg"></a>
 </p>
 
+<p align="center">
+  <img src="assets/pill-demo.gif" width="660" alt="GangioKeet floating pill: the green status dot and 23 waveform bars react to live dictation">
+</p>
+
 > **TL;DR** — Hold **Caps Lock**, talk, release. The text appears in the active
 > window. Media playback pauses while you dictate and resumes when you release.
 
