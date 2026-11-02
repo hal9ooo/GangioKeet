@@ -22,6 +22,7 @@ public sealed class TrayController : IDisposable
     private readonly RecoveryStore _recovery;
     private readonly ClientConfig _config;
     private readonly IAudioDeviceProvider _devices;
+    private readonly AutostartService _autostart;
     private readonly string _configPath;
     private readonly Action _openSettings;
     private readonly FileLogger? _logger;
@@ -30,6 +31,7 @@ public sealed class TrayController : IDisposable
 
     private string? _selectedDeviceId;
     private System.Windows.Controls.MenuItem? _microphoneMenu;
+    private System.Windows.Controls.MenuItem? _autostartItem;
     private bool _disposed;
 
     public TrayController(
@@ -42,7 +44,8 @@ public sealed class TrayController : IDisposable
         Action openSettings,
         FileLogger? logger = null,
         Action<Action>? post = null,
-        Func<Task>? exit = null)
+        Func<Task>? exit = null,
+        AutostartService? autostart = null)
     {
         _tray = tray;
         _controller = controller;
@@ -50,6 +53,7 @@ public sealed class TrayController : IDisposable
         _exit = exit;
         _config = config;
         _devices = devices;
+        _autostart = autostart ?? new AutostartService();
         _configPath = configPath;
         _openSettings = openSettings;
         _logger = logger;
@@ -73,6 +77,7 @@ public sealed class TrayController : IDisposable
 
         BuildContextMenu();
         UpdateRecoveryMenu();
+        UpdateAutostartMenu();
         UpdateTooltip();
     }
 
@@ -89,7 +94,11 @@ public sealed class TrayController : IDisposable
     private void BuildContextMenu()
     {
         _tray.ContextMenu = new System.Windows.Controls.ContextMenu();
-        _tray.ContextMenu.Opened += (_, _) => UpdateRecoveryMenu();
+        _tray.ContextMenu.Opened += (_, _) =>
+        {
+            UpdateRecoveryMenu();
+            UpdateAutostartMenu();
+        };
         _tray.ToolTipText = "GangioKeet";
 
         var retryItem = new System.Windows.Controls.MenuItem
@@ -134,6 +143,15 @@ public sealed class TrayController : IDisposable
         _tray.ContextMenu.Items.Add(_microphoneMenu);
 
         _tray.ContextMenu.Items.Add(new System.Windows.Controls.Separator());
+
+        _autostartItem = new System.Windows.Controls.MenuItem
+        {
+            Header = "Avvia con Windows",
+            IsCheckable = true,
+        };
+        _autostartItem.Click += (_, _) => ApplyAutostart();
+        _tray.ContextMenu.Items.Add(_autostartItem);
+
         _tray.ContextMenu.Items.Add(new System.Windows.Controls.MenuItem
         {
             Header = "Apri impostazioni microfono",
@@ -236,6 +254,37 @@ public sealed class TrayController : IDisposable
             _logger?.Write(
                 "microphone_persist_failed",
                 $"Could not persist audio.input_device to {_configPath}; the choice stays active in memory.");
+        }
+    }
+
+    private void UpdateAutostartMenu()
+    {
+        if (_autostartItem is null) return;
+
+        try
+        {
+            _autostartItem.IsChecked = _autostart.IsEnabled();
+        }
+        catch (Exception ex)
+        {
+            _logger?.Write("autostart_read_failed", ex.Message);
+        }
+    }
+
+    private void ApplyAutostart()
+    {
+        if (_autostartItem is null) return;
+
+        bool enabled = _autostartItem.IsChecked;
+        try
+        {
+            _autostart.SetEnabled(enabled);
+            _logger?.Write("autostart_changed", enabled ? "enabled" : "disabled");
+        }
+        catch (Exception ex)
+        {
+            _logger?.Write("autostart_write_failed", ex.Message);
+            _autostartItem.IsChecked = !enabled;
         }
     }
 
