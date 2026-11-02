@@ -17,8 +17,9 @@
 </p>
 
 <p align="center">
-  <img src="assets/pill-demo.gif" width="660" alt="GangioKeet floating pill: the green status dot and 23 waveform bars react to live dictation">
+  <img src="assets/ribbon-demo.gif" width="960" alt="Concept animation: a dictated sentence flows along a yellow ribbon while the pill and the parakeet react to the voice">
 </p>
+<p align="center"><sub>Concept: the ribbon text and the waveform are driven by the same recording.</sub></p>
 
 > **TL;DR** — Hold **Caps Lock**, talk, release. The text appears in the active
 > window. Media playback pauses while you dictate and resumes when you release.
@@ -169,6 +170,10 @@ The floating pill is a 220×40 DIP WPF window with a rounded GDI region. It is
 opaque, never takes focus, stays out of the taskbar and Alt+Tab, and draws
 through `CompositionTarget.Rendering` gated to roughly 60 Hz, so the animation
 runs on the GPU instead of the dispatcher.
+
+<p align="center">
+  <img src="assets/pill-demo.gif" width="660" alt="GangioKeet floating pill: the green status dot and 23 waveform bars react to live dictation">
+</p>
 
 - **Status dot** — green while recording, yellow while arming or processing,
   orange for a warning, red for an error, grey for an empty result. It grows
