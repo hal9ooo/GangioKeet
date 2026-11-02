@@ -17,7 +17,7 @@
             Background="#2D2D2D"
             BorderBrush="#555555"
             BorderThickness="1"
-            Padding="8,2">
+            Padding="8,1">
         <Grid>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
@@ -44,7 +44,7 @@
                            VerticalAlignment="Center"
                            TextTrimming="CharacterEllipsis" />
                 <local:WaveformView x:Name="WaveformPanel"
-                                    Height="20"
+                                    Height="24"
                                     VerticalAlignment="Center"
                                     Visibility="Collapsed"
                                     IsHitTestVisible="False" />

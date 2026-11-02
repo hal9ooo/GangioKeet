@@ -37,30 +37,39 @@ public sealed class WaveformViewTests
     [Fact]
     public void IdleLineIsFlatAndCentered()
     {
-        Rect line = WaveformView.BuildIdleLine(100, 20);
+        Rect line = WaveformView.BuildIdleLine(100, 24);
 
         Assert.Equal(0, line.Left);
         Assert.Equal(100, line.Width);
-        Assert.InRange(line.Height, 4.0, 7.0);
-        Assert.InRange((line.Top + line.Bottom) / 2, 9.99, 10.01);
+        Assert.InRange(line.Height, 3.4, 4.6);
+        Assert.InRange((line.Top + line.Bottom) / 2, 11.99, 12.01);
     }
 
     [Fact]
-    public void IdleDotsMoveAndPulse()
+    public void IdleDotsAreSubtleAndTravelRightToLeft()
     {
-        IReadOnlyList<Rect> start = WaveformView.BuildIdleDots(100, 20, phase: 0);
-        IReadOnlyList<Rect> later = WaveformView.BuildIdleDots(100, 20, phase: 1.1);
+        IReadOnlyList<Rect> start = WaveformView.BuildIdleDots(100, 24, phase: 0);
+        IReadOnlyList<Rect> later = WaveformView.BuildIdleDots(100, 24, phase: 0.5);
 
         Assert.Equal(3, start.Count);
         Assert.All(start, dot =>
         {
-            Assert.InRange(dot.Width, 2.39, 6.41);
-            Assert.InRange((dot.Top + dot.Bottom) / 2, 9.99, 10.01);
+            Assert.InRange(dot.Width, 1.39, 3.21);
+            Assert.InRange((dot.Top + dot.Bottom) / 2, 11.99, 12.01);
         });
-        Assert.True(start.Zip(later)
-            .Count(pair => Math.Abs(pair.First.Left - pair.Second.Left) > 1.0) >= 2);
+        Assert.All(start.Zip(later), pair =>
+            Assert.True(pair.Second.Left < pair.First.Left));
         Assert.True(start.Zip(later)
             .Count(pair => Math.Abs(pair.First.Width - pair.Second.Width) > 0.2) >= 2);
+    }
+
+    [Fact]
+    public void LoudBarsUseMostOfTheViewHeight()
+    {
+        IReadOnlyList<Rect> bars = WaveformView.BuildBars(
+            Enumerable.Repeat((byte)3, WaveformHistory.BarCount).ToArray(), 100, 24);
+
+        Assert.All(bars, bar => Assert.True(bar.Height >= 18));
     }
 
     [Fact]

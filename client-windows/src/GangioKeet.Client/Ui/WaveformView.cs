@@ -83,6 +83,8 @@ public sealed class WaveformView : FrameworkElement
         for (int i = 0; i < take; i++)
             values[offset + i] = levels[levels.Count - take + i];
 
+        double maxHeight = Math.Max(6, height - 2);
+        double levelStep = (maxHeight - 2) / 3;
         double slot = width / count;
         double barWidth = Math.Clamp(slot - 1, 1.5, 3.0);
         double gap = Math.Max(0, slot - barWidth);
@@ -91,7 +93,7 @@ public sealed class WaveformView : FrameworkElement
         for (int i = 0; i < count; i++)
         {
             double taper = 0.84 + 0.16 * Math.Sin(Math.PI * (i + 0.5) / count);
-            double barHeight = Math.Max(1.5, (2 + values[i] * 4) * taper);
+            double barHeight = Math.Max(2, (2 + values[i] * levelStep) * taper);
             double x = i * slot + gap / 2;
             bars[i] = new Rect(x, center - barHeight / 2, barWidth, barHeight);
         }
@@ -100,7 +102,7 @@ public sealed class WaveformView : FrameworkElement
 
     internal static Rect BuildIdleLine(double width, double height)
     {
-        double thickness = Math.Clamp(height * 0.28, 4.0, 7.0);
+        double thickness = Math.Clamp(height * 0.18, 3.5, 4.5);
         return new Rect(0, height / 2 - thickness / 2, width, thickness);
     }
 
@@ -108,8 +110,8 @@ public sealed class WaveformView : FrameworkElement
     {
         const int count = 3;
         double center = height / 2;
-        double minRadius = 1.2;
-        double maxRadius = Math.Clamp(height * 0.16, 2.2, 3.2);
+        double minRadius = 0.7;
+        double maxRadius = 1.6;
         double offset = phase / Math.Tau;
 
         Rect[] dots = new Rect[count];
@@ -118,8 +120,9 @@ public sealed class WaveformView : FrameworkElement
             double position = (offset + i / (double)count) % 1.0;
             if (position < 0) position += 1;
 
-            double x = position * width;
-            double pulse = 0.5 + 0.5 * Math.Sin(phase * 2.2 + i * 2.1);
+            // I puntini entrano da destra e scorrono verso sinistra.
+            double x = (1 - position) * width;
+            double pulse = 0.5 + 0.5 * Math.Sin(phase * 1.6 + i * 2.1);
             double radius = minRadius + (maxRadius - minRadius) * pulse;
             dots[i] = new Rect(x - radius, center - radius, radius * 2, radius * 2);
         }
@@ -139,7 +142,7 @@ public sealed class WaveformView : FrameworkElement
 
     private static Brush CreateIdleLineBrush()
     {
-        SolidColorBrush brush = new(Color.FromRgb(0x6E, 0xE7, 0x7A));
+        SolidColorBrush brush = new(Color.FromRgb(0x4C, 0xAF, 0x50));
         brush.Freeze();
         return brush;
     }

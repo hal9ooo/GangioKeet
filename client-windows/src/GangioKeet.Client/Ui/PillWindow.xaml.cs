@@ -148,7 +148,7 @@ public sealed partial class PillWindow : Window, IPillView
         // Senza voce la forma d'onda non si spegne: sfuma in una piccola onda
         // ambientale che continua a muoversi per tutta la registrazione.
         double dt = Math.Clamp(elapsed.TotalSeconds, 0.001, 0.25);
-        _idlePhase = (_idlePhase + dt * Math.Tau / 2.4) % Math.Tau;
+        _idlePhase = (_idlePhase + dt * Math.Tau / 3.0) % Math.Tau;
         double target = _waveform.IsSilent ? 1 : 0;
         double step = dt / (target > _idle ? 0.35 : 0.12);
         _idle = target > _idle
