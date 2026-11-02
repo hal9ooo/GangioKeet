@@ -30,7 +30,7 @@ public sealed class WaveformViewTests
 
         Assert.All(bars, bar =>
         {
-            Assert.InRange(bar.Height, 3.1, 3.3);
+            Assert.InRange(bar.Height, 2.1, 2.3);
             Assert.InRange((bar.Top + bar.Bottom) / 2, 11.99, 12.01);
         });
     }
@@ -42,7 +42,7 @@ public sealed class WaveformViewTests
 
         Assert.Equal(0, line.Left);
         Assert.Equal(100, line.Width);
-        Assert.InRange(line.Height, 3.1, 3.3);
+        Assert.InRange(line.Height, 2.1, 2.3);
         Assert.InRange((line.Top + line.Bottom) / 2, 11.99, 12.01);
     }
 
@@ -55,7 +55,7 @@ public sealed class WaveformViewTests
         Assert.Equal(3, start.Count);
         Assert.All(start, dot =>
         {
-            Assert.InRange(dot.Width, 1.39, 3.21);
+            Assert.InRange(dot.Width, 0.99, 2.41);
             Assert.InRange((dot.Top + dot.Bottom) / 2, 11.99, 12.01);
         });
         Assert.All(start.Zip(later), pair =>
@@ -102,9 +102,9 @@ public sealed class WaveformViewTests
 
         Assert.All(bars, bar =>
         {
-            Assert.InRange(bar.Height, 15.0, 18.01);
-            Assert.True(bar.Top >= 3);
-            Assert.True(bar.Bottom <= 21);
+            Assert.InRange(bar.Height, 19.0, 23.01);
+            Assert.True(bar.Top >= 0.4);
+            Assert.True(bar.Bottom <= 23.6);
         });
     }
 

@@ -6,15 +6,15 @@ namespace GangioKeet.Client.Ui;
 
 /// <summary>
 /// Riproduce suoni sintetizzati tramite <see cref="SoundPlayer"/> (WAV in memoria).
-/// Tono Start: 880 Hz / 60 ms. Stop: 660 Hz / 60 ms. Error: 220 Hz / 180 ms.
-/// Fade-out 10 ms. Disattivabile impostando <see cref="Enabled"/> = false.
+/// Start: tono 880 Hz / 60 ms. Stop: click smorzato ~10 ms, molto più discreto
+/// del vecchio beep. Error: tono 220 Hz / 180 ms. Disattivabile con Enabled = false.
 /// </summary>
 public sealed class SynthSoundPlayer : ISoundPlayer, IDisposable
 {
     private static readonly int SampleRate = 22050;
 
     private static readonly byte[] StartWav = GenerateToneWav(880, 60);
-    private static readonly byte[] StopWav = GenerateToneWav(660, 60);
+    private static readonly byte[] StopWav = GenerateClickWav();
     private static readonly byte[] ErrorWav = GenerateToneWav(220, 180);
 
     private readonly SoundPlayer _startPlayer;
@@ -82,6 +82,44 @@ public sealed class SynthSoundPlayer : ISoundPlayer, IDisposable
             }
 
             double value = amplitude * Math.Sin(2 * Math.PI * frequencyHz * t);
+            samples[i] = (short)(value * short.MaxValue);
+        }
+
+        return EncodeWav(samples, SampleRate);
+    }
+
+    /// <summary>
+    /// Click breve e leggero: sinusoide alta con inviluppo esponenziale e
+    /// fade-in/out, pensata per chiudere una dettatura senza il vecchio beep.
+    /// </summary>
+    public static byte[] GenerateClickWav()
+    {
+        const int durationMs = 10;
+        const double frequencyHz = 1400;
+        const double peak = 0.25;
+        const double decayMs = 2.6;
+
+        int totalSamples = SampleRate * durationMs / 1000;
+        int fadeInSamples = SampleRate / 1000;
+        int fadeOutSamples = SampleRate * 2 / 1000;
+        short[] samples = new short[totalSamples];
+
+        for (int i = 0; i < totalSamples; i++)
+        {
+            double t = (double)i / SampleRate;
+            double envelope = Math.Exp(-t / (decayMs / 1000));
+            if (i < fadeInSamples)
+            {
+                envelope *= (double)i / fadeInSamples;
+            }
+
+            int remaining = totalSamples - i;
+            if (remaining <= fadeOutSamples)
+            {
+                envelope *= (double)remaining / fadeOutSamples;
+            }
+
+            double value = peak * envelope * Math.Sin(2 * Math.PI * frequencyHz * t);
             samples[i] = (short)(value * short.MaxValue);
         }
 

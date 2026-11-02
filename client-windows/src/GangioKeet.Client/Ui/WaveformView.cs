@@ -7,12 +7,12 @@ namespace GangioKeet.Client.Ui;
 /// Small symmetric waveform for the pill. The history level is drawn as
 /// centered capsule bars mirrored around the horizontal centerline.
 /// A thin green rest line is always present underneath: when the voice stops,
-/// the bars collapse onto it instead of being cleared, and slow black pulses
+/// the bars collapse onto it instead of being cleared, and small black pulses
 /// travel along it at the same one-slot-per-frame speed as the history.
 /// </summary>
 public sealed class WaveformView : FrameworkElement
 {
-    private const double RestThickness = 3.2;
+    private const double RestThickness = 2.2;
 
     private static readonly Brush WaveBrush = CreateWaveBrush();
     private static readonly Brush RestLineBrush = CreateRestLineBrush();
@@ -86,7 +86,7 @@ public sealed class WaveformView : FrameworkElement
         for (int i = 0; i < take; i++)
             values[offset + i] = levels[levels.Count - take + i];
 
-        double maxHeight = Math.Max(6, height - 6);
+        double maxHeight = Math.Max(6, height - 1);
         double levelStep = (maxHeight - RestThickness) / 3;
         double slot = width / count;
         double barWidth = Math.Clamp(slot - 1, 1.5, 3.0);
@@ -115,8 +115,8 @@ public sealed class WaveformView : FrameworkElement
     {
         const int count = 3;
         double center = height / 2;
-        double minRadius = 0.7;
-        double maxRadius = 1.6;
+        double minRadius = 0.5;
+        double maxRadius = 1.2;
         double slot = width / WaveformHistory.BarCount;
 
         Rect[] dots = new Rect[count];

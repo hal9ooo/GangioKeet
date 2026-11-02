@@ -34,6 +34,26 @@ public sealed class ToneGeneratorTests
     }
 
     [Fact]
+    public void StopClick_IsShortQuietAndFadesOut()
+    {
+        byte[] wav = SynthSoundPlayer.GenerateClickWav();
+        int sampleCount = (wav.Length - 44) / 2;
+
+        Assert.InRange(sampleCount, 22050 * 8 / 1000, 22050 * 12 / 1000);
+
+        int peak = 0;
+        for (int i = 44; i < wav.Length; i += 2)
+        {
+            short sample = (short)(wav[i] | (wav[i + 1] << 8));
+            peak = Math.Max(peak, Math.Abs((int)sample));
+        }
+
+        Assert.InRange(peak, 3000, 9000);
+        short last = (short)(wav[^2] | (wav[^1] << 8));
+        Assert.InRange(Math.Abs((int)last), 0, 300);
+    }
+
+    [Fact]
     public void WavHeader_HasCorrectFormat()
     {
         byte[] wav = SynthSoundPlayer.GenerateToneWav(440, 100);
