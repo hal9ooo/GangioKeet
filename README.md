@@ -27,15 +27,20 @@
 GangioKeet is a personal Windows dictation client. Speech-to-text and the
 optional LLM cleanup run in the same process: WASAPI microphone → local ASR →
 local cleaner → clipboard-preserving paste. No audio or transcript leaves the
-machine; the only network access is model provisioning from Hugging Face.
+machine; the only network access is model and runtime provisioning from Hugging
+Face and GitHub.
 
 ## What it does
 
 - **Push-to-talk, Wispr Flow style**: hold **Caps Lock** (or F8), talk, release.
   Double-tap for hands-free, **Esc** to abort.
-- **Fully local**: choose any ASR + refinement combination on the Windows
-  machine, or turn refinement off entirely. The choice is global and applies
-  hot, without restarting.
+- **Fully local**: pick any ASR — Parakeet, Qwen3-ASR or Nemotron 3.5
+  Transcribe — and pair it with no refinement, the deterministic **Pulizia
+  leggera**, or a local LLM. The choice is global and applies hot, without
+  restarting.
+- **Fast refinement**: short, clean phrases skip the cleaner entirely (fast
+  path); **Pulizia leggera** cleans fillers and repetitions deterministically,
+  with no model to load and no added latency.
 - **Media pause**: when dictation starts, playing media sessions are paused via
   Windows GSMTC; when the key is released, only the sessions paused by
   GangioKeet are resumed. Always on, no setting.
@@ -197,22 +202,41 @@ and a **cleaner** selector. Any ASR can be paired with any cleaner, or
 refinement can be off. Changes apply hot: the ASR and cleaner are swapped in
 place, and a dictation already being processed finishes on the old engines.
 
-The cleaner list includes **Pulizia leggera**, a built-in deterministic cleaner
-that removes only filled pauses and immediate repetitions (for example
-`Mi mi mandi un una lista` becomes `Mi mandi una lista`). It uses no model,
-adds no latency, and is useful with Nemotron, whose raw output preserves the
-speaker’s hesitations. The other cleaners are Gemma 4 E2B, Qwen3 1.7B and
-Qwen3 4B, all optional and downloaded on demand.
+### Recognition
 
-**Nemotron 3.5 Transcribe 30B A4B** is an experimental third ASR. It needs about
-21 GB of GGUF files plus a ~22 MB NeMo-Speech Vulkan runtime, downloaded on
-demand from Hugging Face and GitHub and never bundled in the installer. The
-first selection asks for confirmation in Settings and then shows a percentage;
-it is slower to start and wants a Vulkan-capable GPU. While it is warming up,
-pressing the dictation hotkey starts capturing immediately and buffers the audio
-until the model is ready. Downloads keep the partial file and resume with HTTP
-Range after a crash or a dropped connection; this also works for Hugging Face's
-Xet-backed files.
+| ASR | Notes |
+|---|---|
+| **Parakeet v3** | Fastest option; best fidelity/latency balance in the real-voice tests. |
+| **Qwen3-ASR** | Strong punctuation and formatting; heavier and slower than Parakeet. |
+| **Nemotron 3.5 Transcribe 30B A4B** | Experimental. About 21 GB of GGUF files plus a ~22 MB NeMo-Speech Vulkan runtime; slower to start and wants a Vulkan-capable GPU. |
+
+### Refinement
+
+| Cleaner | Notes |
+|---|---|
+| **Nessuno** | Raw ASR output, fastest path. |
+| **Pulizia leggera** | Deterministic, no model and no download: it removes only filled pauses and immediate repetitions (for example `Mi mi mandi un una lista` becomes `Mi mandi una lista`). Zero added latency. |
+| **Gemma 4 E2B** | Local LLM: punctuation, self-corrections, and glossary terms. |
+| **Qwen3 1.7B / 4B** | Local LLM alternatives at two sizes. |
+
+**Pulizia leggera** is the fast refinement to use with Nemotron: its raw output
+keeps the speaker's hesitations, and the deterministic pass cleans them without
+loading another model.
+
+### Provisioning
+
+Nothing is bundled: the installer ships the client, the native runtimes, the
+cleanup policy, and the selection JSON, never the GGUF weights. Picking a model
+downloads it on demand from Hugging Face (and, for Nemotron, the runtime from
+GitHub) over HTTPS with SHA-256 verification. Downloads keep the partial file
+and resume with HTTP Range after a crash or a dropped connection, including
+Hugging Face's Xet-backed files.
+
+**Nemotron 3.5 Transcribe 30B A4B** is the experimental third ASR. The first
+selection asks for confirmation in Settings and then shows a download
+percentage. While the model is warming up, pressing the dictation hotkey starts
+capturing immediately and buffers the audio until the model is ready, so Caps
+Lock never waits for the 21 GB model to load.
 
 `models/candidates.json` is the single source for artifact paths and hashes,
 pinned by `models/integrity.json`. Legacy
