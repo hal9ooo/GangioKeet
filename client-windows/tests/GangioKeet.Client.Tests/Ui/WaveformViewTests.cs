@@ -35,34 +35,32 @@ public sealed class WaveformViewTests
     }
 
     [Fact]
-    public void IdleWaveStaysVisibleAndMoves()
+    public void IdleLineIsFlatAndCentered()
     {
-        IReadOnlyList<Rect> start = WaveformView.BuildBars([], 100, 20, idle: 1, idlePhase: 0);
-        IReadOnlyList<Rect> later = WaveformView.BuildBars([], 100, 20, idle: 1, idlePhase: 1.2);
+        Rect line = WaveformView.BuildIdleLine(100, 20);
 
-        Assert.All(start, bar =>
-        {
-            Assert.InRange(bar.Height, 3.0, 8.5);
-            Assert.InRange((bar.Top + bar.Bottom) / 2, 9.99, 10.01);
-        });
-        Assert.True(start.Zip(later)
-            .Count(pair => Math.Abs(pair.First.Height - pair.Second.Height) > 0.5) >= 5);
+        Assert.Equal(0, line.Left);
+        Assert.Equal(100, line.Width);
+        Assert.InRange(line.Height, 4.0, 7.0);
+        Assert.InRange((line.Top + line.Bottom) / 2, 9.99, 10.01);
     }
 
     [Fact]
-    public void IdleBlendKeepsBarsBetweenLiveAndIdleHeights()
+    public void IdleDotsMoveAndPulse()
     {
-        IReadOnlyList<Rect> live = WaveformView.BuildBars(new byte[WaveformHistory.BarCount], 100, 20);
-        IReadOnlyList<Rect> half = WaveformView.BuildBars(
-            new byte[WaveformHistory.BarCount], 100, 20, idle: 0.5, idlePhase: 0.7);
-        IReadOnlyList<Rect> idle = WaveformView.BuildBars([], 100, 20, idle: 1, idlePhase: 0.7);
+        IReadOnlyList<Rect> start = WaveformView.BuildIdleDots(100, 20, phase: 0);
+        IReadOnlyList<Rect> later = WaveformView.BuildIdleDots(100, 20, phase: 1.1);
 
-        for (int i = 0; i < live.Count; i++)
+        Assert.Equal(3, start.Count);
+        Assert.All(start, dot =>
         {
-            Assert.InRange(half[i].Height,
-                Math.Min(live[i].Height, idle[i].Height) - 0.01,
-                Math.Max(live[i].Height, idle[i].Height) + 0.01);
-        }
+            Assert.InRange(dot.Width, 2.39, 6.41);
+            Assert.InRange((dot.Top + dot.Bottom) / 2, 9.99, 10.01);
+        });
+        Assert.True(start.Zip(later)
+            .Count(pair => Math.Abs(pair.First.Left - pair.Second.Left) > 1.0) >= 2);
+        Assert.True(start.Zip(later)
+            .Count(pair => Math.Abs(pair.First.Width - pair.Second.Width) > 0.2) >= 2);
     }
 
     [Fact]

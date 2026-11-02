@@ -157,12 +157,6 @@ public sealed partial class PillWindow : Window, IPillView
 
         // Scala solo il disegno: il layout della pill resta fermo a 60 Hz.
         double scale = 0.43 + level * 0.57;
-        if (_idle > 0)
-        {
-            double breathe = 0.5 + 0.5 * Math.Sin(_idlePhase * 2);
-            scale = Math.Min(1, scale + _idle * (0.10 + 0.08 * breathe));
-        }
-
         StatusDotScale.ScaleX = scale;
         StatusDotScale.ScaleY = scale;
 

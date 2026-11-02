@@ -5,14 +5,14 @@ namespace GangioKeet.Client.Ui;
 
 /// <summary>
 /// Small symmetric waveform for the pill. The history level is drawn as
-/// centered capsule bars mirrored around the horizontal centerline, with a
-/// gentle sine taper so it reads as a wave instead of bottom-aligned bars.
-/// When no voice is detected it fades into a slow, low ambient wave so the
-/// pill keeps looking alive for the whole recording.
+/// centered capsule bars mirrored around the horizontal centerline.
+/// During silence it crossfades to a flat green line crossed by slow black
+/// pulses, so the pill keeps looking alive without pretending to hear audio.
 /// </summary>
 public sealed class WaveformView : FrameworkElement
 {
     private static readonly Brush WaveBrush = CreateWaveBrush();
+    private static readonly Brush IdleLineBrush = CreateIdleLineBrush();
     private static readonly Pen CenterPen = CreateCenterPen();
 
     private IReadOnlyList<byte> _levels = [];
@@ -20,9 +20,8 @@ public sealed class WaveformView : FrameworkElement
     private double _idlePhase;
 
     /// <summary>
-    /// Aggiorna il livello. <paramref name="idle"/> (0..1) sfuma una piccola onda
-    /// ambientale quando il microfono non rileva voce, così la pill continua a
-    /// sembrare viva invece di spegnere la forma d'onda.
+    /// Aggiorna il livello. <paramref name="idle"/> (0..1) dissolve la forma
+    /// d'onda nella riga piatta animata quando il microfono non rileva voce.
     /// </summary>
     public void SetLevels(IReadOnlyList<byte> levels, double idle = 0, double idlePhase = 0)
     {
@@ -42,23 +41,40 @@ public sealed class WaveformView : FrameworkElement
         double height = ActualHeight;
         if (width <= 0 || height <= 0) return;
 
-        double center = height / 2;
-        drawingContext.DrawLine(CenterPen, new Point(0, center), new Point(width, center));
-        if (_levels.Count == 0 && _idle <= 0) return;
+        drawingContext.DrawLine(CenterPen, new Point(0, height / 2), new Point(width, height / 2));
 
-        foreach (Rect bar in BuildBars(_levels, width, height, _idle, _idlePhase))
+        if (_levels.Count > 0 && _idle < 1)
         {
-            double radius = bar.Width / 2;
-            drawingContext.DrawRoundedRectangle(WaveBrush, null, bar, radius, radius);
+            drawingContext.PushOpacity(1 - _idle);
+            foreach (Rect bar in BuildBars(_levels, width, height))
+            {
+                double radius = bar.Width / 2;
+                drawingContext.DrawRoundedRectangle(WaveBrush, null, bar, radius, radius);
+            }
+            drawingContext.Pop();
+        }
+
+        if (_idle > 0)
+        {
+            drawingContext.PushOpacity(_idle);
+            Rect line = BuildIdleLine(width, height);
+            drawingContext.DrawRoundedRectangle(
+                IdleLineBrush, null, line, line.Height / 2, line.Height / 2);
+
+            foreach (Rect dot in BuildIdleDots(width, height, _idlePhase))
+            {
+                drawingContext.DrawEllipse(
+                    Brushes.Black,
+                    null,
+                    new Point(dot.Left + dot.Width / 2, dot.Top + dot.Height / 2),
+                    dot.Width / 2,
+                    dot.Height / 2);
+            }
+            drawingContext.Pop();
         }
     }
 
-    internal static IReadOnlyList<Rect> BuildBars(
-        IReadOnlyList<byte> levels,
-        double width,
-        double height,
-        double idle = 0,
-        double idlePhase = 0)
+    internal static IReadOnlyList<Rect> BuildBars(IReadOnlyList<byte> levels, double width, double height)
     {
         const int count = WaveformHistory.BarCount;
         byte[] values = new byte[count];
@@ -67,7 +83,6 @@ public sealed class WaveformView : FrameworkElement
         for (int i = 0; i < take; i++)
             values[offset + i] = levels[levels.Count - take + i];
 
-        idle = Math.Clamp(idle, 0, 1);
         double slot = width / count;
         double barWidth = Math.Clamp(slot - 1, 1.5, 3.0);
         double gap = Math.Max(0, slot - barWidth);
@@ -77,21 +92,38 @@ public sealed class WaveformView : FrameworkElement
         {
             double taper = 0.84 + 0.16 * Math.Sin(Math.PI * (i + 0.5) / count);
             double barHeight = Math.Max(1.5, (2 + values[i] * 4) * taper);
-
-            if (idle > 0)
-            {
-                // Onda lenta e bassa: segnala che la registrazione è ancora
-                // attiva senza simulare un livello audio realistico.
-                double envelope = 0.35 + 0.65 * Math.Sin(Math.PI * (i + 0.5) / count);
-                double wobble = 0.5 + 0.5 * Math.Sin(idlePhase + i * 0.42);
-                double idleHeight = 3.0 + 5.5 * wobble * envelope;
-                barHeight += (idleHeight - barHeight) * idle;
-            }
-
             double x = i * slot + gap / 2;
             bars[i] = new Rect(x, center - barHeight / 2, barWidth, barHeight);
         }
         return bars;
+    }
+
+    internal static Rect BuildIdleLine(double width, double height)
+    {
+        double thickness = Math.Clamp(height * 0.28, 4.0, 7.0);
+        return new Rect(0, height / 2 - thickness / 2, width, thickness);
+    }
+
+    internal static IReadOnlyList<Rect> BuildIdleDots(double width, double height, double phase)
+    {
+        const int count = 3;
+        double center = height / 2;
+        double minRadius = 1.2;
+        double maxRadius = Math.Clamp(height * 0.16, 2.2, 3.2);
+        double offset = phase / Math.Tau;
+
+        Rect[] dots = new Rect[count];
+        for (int i = 0; i < count; i++)
+        {
+            double position = (offset + i / (double)count) % 1.0;
+            if (position < 0) position += 1;
+
+            double x = position * width;
+            double pulse = 0.5 + 0.5 * Math.Sin(phase * 2.2 + i * 2.1);
+            double radius = minRadius + (maxRadius - minRadius) * pulse;
+            dots[i] = new Rect(x - radius, center - radius, radius * 2, radius * 2);
+        }
+        return dots;
     }
 
     private static Brush CreateWaveBrush()
@@ -101,6 +133,13 @@ public sealed class WaveformView : FrameworkElement
             Color.FromRgb(0x2E, 0xA0, 0x43),
             new Point(0, 0),
             new Point(0, 1));
+        brush.Freeze();
+        return brush;
+    }
+
+    private static Brush CreateIdleLineBrush()
+    {
+        SolidColorBrush brush = new(Color.FromRgb(0x6E, 0xE7, 0x7A));
         brush.Freeze();
         return brush;
     }
