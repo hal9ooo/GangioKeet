@@ -41,8 +41,9 @@ machine; the only network access is model provisioning from Hugging Face.
   GangioKeet are resumed. Always on, no setting.
 - **Context-aware**: `code`, `terminal`, `chat`, `email`, and `document`
   profiles chosen from the active app and window title, with browser rules.
-- **Quality of life**: floating pill, tray menu, microphone picker, always
-  copyable last dictation, and clipboard-preserving paste.
+- **Quality of life**: animated floating pill, tray menu with a launch-at-startup
+  toggle, microphone picker, always copyable last dictation, and
+  clipboard-preserving paste.
 - **Recovery**: if the target window disappears or loses focus during paste, the
   text is kept in RAM and can be copied from the tray; a failed dictation can
   also be retried from its buffered audio. The last successful text stays
@@ -63,7 +64,7 @@ machine; the only network access is model provisioning from Hugging Face.
 ```mermaid
 flowchart LR
   HK["Caps Lock / F8"] --> CL["GangioKeet.Client<br/>WPF + NAudio"]
-  CL -->|PCM16 16 kHz| STT["Local ASR<br/>Qwen3-ASR or Parakeet"]
+  CL -->|PCM16 16 kHz| STT["Local ASR<br/>Qwen3-ASR, Parakeet, Nemotron"]
   STT --> ROUTE{"Cleanup"}
   ROUTE -->|fast path| TXT["Clean text"]
   ROUTE -->|LLM| LLM["Local cleaner<br/>Gemma 4 or Qwen3"]
@@ -111,11 +112,14 @@ or verifies the missing model artifacts. Wait for the tray state to become
 ready, then hold **Caps Lock** and speak.
 
 The tray menu has the microphone picker, the last-dictation actions, the
-settings window, and the exit command. **Copia ultimo testo** is available after
-any dictation with text, including a successful paste; **Riprova** and
-**Scarta recupero** are enabled only when there is a failed dictation to
-recover. The settings window selects the ASR and the optional refinement and
-toggles benchmark recording; all changes apply immediately.
+settings window, **Avvia con Windows**, and the exit command. **Copia ultimo
+testo** is available after any dictation with text, including a successful
+paste; **Riprova** and **Scarta recupero** are enabled only when there is a
+failed dictation to recover. **Avvia con Windows** writes or removes a per-user
+value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\GangioKeet`; it
+is off by default and the checkbox reflects the current registry state. The
+settings window selects the ASR and the optional refinement and toggles
+benchmark recording; all changes apply immediately.
 
 ## Configuration
 
@@ -149,6 +153,34 @@ and is never played on release.
 The pause has a 750 ms budget: an unresponsive app cannot block the microphone.
 If you release the key while the pause is still in flight, the capture is
 cancelled and the media is resumed immediately.
+
+## The pill
+
+The floating pill is a 220×40 DIP WPF window with a rounded GDI region. It is
+opaque, never takes focus, stays out of the taskbar and Alt+Tab, and draws
+through `CompositionTarget.Rendering` gated to roughly 60 Hz, so the animation
+runs on the GPU instead of the dispatcher.
+
+- **Status dot** — green while recording, yellow while arming or processing,
+  orange for a warning, red for an error, grey for an empty result. It grows
+  with the microphone level.
+- **Wave** — while recording, the status text is replaced by 23 square off-white
+  bars. Their heights come from a three-octave scrolling noise field, so the
+  ribbon slides sideways and keeps changing shape instead of oscillating in
+  place, in the spirit of the Wispr Flow pill. Bar width and pitch are uniform
+  on the physical pixel grid, including at fractional display scaling.
+- **Microphone response** — the smoothed peak drives the envelope: about 16%
+  height at silence and full height on voice, with a 12 ms attack and a 120 ms
+  release. The wave is an indicator, never a capture gate: it cannot delay or
+  stop dictation.
+- **Autogain** — the live peak is normalized against the **90th percentile** of
+  the last recording's non-silent chunks, so a quiet microphone still fills the
+  pill while a cough cannot skew the reference. The value is persisted in
+  `%LOCALAPPDATA%\GangioKeet\mic-calibration.json` (a single number, no audio);
+  delete the file to reset. Only the visualization is scaled: the PCM sent to
+  the ASR is never altered.
+- **Sounds** — a short synthesized click marks the end of a dictation instead of
+  the old beep; the start and error cues are unchanged.
 
 ## Model combinations
 
@@ -206,6 +238,10 @@ the settings window offers **Riprova modelli** to rebuild it.
 - **Logs are content-free**: daily files in `%LOCALAPPDATA%\GangioKeet\logs\`
   contain codes and technical details, never audio, transcripts, window titles,
   or API keys.
+- **Microphone calibration is a single number**: the pill's autogain stores only
+  the normalized peak reference in
+  `%LOCALAPPDATA%\GangioKeet\mic-calibration.json`. It contains no audio, no
+  device name, and no timestamp.
 - **Clipboard**: the client reads text and DIB from the clipboard only to back
   them up, and restores them only if nobody copied something else in the
   meantime. It never inspects, logs, or transmits clipboard contents, and it
@@ -236,7 +272,8 @@ dotnet test client-windows\GangioKeet.Client.sln
 
 The client tests cover the controller lifecycle, media pause/resume ordering,
 configuration compatibility, hotkeys, audio conversion, paste, recording,
-recovery, and hot model-combination switching.
+recovery, hot model-combination switching, the pill waveform, and the
+microphone autogain.
 
 Offline evaluation:
 
