@@ -49,7 +49,7 @@ public sealed class WaveformViewTests
         Assert.All(quiet.Zip(loud), pair =>
         {
             Assert.True(pair.Second.Height > pair.First.Height);
-            Assert.Equal(1 / 0.35, pair.Second.Height / pair.First.Height, 2);
+            Assert.Equal(1 / 0.16, pair.Second.Height / pair.First.Height, 2);
         });
     }
 
@@ -58,7 +58,7 @@ public sealed class WaveformViewTests
     {
         IReadOnlyList<Rect> bars = WaveformView.BuildWaveBars(166, 34, 0.7, inputLevel: 0);
 
-        Assert.All(bars, bar => Assert.InRange(bar.Height, 0.7, 10.6));
+        Assert.All(bars, bar => Assert.InRange(bar.Height, 0.3, 4.9));
     }
 
     [Fact]

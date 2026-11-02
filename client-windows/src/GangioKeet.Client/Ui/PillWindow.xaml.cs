@@ -144,8 +144,9 @@ public sealed partial class PillWindow : Window, IPillView
         double target = Math.Clamp(Volatile.Read(ref _currentLevel), 0, 1);
         double dt = Math.Clamp(elapsed.TotalSeconds, 0.001, 0.25);
 
-        // Attacco rapido, rilascio lento: la pill segue la voce senza tremolare.
-        double timeConstant = target > _smoothedLevel ? 0.05 : 0.35;
+        // Attacco quasi instantaneo e rilascio rapido: la pill scatta sulla
+        // voce e si sgonfia appena smetti, senza restare gonfia a lungo.
+        double timeConstant = target > _smoothedLevel ? 0.012 : 0.12;
         double alpha = 1 - Math.Exp(-dt / timeConstant);
         _smoothedLevel += (target - _smoothedLevel) * alpha;
 

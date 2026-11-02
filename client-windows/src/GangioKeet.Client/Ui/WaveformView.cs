@@ -105,11 +105,11 @@ public sealed class WaveformView : FrameworkElement
         double center = height / 2;
         double scroll = time * ScrollBarsPerSecond;
 
-        // A riposo la wave resta viva ma più bassa; con la voce si gonfia.
-        // Il picco PCM della voce sta di solito tra 0,1 e 0,5: la radice
-        // quarta lo riporta su una scala utile senza far saturare il microfono.
-        double response = Math.Pow(Math.Clamp(inputLevel, 0, 1), 0.45);
-        double gain = 0.35 + 0.65 * response;
+        // A riposo la wave resta solo un accenno; con la voce si gonfia
+        // rapidamente. Il picco PCM sta di solito tra 0,1 e 0,5, quindi la
+        // curva resta più bassa della radice quarta per dare uno stacco netto.
+        double response = Math.Pow(Math.Clamp(inputLevel, 0, 1), 0.6);
+        double gain = 0.16 + 0.84 * response;
 
         Rect[] bars = new Rect[count];
         for (int i = 0; i < count; i++)
