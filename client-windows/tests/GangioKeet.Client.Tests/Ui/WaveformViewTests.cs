@@ -7,11 +7,11 @@ namespace GangioKeet.Client.Tests.Ui;
 public sealed class WaveformViewTests
 {
     [Fact]
-    public void WaveHasTwentyBars()
+    public void WaveHasTwentyThreeBars()
     {
         IReadOnlyList<Rect> bars = WaveformView.BuildWaveBars(166, 34, time: 0);
 
-        Assert.Equal(20, bars.Count);
+        Assert.Equal(23, bars.Count);
     }
 
     [Fact]
@@ -59,7 +59,7 @@ public sealed class WaveformViewTests
         IReadOnlyList<Rect> rendered = WaveformView.BuildPixelBars(
             logical, width, center, 1.25, 1.25);
 
-        Assert.Equal(20, rendered.Count);
+        Assert.Equal(23, rendered.Count);
         Assert.All(rendered, bar =>
         {
             Assert.Equal(4 / 1.25, bar.Width, 6);

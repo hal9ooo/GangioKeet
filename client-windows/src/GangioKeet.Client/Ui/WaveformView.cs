@@ -13,9 +13,8 @@ namespace GangioKeet.Client.Ui;
 /// </summary>
 public sealed class WaveformView : FrameworkElement
 {
-    /// <summary>Number of bars that fit the 166 DIP content area at the
-    /// 8 DIP pitch used by the Wispr pill.</summary>
-    public const int BarCount = 20;
+    /// <summary>Bar count of the Wispr pill Lottie (`test wave form_v1`).</summary>
+    public const int BarCount = 23;
 
     private const double MinLevel = 0.06;
     private const double MaxLevel = 0.89;
