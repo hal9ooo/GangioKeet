@@ -31,6 +31,8 @@ public sealed partial class PillWindow : Window, IPillView
     private readonly WaveformHistory _waveform = new();
     private readonly FrameGate _frameGate = new(TimeSpan.FromMilliseconds(16));
     private double _currentLevel;
+    private double _idle;
+    private double _idlePhase;
     private bool _rendering;
     private TimeSpan _lastSample;
 
@@ -69,6 +71,8 @@ public sealed partial class PillWindow : Window, IPillView
                 _frameGate.Reset();
                 _lastSample = default;
                 _waveform.Reset();
+                _idle = 0;
+                _idlePhase = 0;
                 RenderWaveform();
                 StartRendering();
             }
@@ -139,13 +143,29 @@ public sealed partial class PillWindow : Window, IPillView
     private void UpdateLevelDot(TimeSpan elapsed)
     {
         double level = Volatile.Read(ref _currentLevel);
+        _waveform.Push(level, elapsed);
+
+        // Senza voce la forma d'onda non si spegne: sfuma in una piccola onda
+        // ambientale che continua a muoversi per tutta la registrazione.
+        double dt = Math.Clamp(elapsed.TotalSeconds, 0.001, 0.25);
+        _idlePhase = (_idlePhase + dt * Math.Tau / 2.4) % Math.Tau;
+        double target = _waveform.IsSilent ? 1 : 0;
+        double step = dt / (target > _idle ? 0.35 : 0.12);
+        _idle = target > _idle
+            ? Math.Min(target, _idle + step)
+            : Math.Max(target, _idle - step);
 
         // Scala solo il disegno: il layout della pill resta fermo a 60 Hz.
         double scale = 0.43 + level * 0.57;
+        if (_idle > 0)
+        {
+            double breathe = 0.5 + 0.5 * Math.Sin(_idlePhase * 2);
+            scale = Math.Min(1, scale + _idle * (0.10 + 0.08 * breathe));
+        }
+
         StatusDotScale.ScaleX = scale;
         StatusDotScale.ScaleY = scale;
 
-        _waveform.Push(level, elapsed);
         RenderWaveform();
     }
 
@@ -180,7 +200,7 @@ public sealed partial class PillWindow : Window, IPillView
 
     private void RenderWaveform()
     {
-        WaveformPanel.SetLevels(_waveform.Levels);
+        WaveformPanel.SetLevels(_waveform.Levels, _idle, _idlePhase);
     }
 
     private void PositionPill()

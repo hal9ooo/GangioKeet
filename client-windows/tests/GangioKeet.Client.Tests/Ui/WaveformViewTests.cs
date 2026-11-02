@@ -35,6 +35,37 @@ public sealed class WaveformViewTests
     }
 
     [Fact]
+    public void IdleWaveStaysVisibleAndMoves()
+    {
+        IReadOnlyList<Rect> start = WaveformView.BuildBars([], 100, 20, idle: 1, idlePhase: 0);
+        IReadOnlyList<Rect> later = WaveformView.BuildBars([], 100, 20, idle: 1, idlePhase: 1.2);
+
+        Assert.All(start, bar =>
+        {
+            Assert.InRange(bar.Height, 3.0, 8.5);
+            Assert.InRange((bar.Top + bar.Bottom) / 2, 9.99, 10.01);
+        });
+        Assert.True(start.Zip(later)
+            .Count(pair => Math.Abs(pair.First.Height - pair.Second.Height) > 0.5) >= 5);
+    }
+
+    [Fact]
+    public void IdleBlendKeepsBarsBetweenLiveAndIdleHeights()
+    {
+        IReadOnlyList<Rect> live = WaveformView.BuildBars(new byte[WaveformHistory.BarCount], 100, 20);
+        IReadOnlyList<Rect> half = WaveformView.BuildBars(
+            new byte[WaveformHistory.BarCount], 100, 20, idle: 0.5, idlePhase: 0.7);
+        IReadOnlyList<Rect> idle = WaveformView.BuildBars([], 100, 20, idle: 1, idlePhase: 0.7);
+
+        for (int i = 0; i < live.Count; i++)
+        {
+            Assert.InRange(half[i].Height,
+                Math.Min(live[i].Height, idle[i].Height) - 0.01,
+                Math.Max(live[i].Height, idle[i].Height) + 0.01);
+        }
+    }
+
+    [Fact]
     public void BarsStayInsideTheViewport()
     {
         byte[] levels = [0, 1, 2, 3, 3, 2, 1, 0, 3, 1, 2, 0, 3, 2, 1, 0,
