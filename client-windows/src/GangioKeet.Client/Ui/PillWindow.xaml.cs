@@ -30,6 +30,7 @@ public sealed partial class PillWindow : Window, IPillView
 
     private readonly FrameGate _frameGate = new(TimeSpan.FromMilliseconds(16));
     private double _currentLevel;
+    private double _smoothedLevel;
     private double _waveTime;
     private bool _rendering;
     private TimeSpan _lastSample;
@@ -69,6 +70,8 @@ public sealed partial class PillWindow : Window, IPillView
                 _frameGate.Reset();
                 _lastSample = default;
                 _waveTime = 0;
+                _smoothedLevel = 0;
+                WaveformPanel.SetLevel(0);
                 RenderWaveform();
                 StartRendering();
             }
@@ -138,14 +141,21 @@ public sealed partial class PillWindow : Window, IPillView
 
     private void UpdateLevelDot(TimeSpan elapsed)
     {
-        double level = Volatile.Read(ref _currentLevel);
+        double target = Math.Clamp(Volatile.Read(ref _currentLevel), 0, 1);
+        double dt = Math.Clamp(elapsed.TotalSeconds, 0.001, 0.25);
+
+        // Attacco rapido, rilascio lento: la pill segue la voce senza tremolare.
+        double timeConstant = target > _smoothedLevel ? 0.05 : 0.35;
+        double alpha = 1 - Math.Exp(-dt / timeConstant);
+        _smoothedLevel += (target - _smoothedLevel) * alpha;
 
         // Scala solo il disegno: il layout della pill resta fermo a 60 Hz.
-        double scale = 0.43 + level * 0.57;
+        double scale = 0.43 + Math.Pow(_smoothedLevel, 0.6) * 0.57;
         StatusDotScale.ScaleX = scale;
         StatusDotScale.ScaleY = scale;
 
-        _waveTime += Math.Clamp(elapsed.TotalSeconds, 0.001, 0.25);
+        WaveformPanel.SetLevel(_smoothedLevel);
+        _waveTime += dt;
         RenderWaveform();
     }
 

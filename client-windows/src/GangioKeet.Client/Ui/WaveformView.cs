@@ -23,11 +23,22 @@ public sealed class WaveformView : FrameworkElement
 
     private static readonly Brush WaveBrush = CreateWaveBrush();
     private double _time;
+    private double _level;
 
     public void SetTime(double seconds)
     {
         _time = seconds;
         InvalidateVisual();
+    }
+
+    /// <summary>
+    /// Livello del microfono già smussato (0..1). A differenza del Lottie,
+    /// che è puramente decorativo, qui il volume gonfia l'inviluppo delle
+    /// barre: a riposo restano al 55%, parlando arrivano al 100%.
+    /// </summary>
+    public void SetLevel(double level)
+    {
+        _level = Math.Clamp(level, 0, 1);
     }
 
     protected override Size MeasureOverride(Size availableSize) =>
@@ -68,7 +79,7 @@ public sealed class WaveformView : FrameworkElement
         double center = (Math.Round(originYPx + (height / 2) * dpi.DpiScaleY) - originYPx)
             / dpi.DpiScaleY;
 
-        IReadOnlyList<Rect> logicalBars = BuildWaveBars(width, height, _time);
+        IReadOnlyList<Rect> logicalBars = BuildWaveBars(width, height, _time, _level);
         foreach (Rect bar in BuildPixelBars(
             logicalBars, width, center, dpi.DpiScaleX, dpi.DpiScaleY, originXPx))
         {
@@ -84,7 +95,8 @@ public sealed class WaveformView : FrameworkElement
     internal static IReadOnlyList<Rect> BuildWaveBars(
         double width,
         double height,
-        double time)
+        double time,
+        double inputLevel = 1)
     {
         int count = BarCount;
         double slot = width / count;
@@ -93,12 +105,18 @@ public sealed class WaveformView : FrameworkElement
         double center = height / 2;
         double scroll = time * ScrollBarsPerSecond;
 
+        // A riposo la wave resta viva ma più bassa; con la voce si gonfia.
+        // Il picco PCM della voce sta di solito tra 0,1 e 0,5: la radice
+        // quarta lo riporta su una scala utile senza far saturare il microfono.
+        double response = Math.Pow(Math.Clamp(inputLevel, 0, 1), 0.45);
+        double gain = 0.35 + 0.65 * response;
+
         Rect[] bars = new Rect[count];
         for (int i = 0; i < count; i++)
         {
             double u = i + scroll;
             double level = SampleLevel(u, time);
-            double barHeight = (MinLevel + (MaxLevel - MinLevel) * level) * height;
+            double barHeight = (MinLevel + (MaxLevel - MinLevel) * level) * height * gain;
             double x = i * slot + gap / 2;
             bars[i] = new Rect(x, center - barHeight / 2, barWidth, barHeight);
         }

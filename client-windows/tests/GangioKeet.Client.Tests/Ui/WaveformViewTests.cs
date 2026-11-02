@@ -41,6 +41,27 @@ public sealed class WaveformViewTests
     }
 
     [Fact]
+    public void BarsGrowWithInputLevel()
+    {
+        IReadOnlyList<Rect> quiet = WaveformView.BuildWaveBars(166, 34, 0.7, inputLevel: 0);
+        IReadOnlyList<Rect> loud = WaveformView.BuildWaveBars(166, 34, 0.7, inputLevel: 1);
+
+        Assert.All(quiet.Zip(loud), pair =>
+        {
+            Assert.True(pair.Second.Height > pair.First.Height);
+            Assert.Equal(1 / 0.35, pair.Second.Height / pair.First.Height, 2);
+        });
+    }
+
+    [Fact]
+    public void BarsStayVisibleAtSilence()
+    {
+        IReadOnlyList<Rect> bars = WaveformView.BuildWaveBars(166, 34, 0.7, inputLevel: 0);
+
+        Assert.All(bars, bar => Assert.InRange(bar.Height, 0.7, 10.6));
+    }
+
+    [Fact]
     public void WaveNeverCollapses()
     {
         for (double time = 0; time <= 5; time += 0.05)
