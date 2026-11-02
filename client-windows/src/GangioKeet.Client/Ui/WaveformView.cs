@@ -4,19 +4,23 @@ using System.Windows.Media;
 namespace GangioKeet.Client.Ui;
 
 /// <summary>
-/// Wispr Flow-style waveform for the pill: ten off-white bars whose heights
-/// follow a travelling sine wave. The animation is continuous and does not
-/// depend on the microphone history, so there is no silent/reset state.
+/// Wispr Flow-style waveform for the pill. The real Wispr pill is a dense
+/// ribbon of thin bars that scrolls sideways while its envelope slowly
+/// morphs; it is not a handful of bars oscillating in place. We reproduce
+/// that look with <see cref="BarCount"/> thin bars whose heights come from
+/// a scrolling value-noise field. The animation is decorative and
+/// continuous: it never clears or waits for microphone input.
 /// </summary>
 public sealed class WaveformView : FrameworkElement
 {
-    public const int BarCount = 10;
+    /// <summary>Number of bars that fit the 166 DIP content area at the
+    /// 8 DIP pitch used by the Wispr pill.</summary>
+    public const int BarCount = 20;
 
-    private const double MinLevel = 0.24;
-    private const double MaxLevel = 0.94;
-    private const double Speed = 2.4;
-    private const double WaveSpan = 1.7;
-    private const double BarRatio = 0.53;
+    private const double MinLevel = 0.06;
+    private const double MaxLevel = 0.89;
+    private const double BarRatio = 0.42;
+    private const double ScrollBarsPerSecond = 14;
 
     private static readonly Brush WaveBrush = CreateWaveBrush();
     private double _time;
@@ -74,8 +78,9 @@ public sealed class WaveformView : FrameworkElement
     }
 
     /// <summary>
-    /// Riproduce la formula della wave di Wispr Flow: un seno che attraversa
-    /// le barre, con una leggera campana che smorza le estremità.
+    /// Costruisce le barre campionando un campo di rumore che scorre verso
+    /// sinistra. Il campo cambia anche lentamente nel tempo, così la forma
+    /// non è una sagoma rigida che si ripete.
     /// </summary>
     internal static IReadOnlyList<Rect> BuildWaveBars(
         double width,
@@ -87,20 +92,53 @@ public sealed class WaveformView : FrameworkElement
         double barWidth = slot * BarRatio;
         double gap = slot - barWidth;
         double center = height / 2;
-        double t = time * Speed;
+        double scroll = time * ScrollBarsPerSecond;
 
         Rect[] bars = new Rect[count];
         for (int i = 0; i < count; i++)
         {
-            double xi = count > 1 ? i / (double)(count - 1) : 0.5;
-            double wave = 0.6 * Math.Sin((xi * WaveSpan - t) * Math.Tau) +
-                          0.4 * Math.Sin((xi * WaveSpan * 0.5 - t * 0.6) * Math.Tau + 1.7);
-            double s = (0.5 + 0.5 * wave) * (0.7 + 0.3 * Math.Sin(xi * Math.PI));
-            double barHeight = (MinLevel + (MaxLevel - MinLevel) * s) * height;
+            double u = i + scroll;
+            double level = SampleLevel(u, time);
+            double barHeight = (MinLevel + (MaxLevel - MinLevel) * level) * height;
             double x = i * slot + gap / 2;
             bars[i] = new Rect(x, center - barHeight / 2, barWidth, barHeight);
         }
         return bars;
+    }
+
+    /// <summary>
+    /// Altezza normalizzata (0..1) di una barra. Due ottave di rumore
+    /// interpolato danno il profilo irregolare della pill di Wispr, mentre
+    /// il termine temporale lo fa respirare senza scatti.
+    /// </summary>
+    private static double SampleLevel(double position, double time)
+    {
+        double coarse = Noise(position * 0.23 + 41.7 - time * 0.030);
+        double medium = Noise(position * 0.61 + 0.3 + time * 0.050);
+        double fine = Noise(position * 1.37 + 17.9 - time * 0.020);
+        double mixed = coarse * 0.48 + medium * 0.34 + fine * 0.18;
+
+        // Il rumore si concentra intorno a 0,5: allarghiamo la distribuzione
+        // per avere sia puntini bassi sia barre alte come nel video.
+        mixed = Math.Clamp((mixed - 0.5) * 1.8 + 0.5, 0, 1);
+        return Math.Pow(mixed, 1.08);
+    }
+
+    private static double Noise(double x)
+    {
+        int cell = (int)Math.Floor(x);
+        double fraction = x - cell;
+        double eased = fraction * fraction * (3 - 2 * fraction);
+        return Hash(cell) * (1 - eased) + Hash(cell + 1) * eased;
+    }
+
+    private static double Hash(int value)
+    {
+        uint hash = (uint)value * 0x9E3779B1u;
+        hash ^= hash >> 16;
+        hash *= 0x85EBCA6Bu;
+        hash ^= hash >> 13;
+        return (hash & 0xFFFFFF) / 16777215.0;
     }
 
     /// <summary>

@@ -7,11 +7,11 @@ namespace GangioKeet.Client.Tests.Ui;
 public sealed class WaveformViewTests
 {
     [Fact]
-    public void WaveHasTenBars()
+    public void WaveHasTwentyBars()
     {
         IReadOnlyList<Rect> bars = WaveformView.BuildWaveBars(166, 34, time: 0);
 
-        Assert.Equal(10, bars.Count);
+        Assert.Equal(20, bars.Count);
     }
 
     [Fact]
@@ -22,7 +22,7 @@ public sealed class WaveformViewTests
         Assert.All(bars, bar =>
         {
             Assert.InRange((bar.Top + bar.Bottom) / 2, 16.99, 17.01);
-            Assert.InRange(bar.Height, 7.9, 32.1);
+            Assert.InRange(bar.Height, 2.0, 30.3);
             Assert.True(bar.Left >= 0);
             Assert.True(bar.Right <= 166);
             Assert.True(bar.Top >= 0);
@@ -31,7 +31,7 @@ public sealed class WaveformViewTests
     }
 
     [Fact]
-    public void WaveMovesOverTime()
+    public void WaveMovesSidewaysOverTime()
     {
         IReadOnlyList<Rect> start = WaveformView.BuildWaveBars(166, 34, time: 0);
         IReadOnlyList<Rect> later = WaveformView.BuildWaveBars(166, 34, time: 0.25);
@@ -46,7 +46,7 @@ public sealed class WaveformViewTests
         for (double time = 0; time <= 5; time += 0.05)
         {
             IReadOnlyList<Rect> bars = WaveformView.BuildWaveBars(166, 34, time);
-            Assert.All(bars, bar => Assert.InRange(bar.Height, 7.9, 32.1));
+            Assert.All(bars, bar => Assert.InRange(bar.Height, 2.0, 30.3));
         }
     }
 
@@ -59,10 +59,10 @@ public sealed class WaveformViewTests
         IReadOnlyList<Rect> rendered = WaveformView.BuildPixelBars(
             logical, width, center, 1.25, 1.25);
 
-        Assert.Equal(10, rendered.Count);
+        Assert.Equal(20, rendered.Count);
         Assert.All(rendered, bar =>
         {
-            Assert.Equal(11 / 1.25, bar.Width, 6);
+            Assert.Equal(4 / 1.25, bar.Width, 6);
             Assert.Equal(Math.Round(bar.Left * 1.25), bar.Left * 1.25, 6);
             Assert.Equal(Math.Round(bar.Right * 1.25), bar.Right * 1.25, 6);
             Assert.Equal(center, (bar.Top + bar.Bottom) / 2, 6);
@@ -76,7 +76,7 @@ public sealed class WaveformViewTests
 
         IReadOnlyList<Rect> at100 = WaveformView.BuildPixelBars(
             logical, width, center, 1, 1);
-        Assert.All(at100, bar => Assert.Equal(8, bar.Width, 6));
+        Assert.All(at100, bar => Assert.Equal(3, bar.Width, 6));
     }
 
     [Fact]
