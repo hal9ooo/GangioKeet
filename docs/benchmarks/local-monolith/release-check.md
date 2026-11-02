@@ -1,6 +1,6 @@
 # Release check: Windows local monolith
 
-Data: 2026-10-27; aggiornato: 2026-10-29. Questo report copre il payload e
+Data: 2026-10-27; aggiornato: 2026-11-02. Questo report copre il payload e
 l'installer; non sostituisce la prova su una macchina Windows pulita, che non è
 stata eseguita.
 
@@ -38,7 +38,7 @@ stata eseguita.
 ## Payload
 
 - Directory: `artifacts/package`.
-- File: **549**; dimensione **326.281.071 byte** (0,304 GiB).
+- File: **552**; dimensione **326.371.509 byte** (0,304 GiB).
 - Modelli: provisioning on demand; **nessun GGUF nel payload**. I file sono
   scaricati dal client e verificati contro `models/candidates.json`.
 - Runtime: `native/transcribe` (transcribe.cpp 0.4.1) e `native/llama`
@@ -77,14 +77,14 @@ inclusi e non è più applicabile: ora i GGUF non fanno parte del payload e
 
 - Directory: `artifacts/installer`.
 - `GangioKeet-Setup-0.1.0-local.exe` (nessuna slice).
-- Dimensione: **72.828.546 byte** (69,4 MiB).
+- Dimensione: **72.861.134 byte** (69,5 MiB).
 - SHA-256 (l'hash autorevole è `artifacts/installer/SHA256SUMS.txt`; il
   `package-manifest.json` non contiene l'hash dell'installer per evitare
   autoreferenza):
 
 | File | Byte | SHA-256 |
 |---|---:|---|
-| `GangioKeet-Setup-0.1.0-local.exe` | 72.828.546 | `e1cc0df9b34968d55c69dad494d2e9322d58acd6dddd38d0e71b8c701c5e2e5b` |
+| `GangioKeet-Setup-0.1.0-local.exe` | 72.861.134 | `2e33a1b5e76495a137df629e7be00784d82820f837bc671283f72f798fbd92b5` |
 
 - Compressione `lzma2/max`, nessun disk spanning. La build avviene in
   `artifacts/installer.staging`; il packager sostituisce l'installer precedente
