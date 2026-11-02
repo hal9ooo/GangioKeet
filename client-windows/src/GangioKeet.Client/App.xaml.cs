@@ -210,6 +210,12 @@ public partial class App : Application, IModelSelectionHost
 
         WindowsMediaPlaybackPause media = new(new WindowsMediaSessionManager(), _logger);
 
+        MicrophoneCalibrationStore micCalibrationStore = new();
+        MicrophoneLevelCalibration micCalibration = new(
+            micCalibrationStore.Load() ?? MicrophoneLevelCalibration.DefaultReference,
+            micCalibrationStore);
+        _logger?.Write("mic_calibration", $"reference={micCalibration.Reference:0.###}");
+
         _controller = new DictationController(
             _capture,
             backend,
@@ -222,7 +228,8 @@ public partial class App : Application, IModelSelectionHost
             config,
             _telemetry,
             media,
-            time);
+            time,
+            micCalibration);
 
         _hooks = new LowLevelInputHooks(
             new Win32InputHookBackend(),

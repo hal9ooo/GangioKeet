@@ -82,6 +82,32 @@ public sealed class AudioSignalTrackerTests
     }
 
     [Fact]
+    public void BuildSummary_ReportsTheSpeechPercentileNotTheAbsolutePeak()
+    {
+        AudioSignalTracker tracker = new();
+        for (int i = 1; i <= 10; i++)
+        {
+            tracker.AppendPcm16(ToPcm16((short)(short.MaxValue * i / 10)));
+        }
+
+        AudioSummary summary = tracker.BuildSummary();
+
+        Assert.Equal(1.0, summary.Peak, 3);
+        Assert.InRange(summary.SpeechPeak, 0.89, 0.92);
+    }
+
+    [Fact]
+    public void BuildSummary_SilenceHasNoSpeechPeak()
+    {
+        AudioSignalTracker tracker = new();
+        tracker.AppendPcm16(new byte[200]);
+
+        AudioSummary summary = tracker.BuildSummary();
+
+        Assert.Equal(0, summary.SpeechPeak);
+    }
+
+    [Fact]
     public void AppendPcm16_OddByteCountCarriesPartialSampleToNextCall()
     {
         AudioSignalTracker tracker = new();

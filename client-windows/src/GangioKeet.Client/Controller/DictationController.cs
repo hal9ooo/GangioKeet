@@ -30,6 +30,7 @@ public sealed class DictationController : IAsyncDisposable
     private readonly TelemetryStore _telemetry;
     private readonly IMediaPlaybackPause _media;
     private readonly TimeProvider _time;
+    private readonly MicrophoneLevelCalibration _micCalibration;
     private readonly RamAudioBuffer _audioBuffer;
     private static readonly TimeSpan MediaPauseBudget = TimeSpan.FromMilliseconds(750);
 
@@ -66,7 +67,8 @@ public sealed class DictationController : IAsyncDisposable
         ClientConfig config,
         TelemetryStore telemetry,
         IMediaPlaybackPause media,
-        TimeProvider time)
+        TimeProvider time,
+        MicrophoneLevelCalibration? micCalibration = null)
     {
         _capture = capture;
         _backend = backend;
@@ -80,6 +82,7 @@ public sealed class DictationController : IAsyncDisposable
         _telemetry = telemetry;
         _media = media;
         _time = time;
+        _micCalibration = micCalibration ?? new MicrophoneLevelCalibration();
         _audioBuffer = new RamAudioBuffer();
 
         _capture.Ready += OnCaptureReady;
@@ -694,7 +697,11 @@ public sealed class DictationController : IAsyncDisposable
         _captureStarted = false;
         try
         {
-            await _capture.StopAsync(ct).ConfigureAwait(false);
+            AudioSummary summary = await _capture.StopAsync(ct).ConfigureAwait(false);
+
+            // La prossima dettatura usa il volume reale di questa: il 90°
+            // percentile dei picchi evita che un colpo di tosse tarì il gain.
+            _micCalibration.Observe(summary.SpeechPeak);
         }
         catch (OperationCanceledException)
         {
@@ -828,7 +835,8 @@ public sealed class DictationController : IAsyncDisposable
 
     private void OnLevelChanged(object? sender, double level)
     {
-        _pill.SetLevel(level);
+        // L'autogain scala solo la pill; l'audio per l'ASR non viene toccato.
+        _pill.SetLevel(_micCalibration.Normalize(level));
     }
 
     private void OnCaptureFailed(object? sender, CaptureFailure failure)

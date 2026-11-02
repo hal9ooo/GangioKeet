@@ -13,7 +13,15 @@ public sealed record CaptureFailure(string Code, string Message);
 /// <param name="SampleCount">Campioni PCM16 appartenenti alla sessione; 0 = nessun audio ricevuto.</param>
 /// <param name="AllZero">True solo con SampleCount &gt; 0 e tutti i campioni a zero (microfono muto ≠ nessun callback).</param>
 /// <param name="Peak">Piccovolle assoluto massimo normalizzato [0..1].</param>
-public sealed record AudioSummary(long SampleCount, bool AllZero, double Peak);
+public sealed record AudioSummary(long SampleCount, bool AllZero, double Peak)
+{
+    /// <summary>
+    /// 90° percentile dei picchi dei blocchi non silenziosi, normalizzato [0..1].
+    /// È la statistica usata per tarare l'autogain della pill: rispetto al
+    /// massimo assoluto, un singolo colpo di tosse non la falsa.
+    /// </summary>
+    public double SpeechPeak { get; init; }
+}
 
 /// <summary>
 /// Adapter della cattura PCM16/16 kHz mono. <see cref="Ready"/> scatta al primo callback audio reale,

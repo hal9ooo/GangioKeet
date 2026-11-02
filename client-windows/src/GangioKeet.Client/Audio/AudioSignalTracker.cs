@@ -9,9 +9,16 @@ namespace GangioKeet.Client.Audio;
 public sealed class AudioSignalTracker
 {
     private const int BytesPerSample = 2;
+    private const int HistogramBins = 128;
+
+    /// <summary>1% del fondo scala: sotto questa soglia un blocco è rumore, non voce.</summary>
+    private const int SpeechFloor = 328;
+
     private const float FullScale = 32768f;
 
+    private readonly int[] _histogram = new int[HistogramBins];
     private long _sampleCount;
+    private long _speechChunks;
     private int _peak;
     private bool _allZero = true;
     private byte _pendingByte;
@@ -49,6 +56,15 @@ public sealed class AudioSignalTracker
         {
             _allZero = false;
             _peak = Math.Max(_peak, chunkPeak);
+
+            if (chunkPeak >= SpeechFloor)
+            {
+                int bin = Math.Min(
+                    HistogramBins - 1,
+                    (int)(chunkPeak * (double)HistogramBins / FullScale));
+                _histogram[bin]++;
+                _speechChunks++;
+            }
         }
 
         _sampleCount += chunkSamples;
@@ -64,16 +80,47 @@ public sealed class AudioSignalTracker
     {
         double peak = _sampleCount == 0 ? 0 : Math.Min(_peak / FullScale, 1.0);
         bool allZero = _sampleCount > 0 && _allZero;
-        return new AudioSummary(_sampleCount, allZero, peak);
+        return new AudioSummary(_sampleCount, allZero, peak)
+        {
+            SpeechPeak = SpeechPercentile(),
+        };
     }
 
     public void Reset()
     {
+        Array.Clear(_histogram);
         _sampleCount = 0;
+        _speechChunks = 0;
         _peak = 0;
         _allZero = true;
         _pendingByte = 0;
         _hasPendingByte = false;
+    }
+
+    /// <summary>
+    /// 90° percentile dei picchi dei blocchi di voce. È più robusto del massimo
+    /// assoluto per la taratura dell'autogain: un colpo di tosse o un picco
+    /// isolato non sposta il riferimento di tutta la registrazione.
+    /// </summary>
+    private double SpeechPercentile()
+    {
+        if (_speechChunks == 0)
+        {
+            return 0;
+        }
+
+        long wanted = (_speechChunks * 9 + 9) / 10;
+        long seen = 0;
+        for (int i = 0; i < HistogramBins; i++)
+        {
+            seen += _histogram[i];
+            if (seen >= wanted)
+            {
+                return (i + 0.5) / HistogramBins;
+            }
+        }
+
+        return Math.Min(_peak / FullScale, 1.0);
     }
 
     private static int AbsSample(byte low, byte high)
