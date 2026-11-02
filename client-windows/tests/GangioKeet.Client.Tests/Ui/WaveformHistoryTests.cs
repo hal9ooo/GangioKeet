@@ -6,6 +6,16 @@ namespace GangioKeet.Client.Tests.Ui;
 public sealed class WaveformHistoryTests
 {
     [Fact]
+    public void NewHistoryStartsAsAFlatLine()
+    {
+        WaveformHistory h = new();
+
+        Assert.Equal(WaveformHistory.BarCount, h.Levels.Count);
+        Assert.All(h.Levels, level => Assert.Equal(0, level));
+        Assert.False(h.IsSilent);
+    }
+
+    [Fact]
     public void Push_QuantizesIntoFourBands()
     {
         WaveformHistory h = new();
@@ -18,7 +28,7 @@ public sealed class WaveformHistoryTests
     }
 
     [Fact]
-    public void Silence_AfterEightSamples_ClearsAll()
+    public void Silence_KeepsTheHistoryAndLetsBarsRest()
     {
         WaveformHistory h = new();
         h.Push(0.9);
@@ -29,6 +39,23 @@ public sealed class WaveformHistoryTests
         }
 
         Assert.True(h.IsSilent);
+        Assert.Equal(WaveformHistory.BarCount, h.Levels.Count);
+        Assert.Equal(2, h.Levels[^1]);
+    }
+
+    [Fact]
+    public void Silence_AfterAWholeRing_IsAllZero()
+    {
+        WaveformHistory h = new();
+        h.Push(0.9);
+
+        for (int i = 0; i < WaveformHistory.BarCount * 3; i++)
+        {
+            h.Push(0.0);
+        }
+
+        Assert.True(h.IsSilent);
+        Assert.Equal(WaveformHistory.BarCount, h.Levels.Count);
         Assert.All(h.Levels, level => Assert.Equal(0, level));
     }
 

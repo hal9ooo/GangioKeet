@@ -32,7 +32,7 @@ public sealed partial class PillWindow : Window, IPillView
     private readonly FrameGate _frameGate = new(TimeSpan.FromMilliseconds(16));
     private double _currentLevel;
     private double _idle;
-    private double _idlePhase;
+    private double _travelSlots;
     private bool _rendering;
     private TimeSpan _lastSample;
 
@@ -72,7 +72,7 @@ public sealed partial class PillWindow : Window, IPillView
                 _lastSample = default;
                 _waveform.Reset();
                 _idle = 0;
-                _idlePhase = 0;
+                _travelSlots = 0;
                 RenderWaveform();
                 StartRendering();
             }
@@ -145,12 +145,12 @@ public sealed partial class PillWindow : Window, IPillView
         double level = Volatile.Read(ref _currentLevel);
         _waveform.Push(level, elapsed);
 
-        // Senza voce la forma d'onda non si spegne: sfuma in una piccola onda
-        // ambientale che continua a muoversi per tutta la registrazione.
+        // Un solo clock: la cronologia avanza di un campione per fotogramma e
+        // i puntini avanzano della stessa porzione, senza scatti né reset.
+        _travelSlots += 1;
         double dt = Math.Clamp(elapsed.TotalSeconds, 0.001, 0.25);
-        _idlePhase = (_idlePhase + dt * Math.Tau / 3.0) % Math.Tau;
         double target = _waveform.IsSilent ? 1 : 0;
-        double step = dt / (target > _idle ? 0.35 : 0.12);
+        double step = dt / 0.15;
         _idle = target > _idle
             ? Math.Min(target, _idle + step)
             : Math.Max(target, _idle - step);
@@ -194,7 +194,7 @@ public sealed partial class PillWindow : Window, IPillView
 
     private void RenderWaveform()
     {
-        WaveformPanel.SetLevels(_waveform.Levels, _idle, _idlePhase);
+        WaveformPanel.SetLevels(_waveform.Levels, _idle, _travelSlots);
     }
 
     private void PositionPill()

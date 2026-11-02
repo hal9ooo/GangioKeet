@@ -6,28 +6,34 @@ namespace GangioKeet.Client.Ui;
 /// <summary>
 /// Small symmetric waveform for the pill. The history level is drawn as
 /// centered capsule bars mirrored around the horizontal centerline.
-/// During silence it crossfades to a flat green line crossed by slow black
-/// pulses, so the pill keeps looking alive without pretending to hear audio.
+/// A thin green rest line is always present underneath: when the voice stops,
+/// the bars collapse onto it instead of being cleared, and slow black pulses
+/// travel along it at the same one-slot-per-frame speed as the history.
 /// </summary>
 public sealed class WaveformView : FrameworkElement
 {
+    private const double RestThickness = 3.2;
+
     private static readonly Brush WaveBrush = CreateWaveBrush();
-    private static readonly Brush IdleLineBrush = CreateIdleLineBrush();
-    private static readonly Pen CenterPen = CreateCenterPen();
+    private static readonly Brush RestLineBrush = CreateRestLineBrush();
 
     private IReadOnlyList<byte> _levels = [];
     private double _idle;
-    private double _idlePhase;
+    private double _travelSlots;
 
     /// <summary>
-    /// Aggiorna il livello. <paramref name="idle"/> (0..1) dissolve la forma
-    /// d'onda nella riga piatta animata quando il microfono non rileva voce.
+    /// Aggiorna il livello. <paramref name="idle"/> (0..1) fa emergere i puntini
+    /// quando il microfono è in silenzio; <paramref name="travelSlots"/> è lo
+    /// stesso contatore di campioni che fa scorrere la cronologia della wave.
     /// </summary>
-    public void SetLevels(IReadOnlyList<byte> levels, double idle = 0, double idlePhase = 0)
+    public void SetLevels(
+        IReadOnlyList<byte> levels,
+        double idle = 0,
+        double travelSlots = 0)
     {
         _levels = levels ?? [];
         _idle = Math.Clamp(idle, 0, 1);
-        _idlePhase = idlePhase;
+        _travelSlots = travelSlots;
         InvalidateVisual();
     }
 
@@ -41,27 +47,24 @@ public sealed class WaveformView : FrameworkElement
         double height = ActualHeight;
         if (width <= 0 || height <= 0) return;
 
-        drawingContext.DrawLine(CenterPen, new Point(0, height / 2), new Point(width, height / 2));
+        // La riga di riposo c'è sempre: le barre alte la coprono, il silenzio
+        // la riporta in primo piano senza cancellare nulla.
+        Rect line = BuildIdleLine(width, height);
+        drawingContext.PushOpacity(0.35 + 0.65 * _idle);
+        drawingContext.DrawRoundedRectangle(
+            RestLineBrush, null, line, line.Height / 2, line.Height / 2);
+        drawingContext.Pop();
 
-        if (_levels.Count > 0 && _idle < 1)
+        foreach (Rect bar in BuildBars(_levels, width, height))
         {
-            drawingContext.PushOpacity(1 - _idle);
-            foreach (Rect bar in BuildBars(_levels, width, height))
-            {
-                double radius = bar.Width / 2;
-                drawingContext.DrawRoundedRectangle(WaveBrush, null, bar, radius, radius);
-            }
-            drawingContext.Pop();
+            double radius = bar.Width / 2;
+            drawingContext.DrawRoundedRectangle(WaveBrush, null, bar, radius, radius);
         }
 
         if (_idle > 0)
         {
             drawingContext.PushOpacity(_idle);
-            Rect line = BuildIdleLine(width, height);
-            drawingContext.DrawRoundedRectangle(
-                IdleLineBrush, null, line, line.Height / 2, line.Height / 2);
-
-            foreach (Rect dot in BuildIdleDots(width, height, _idlePhase))
+            foreach (Rect dot in BuildIdleDots(width, height, _travelSlots))
             {
                 drawingContext.DrawEllipse(
                     Brushes.Black,
@@ -83,8 +86,8 @@ public sealed class WaveformView : FrameworkElement
         for (int i = 0; i < take; i++)
             values[offset + i] = levels[levels.Count - take + i];
 
-        double maxHeight = Math.Max(6, height - 2);
-        double levelStep = (maxHeight - 2) / 3;
+        double maxHeight = Math.Max(6, height - 6);
+        double levelStep = (maxHeight - RestThickness) / 3;
         double slot = width / count;
         double barWidth = Math.Clamp(slot - 1, 1.5, 3.0);
         double gap = Math.Max(0, slot - barWidth);
@@ -93,36 +96,40 @@ public sealed class WaveformView : FrameworkElement
         for (int i = 0; i < count; i++)
         {
             double taper = 0.84 + 0.16 * Math.Sin(Math.PI * (i + 0.5) / count);
-            double barHeight = Math.Max(2, (2 + values[i] * levelStep) * taper);
+            double barHeight = Math.Max(
+                RestThickness,
+                (RestThickness + values[i] * levelStep) * taper);
             double x = i * slot + gap / 2;
             bars[i] = new Rect(x, center - barHeight / 2, barWidth, barHeight);
         }
         return bars;
     }
 
-    internal static Rect BuildIdleLine(double width, double height)
-    {
-        double thickness = Math.Clamp(height * 0.18, 3.5, 4.5);
-        return new Rect(0, height / 2 - thickness / 2, width, thickness);
-    }
+    internal static Rect BuildIdleLine(double width, double height) =>
+        new(0, height / 2 - RestThickness / 2, width, RestThickness);
 
-    internal static IReadOnlyList<Rect> BuildIdleDots(double width, double height, double phase)
+    internal static IReadOnlyList<Rect> BuildIdleDots(
+        double width,
+        double height,
+        double travelSlots)
     {
         const int count = 3;
         double center = height / 2;
         double minRadius = 0.7;
         double maxRadius = 1.6;
-        double offset = phase / Math.Tau;
+        double slot = width / WaveformHistory.BarCount;
 
         Rect[] dots = new Rect[count];
         for (int i = 0; i < count; i++)
         {
-            double position = (offset + i / (double)count) % 1.0;
-            if (position < 0) position += 1;
+            double slotIndex = (travelSlots + i * (WaveformHistory.BarCount / (double)count))
+                % WaveformHistory.BarCount;
+            if (slotIndex < 0) slotIndex += WaveformHistory.BarCount;
 
-            // I puntini entrano da destra e scorrono verso sinistra.
-            double x = (1 - position) * width;
-            double pulse = 0.5 + 0.5 * Math.Sin(phase * 1.6 + i * 2.1);
+            // Stessa cadenza della cronologia: una barra per fotogramma,
+            // quindi i puntini scorrono da destra verso sinistra.
+            double x = width - slotIndex * slot;
+            double pulse = 0.5 + 0.5 * Math.Sin(travelSlots * 0.06 + i * 2.1);
             double radius = minRadius + (maxRadius - minRadius) * pulse;
             dots[i] = new Rect(x - radius, center - radius, radius * 2, radius * 2);
         }
@@ -140,17 +147,10 @@ public sealed class WaveformView : FrameworkElement
         return brush;
     }
 
-    private static Brush CreateIdleLineBrush()
+    private static Brush CreateRestLineBrush()
     {
         SolidColorBrush brush = new(Color.FromRgb(0x4C, 0xAF, 0x50));
         brush.Freeze();
         return brush;
-    }
-
-    private static Pen CreateCenterPen()
-    {
-        Pen pen = new(new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)), 0.6);
-        pen.Freeze();
-        return pen;
     }
 }

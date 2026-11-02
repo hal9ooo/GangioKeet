@@ -1,9 +1,10 @@
 namespace GangioKeet.Client.Ui;
 
 /// <summary>
-/// Storia breve del livello microfono per la forma d'onda della pill: 20 barre,
+/// Storia breve del livello microfono per la forma d'onda della pill: 32 barre,
 /// quantizzate in quattro bande, con attacco immediato e rilascio graduale.
-/// Dopo otto campioni consecutivi di silenzio (400 ms a 50 ms) la riga è piatta.
+/// Il silenzio non svuota la coda: i campioni continuano ad avanzare e le barre
+/// si abbassano fino alla riga di riposo, così la transizione resta continua.
 /// Non conserva audio: solo il livello già calcolato dalla cattura.
 /// </summary>
 public sealed class WaveformHistory
@@ -18,6 +19,8 @@ public sealed class WaveformHistory
     private readonly Queue<double> _displayed = new();
     private double _last;
     private double _silentMs;
+
+    public WaveformHistory() => Reset();
 
     public IReadOnlyList<byte> Levels
     {
@@ -45,12 +48,6 @@ public sealed class WaveformHistory
         if (level < SilenceThreshold)
         {
             _silentMs += elapsedMs;
-            if (_silentMs >= SilenceMilliseconds)
-            {
-                _displayed.Clear();
-                _last = 0;
-                return;
-            }
         }
         else
         {
@@ -68,10 +65,17 @@ public sealed class WaveformHistory
         }
     }
 
-    /// <summary>Azzera la storia all'inizio di una nuova dettatura.</summary>
+    /// <summary>
+    /// Riporta la storia alla riga di riposo senza lasciare un fotogramma vuoto.
+    /// </summary>
     public void Reset()
     {
         _displayed.Clear();
+        for (int i = 0; i < BarCount; i++)
+        {
+            _displayed.Enqueue(0);
+        }
+
         _last = 0;
         _silentMs = 0;
     }

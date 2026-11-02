@@ -17,20 +17,21 @@ public sealed class WaveformViewTests
         {
             Assert.True(bar.Top < 10);
             Assert.True(bar.Bottom > 10);
+            Assert.True(bar.Height > 10);
             Assert.InRange((bar.Top + bar.Bottom) / 2, 9.99, 10.01);
         });
     }
 
     [Fact]
-    public void SilenceBarsStayThinAndCentered()
+    public void SilentBarsRestOnTheLine()
     {
         IReadOnlyList<Rect> bars = WaveformView.BuildBars(
-            new byte[WaveformHistory.BarCount], 100, 20);
+            new byte[WaveformHistory.BarCount], 100, 24);
 
         Assert.All(bars, bar =>
         {
-            Assert.InRange(bar.Height, 1.5, 2.1);
-            Assert.InRange((bar.Top + bar.Bottom) / 2, 9.99, 10.01);
+            Assert.InRange(bar.Height, 3.1, 3.3);
+            Assert.InRange((bar.Top + bar.Bottom) / 2, 11.99, 12.01);
         });
     }
 
@@ -41,15 +42,15 @@ public sealed class WaveformViewTests
 
         Assert.Equal(0, line.Left);
         Assert.Equal(100, line.Width);
-        Assert.InRange(line.Height, 3.4, 4.6);
+        Assert.InRange(line.Height, 3.1, 3.3);
         Assert.InRange((line.Top + line.Bottom) / 2, 11.99, 12.01);
     }
 
     [Fact]
     public void IdleDotsAreSubtleAndTravelRightToLeft()
     {
-        IReadOnlyList<Rect> start = WaveformView.BuildIdleDots(100, 24, phase: 0);
-        IReadOnlyList<Rect> later = WaveformView.BuildIdleDots(100, 24, phase: 0.5);
+        IReadOnlyList<Rect> start = WaveformView.BuildIdleDots(100, 24, travelSlots: 0);
+        IReadOnlyList<Rect> later = WaveformView.BuildIdleDots(100, 24, travelSlots: 8);
 
         Assert.Equal(3, start.Count);
         Assert.All(start, dot =>
@@ -64,12 +65,47 @@ public sealed class WaveformViewTests
     }
 
     [Fact]
-    public void LoudBarsUseMostOfTheViewHeight()
+    public void IdleDotsAdvanceOneSlotPerHistorySample()
+    {
+        IReadOnlyList<Rect> start = WaveformView.BuildIdleDots(100, 24, travelSlots: 0);
+        IReadOnlyList<Rect> next = WaveformView.BuildIdleDots(100, 24, travelSlots: 1);
+        double slot = 100.0 / WaveformHistory.BarCount;
+
+        for (int i = 0; i < start.Count; i++)
+        {
+            double startX = start[i].Left + start[i].Width / 2;
+            double nextX = next[i].Left + next[i].Width / 2;
+            Assert.InRange(startX - nextX, slot - 0.01, slot + 0.01);
+        }
+    }
+
+    [Fact]
+    public void IdleDotsWrapAfterOneHistoryCycle()
+    {
+        IReadOnlyList<Rect> start = WaveformView.BuildIdleDots(100, 24, travelSlots: 0);
+        IReadOnlyList<Rect> wrapped = WaveformView.BuildIdleDots(
+            100, 24, travelSlots: WaveformHistory.BarCount);
+
+        for (int i = 0; i < start.Count; i++)
+        {
+            double startX = start[i].Left + start[i].Width / 2;
+            double wrappedX = wrapped[i].Left + wrapped[i].Width / 2;
+            Assert.InRange(wrappedX, startX - 0.01, startX + 0.01);
+        }
+    }
+
+    [Fact]
+    public void LoudBarsStayBelowThePillEdges()
     {
         IReadOnlyList<Rect> bars = WaveformView.BuildBars(
             Enumerable.Repeat((byte)3, WaveformHistory.BarCount).ToArray(), 100, 24);
 
-        Assert.All(bars, bar => Assert.True(bar.Height >= 18));
+        Assert.All(bars, bar =>
+        {
+            Assert.InRange(bar.Height, 15.0, 18.01);
+            Assert.True(bar.Top >= 3);
+            Assert.True(bar.Bottom <= 21);
+        });
     }
 
     [Fact]
