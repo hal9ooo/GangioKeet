@@ -10,15 +10,15 @@ public sealed class WaveformViewTests
     public void LoudBarsExtendAboveAndBelowTheCenterline()
     {
         IReadOnlyList<Rect> bars = WaveformView.BuildBars(
-            Enumerable.Repeat((byte)3, WaveformHistory.BarCount).ToArray(), 100, 20);
+            Enumerable.Repeat((byte)3, WaveformHistory.BarCount).ToArray(), 100, 34);
 
         Assert.NotEmpty(bars);
         Assert.All(bars, bar =>
         {
-            Assert.True(bar.Top < 10);
-            Assert.True(bar.Bottom > 10);
+            Assert.True(bar.Top < 17);
+            Assert.True(bar.Bottom > 17);
             Assert.True(bar.Height > 10);
-            Assert.InRange((bar.Top + bar.Bottom) / 2, 9.99, 10.01);
+            Assert.InRange((bar.Top + bar.Bottom) / 2, 16.99, 17.01);
         });
     }
 
@@ -26,37 +26,37 @@ public sealed class WaveformViewTests
     public void SilentBarsRestOnTheLine()
     {
         IReadOnlyList<Rect> bars = WaveformView.BuildBars(
-            new byte[WaveformHistory.BarCount], 100, 24);
+            new byte[WaveformHistory.BarCount], 100, 34);
 
         Assert.All(bars, bar =>
         {
-            Assert.InRange(bar.Height, 2.1, 2.3);
-            Assert.InRange((bar.Top + bar.Bottom) / 2, 11.99, 12.01);
+            Assert.InRange(bar.Height, 1.7, 1.9);
+            Assert.InRange((bar.Top + bar.Bottom) / 2, 16.99, 17.01);
         });
     }
 
     [Fact]
     public void IdleLineIsFlatAndCentered()
     {
-        Rect line = WaveformView.BuildIdleLine(100, 24);
+        Rect line = WaveformView.BuildIdleLine(100, 34);
 
         Assert.Equal(0, line.Left);
         Assert.Equal(100, line.Width);
-        Assert.InRange(line.Height, 2.1, 2.3);
-        Assert.InRange((line.Top + line.Bottom) / 2, 11.99, 12.01);
+        Assert.InRange(line.Height, 1.7, 1.9);
+        Assert.InRange((line.Top + line.Bottom) / 2, 16.99, 17.01);
     }
 
     [Fact]
     public void IdleDotsAreSubtleAndTravelRightToLeft()
     {
-        IReadOnlyList<Rect> start = WaveformView.BuildIdleDots(100, 24, travelSlots: 0);
-        IReadOnlyList<Rect> later = WaveformView.BuildIdleDots(100, 24, travelSlots: 8);
+        IReadOnlyList<Rect> start = WaveformView.BuildIdleDots(100, 34, travelSlots: 0);
+        IReadOnlyList<Rect> later = WaveformView.BuildIdleDots(100, 34, travelSlots: 8);
 
         Assert.Equal(3, start.Count);
         Assert.All(start, dot =>
         {
             Assert.InRange(dot.Width, 0.99, 2.41);
-            Assert.InRange((dot.Top + dot.Bottom) / 2, 11.99, 12.01);
+            Assert.InRange((dot.Top + dot.Bottom) / 2, 16.99, 17.01);
         });
         Assert.All(start.Zip(later), pair =>
             Assert.True(pair.Second.Left < pair.First.Left));
@@ -67,8 +67,8 @@ public sealed class WaveformViewTests
     [Fact]
     public void IdleDotsAdvanceOneSlotPerHistorySample()
     {
-        IReadOnlyList<Rect> start = WaveformView.BuildIdleDots(100, 24, travelSlots: 0);
-        IReadOnlyList<Rect> next = WaveformView.BuildIdleDots(100, 24, travelSlots: 1);
+        IReadOnlyList<Rect> start = WaveformView.BuildIdleDots(100, 34, travelSlots: 0);
+        IReadOnlyList<Rect> next = WaveformView.BuildIdleDots(100, 34, travelSlots: 1);
         double slot = 100.0 / WaveformHistory.BarCount;
 
         for (int i = 0; i < start.Count; i++)
@@ -82,9 +82,9 @@ public sealed class WaveformViewTests
     [Fact]
     public void IdleDotsWrapAfterOneHistoryCycle()
     {
-        IReadOnlyList<Rect> start = WaveformView.BuildIdleDots(100, 24, travelSlots: 0);
+        IReadOnlyList<Rect> start = WaveformView.BuildIdleDots(100, 34, travelSlots: 0);
         IReadOnlyList<Rect> wrapped = WaveformView.BuildIdleDots(
-            100, 24, travelSlots: WaveformHistory.BarCount);
+            100, 34, travelSlots: WaveformHistory.BarCount);
 
         for (int i = 0; i < start.Count; i++)
         {
@@ -98,13 +98,13 @@ public sealed class WaveformViewTests
     public void LoudBarsStayBelowThePillEdges()
     {
         IReadOnlyList<Rect> bars = WaveformView.BuildBars(
-            Enumerable.Repeat((byte)3, WaveformHistory.BarCount).ToArray(), 100, 24);
+            Enumerable.Repeat((byte)3, WaveformHistory.BarCount).ToArray(), 100, 34);
 
         Assert.All(bars, bar =>
         {
-            Assert.InRange(bar.Height, 19.0, 23.01);
+            Assert.InRange(bar.Height, 27.5, 33.01);
             Assert.True(bar.Top >= 0.4);
-            Assert.True(bar.Bottom <= 23.6);
+            Assert.True(bar.Bottom <= 33.6);
         });
     }
 
@@ -113,14 +113,14 @@ public sealed class WaveformViewTests
     {
         byte[] levels = [0, 1, 2, 3, 3, 2, 1, 0, 3, 1, 2, 0, 3, 2, 1, 0,
             2, 3, 1, 0, 1, 2, 3, 2, 1, 0, 3, 2, 1, 0, 2, 3];
-        IReadOnlyList<Rect> bars = WaveformView.BuildBars(levels, 100, 20);
+        IReadOnlyList<Rect> bars = WaveformView.BuildBars(levels, 100, 34);
 
         Assert.All(bars, bar =>
         {
             Assert.True(bar.Left >= 0);
             Assert.True(bar.Right <= 100);
             Assert.True(bar.Top >= 0);
-            Assert.True(bar.Bottom <= 20);
+            Assert.True(bar.Bottom <= 34);
         });
     }
 }

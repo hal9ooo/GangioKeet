@@ -12,7 +12,7 @@ namespace GangioKeet.Client.Ui;
 /// </summary>
 public sealed class WaveformView : FrameworkElement
 {
-    private const double RestThickness = 2.2;
+    private const double RestThickness = 1.8;
 
     private static readonly Brush WaveBrush = CreateWaveBrush();
     private static readonly Brush RestLineBrush = CreateRestLineBrush();
@@ -51,14 +51,12 @@ public sealed class WaveformView : FrameworkElement
         // la riporta in primo piano senza cancellare nulla.
         Rect line = BuildIdleLine(width, height);
         drawingContext.PushOpacity(0.35 + 0.65 * _idle);
-        drawingContext.DrawRoundedRectangle(
-            RestLineBrush, null, line, line.Height / 2, line.Height / 2);
+        drawingContext.DrawRectangle(RestLineBrush, null, line);
         drawingContext.Pop();
 
         foreach (Rect bar in BuildBars(_levels, width, height))
         {
-            double radius = bar.Width / 2;
-            drawingContext.DrawRoundedRectangle(WaveBrush, null, bar, radius, radius);
+            drawingContext.DrawRectangle(WaveBrush, null, bar);
         }
 
         if (_idle > 0)
@@ -89,7 +87,7 @@ public sealed class WaveformView : FrameworkElement
         double maxHeight = Math.Max(6, height - 1);
         double levelStep = (maxHeight - RestThickness) / 3;
         double slot = width / count;
-        double barWidth = Math.Clamp(slot - 1, 1.5, 3.0);
+        double barWidth = Math.Clamp(slot * 0.42, 1.5, 2.2);
         double gap = Math.Max(0, slot - barWidth);
         double center = height / 2;
         Rect[] bars = new Rect[count];
@@ -138,18 +136,14 @@ public sealed class WaveformView : FrameworkElement
 
     private static Brush CreateWaveBrush()
     {
-        LinearGradientBrush brush = new(
-            Color.FromRgb(0x9B, 0xF5, 0xA8),
-            Color.FromRgb(0x2E, 0xA0, 0x43),
-            new Point(0, 0),
-            new Point(0, 1));
+        SolidColorBrush brush = new(Color.FromRgb(0xE2, 0xDD, 0xD0));
         brush.Freeze();
         return brush;
     }
 
     private static Brush CreateRestLineBrush()
     {
-        SolidColorBrush brush = new(Color.FromRgb(0x4C, 0xAF, 0x50));
+        SolidColorBrush brush = new(Color.FromRgb(0xCF, 0xC9, 0xBA));
         brush.Freeze();
         return brush;
     }

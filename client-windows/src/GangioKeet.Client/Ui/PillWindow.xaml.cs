@@ -121,10 +121,10 @@ public sealed partial class PillWindow : Window, IPillView
     {
         if (PresentationSource.FromVisual(this) is not HwndSource hwnd) return;
         if (!GetWindowRect(hwnd.Handle, out RECT rect)) return;
-        double scale = VisualTreeHelper.GetDpi(this).DpiScaleX;
-        int radius = Math.Max(4, (int)Math.Round(28 * scale));
-        nint region = CreateRoundRectRgn(0, 0,
-            rect.Right - rect.Left + 1, rect.Bottom - rect.Top + 1, radius, radius);
+        int width = rect.Right - rect.Left + 1;
+        int height = rect.Bottom - rect.Top + 1;
+        int radius = Math.Max(4, height);
+        nint region = CreateRoundRectRgn(0, 0, width, height, radius, radius);
         if (region == 0) return;
         if (SetWindowRgn(hwnd.Handle, region, redraw: true) == 0)
             DeleteObject(region);
