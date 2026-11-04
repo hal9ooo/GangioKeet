@@ -17,9 +17,9 @@
 </p>
 
 <p align="center">
-  <img src="assets/ribbon-demo.gif" width="960" alt="Concept animation: a dictated sentence flows along a yellow ribbon while the pill and the parakeet react to the voice">
+  <img src="assets/concept-animation.gif" width="960" alt="Concept animation: a dictated sentence flows along a yellow ribbon while the pill's 23 bars react to the voice, next to a generated parakeet that moves on its own">
 </p>
-<p align="center"><sub>Concept: the ribbon text and the waveform are driven by the same recording.</sub></p>
+<p align="center"><sub>Concept: the ribbon text and the waveform are driven by the same recording; the parakeet is a generated clip, cut out frame by frame.</sub></p>
 
 > **TL;DR** — Hold **Caps Lock**, talk, release. The text appears in the active
 > window. Media playback pauses while you dictate and resumes when you release.
