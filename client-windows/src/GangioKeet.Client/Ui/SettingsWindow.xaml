@@ -2,10 +2,10 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="GangioKeet — Impostazioni"
-        Width="860"
-        Height="760"
-        MinWidth="720"
-        MinHeight="560"
+        Width="920"
+        Height="660"
+        MinWidth="800"
+        MinHeight="520"
         Background="#161616"
         Foreground="#F2F2F2"
         FontFamily="Segoe UI"
@@ -25,8 +25,8 @@
             <Setter Property="BorderBrush" Value="{StaticResource CardBorder}" />
             <Setter Property="BorderThickness" Value="1" />
             <Setter Property="CornerRadius" Value="10" />
-            <Setter Property="Padding" Value="18,16" />
-            <Setter Property="Margin" Value="0,0,0,12" />
+            <Setter Property="Padding" Value="16,14" />
+            <Setter Property="Margin" Value="0,0,0,10" />
         </Style>
 
         <Style x:Key="SectionTitle" TargetType="TextBlock">
@@ -275,207 +275,219 @@
         </Style>
     </Window.Resources>
 
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
+ <Grid>
+  <Grid.RowDefinitions>
+   <RowDefinition Height="Auto" />
+   <RowDefinition Height="*" />
+   <RowDefinition Height="Auto" />
+  </Grid.RowDefinitions>
 
-        <!-- Intestazione -->
-        <StackPanel Grid.Row="0" Margin="24,22,24,10">
-            <TextBlock Text="Impostazioni" FontSize="24" FontWeight="SemiBold" />
-            <TextBlock Text="Tutto gira su questo PC: nessun server, nessuna rete."
-                       Style="{StaticResource SectionHint}" Margin="0,4,0,0" />
+  <!-- Intestazione -->
+  <StackPanel Grid.Row="0" Margin="24,20,24,8">
+   <TextBlock Text="Impostazioni" FontSize="24" FontWeight="SemiBold" />
+   <TextBlock Text="Tutto gira su questo PC: nessun server, nessuna rete."
+        Style="{StaticResource SectionHint}" Margin="0,4,0,0" />
+  </StackPanel>
+
+  <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+         HorizontalScrollBarVisibility="Disabled" Padding="24,0,24,0">
+   <Grid>
+    <Grid.ColumnDefinitions>
+     <ColumnDefinition Width="*" />
+     <ColumnDefinition Width="*" />
+    </Grid.ColumnDefinitions>
+
+    <!-- ============ colonna sinistra ============ -->
+    <StackPanel Grid.Column="0" Margin="0,0,6,0">
+
+     <!-- Motore locale -->
+     <Border x:Name="LocalPanel" Style="{StaticResource Card}">
+      <StackPanel>
+       <TextBlock Text="Motore locale" Style="{StaticResource SectionTitle}" />
+       <TextBlock Text="Il riconoscimento vocale in esecuzione su questa macchina."
+            Style="{StaticResource SectionHint}" />
+
+       <Grid Margin="0,12,0,0">
+        <Grid.ColumnDefinitions>
+         <ColumnDefinition Width="*" />
+         <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+        <StackPanel Grid.Column="0" Margin="0,0,10,0">
+         <TextBlock Text="Stato" Style="{StaticResource FieldLabel}" />
+         <StackPanel Orientation="Horizontal">
+          <Ellipse x:Name="StateDot" Width="8" Height="8"
+              Fill="{StaticResource Muted}"
+              VerticalAlignment="Center" Margin="0,0,7,0" />
+          <TextBlock x:Name="LocalStateText" Text="—" />
+         </StackPanel>
         </StackPanel>
+        <StackPanel Grid.Column="1">
+         <TextBlock Text="Accelerazione" Style="{StaticResource FieldLabel}" />
+         <TextBlock x:Name="LocalBackendText" Text="—" />
+        </StackPanel>
+       </Grid>
 
-        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Disabled" Padding="24,0,24,0">
-            <StackPanel>
+       <TextBlock Text="Combinazione attiva" Style="{StaticResource FieldLabel}" Margin="0,12,0,4" />
+       <TextBlock x:Name="LocalPairText" Text="—" TextWrapping="Wrap" Foreground="#E8E8E8" />
+      </StackPanel>
+     </Border>
 
-                <!-- Motore locale -->
-                <Border x:Name="LocalPanel" Style="{StaticResource Card}">
-                    <StackPanel>
-                        <TextBlock Text="Motore locale" Style="{StaticResource SectionTitle}" />
-                        <TextBlock Text="Lo stato del riconoscimento vocale in esecuzione su questa macchina."
-                                   Style="{StaticResource SectionHint}" />
+     <!-- Dettatura -->
+     <Border Style="{StaticResource Card}">
+      <StackPanel>
+       <TextBlock Text="Dettatura" Style="{StaticResource SectionTitle}" />
+       <TextBlock Text="I campioni restano su questo PC e servono solo a te."
+            Style="{StaticResource SectionHint}" />
 
-                        <Grid Margin="0,14,0,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0" Margin="0,0,12,0">
-                                <TextBlock Text="Stato" Style="{StaticResource FieldLabel}" />
-                                <StackPanel Orientation="Horizontal">
-                                    <Ellipse x:Name="StateDot" Width="8" Height="8"
-                                             Fill="{StaticResource Muted}"
-                                             VerticalAlignment="Center" Margin="0,0,7,0" />
-                                    <TextBlock x:Name="LocalStateText" Text="—" />
-                                </StackPanel>
-                            </StackPanel>
-                            <StackPanel Grid.Column="1">
-                                <TextBlock Text="Accelerazione" Style="{StaticResource FieldLabel}" />
-                                <TextBlock x:Name="LocalBackendText" Text="—" />
-                            </StackPanel>
-                        </Grid>
+       <CheckBox x:Name="RecordingCheck"
+            Content="Salva le dettature completate (audio e testo)"
+            Margin="0,12,0,0"
+            Click="RecordingCheck_Click" />
+       <TextBlock x:Name="RecordingSummaryText"
+            Style="{StaticResource Hint}"
+            Margin="0,8,0,8" />
+       <Grid>
+        <ListBox x:Name="RecordingList" Height="96" SelectionMode="Extended" />
+        <TextBlock x:Name="RecordingEmptyText"
+             Text="Nessuna dettatura salvata finora."
+             Foreground="{StaticResource Muted}"
+             HorizontalAlignment="Center"
+             VerticalAlignment="Center"
+             IsHitTestVisible="False" />
+       </Grid>
+       <Button Content="Elimina i campioni selezionati"
+           HorizontalAlignment="Left"
+           Margin="0,10,0,0"
+           Click="DeleteRecordings_Click" />
+      </StackPanel>
+     </Border>
+    </StackPanel>
 
-                        <TextBlock Text="Combinazione attiva" Style="{StaticResource FieldLabel}" Margin="0,14,0,4" />
-                        <TextBlock x:Name="LocalPairText" Text="—" TextWrapping="Wrap" Foreground="#E8E8E8" />
-                    </StackPanel>
-                </Border>
+    <!-- ============ colonna destra ============ -->
+    <StackPanel Grid.Column="1" Margin="6,0,0,0">
 
-                <!-- Modelli -->
-                <Border Style="{StaticResource Card}">
-                    <StackPanel>
-                        <TextBlock Text="Modelli" Style="{StaticResource SectionTitle}" />
-                        <TextBlock Text="Scegli il motore vocale e, se vuoi, la rifinitura del testo."
-                                   Style="{StaticResource SectionHint}" />
+     <!-- Modelli -->
+     <Border Style="{StaticResource Card}">
+      <StackPanel>
+       <TextBlock Text="Modelli" Style="{StaticResource SectionTitle}" />
+       <TextBlock Text="Scegli il motore vocale e, se vuoi, la rifinitura del testo."
+            Style="{StaticResource SectionHint}" />
 
-                        <StackPanel x:Name="ModelSelectionPanel" Margin="0,16,0,0">
-                            <TextBlock Text="Motore vocale (ASR)" Style="{StaticResource FieldLabel}" />
-                            <ComboBox x:Name="AsrCombo" SelectionChanged="AsrCombo_SelectionChanged">
-                                <ComboBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="{Binding Label}" />
-                                            <TextBlock Text="{Binding AvailabilityText}"
-                                                       Foreground="{StaticResource Muted}"
-                                                       Margin="8,0,0,0" />
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ComboBox.ItemTemplate>
-                            </ComboBox>
+       <StackPanel x:Name="ModelSelectionPanel" Margin="0,12,0,0">
+        <TextBlock Text="Motore vocale (ASR)" Style="{StaticResource FieldLabel}" />
+        <ComboBox x:Name="AsrCombo" SelectionChanged="AsrCombo_SelectionChanged">
+         <ComboBox.ItemTemplate>
+          <DataTemplate>
+           <StackPanel Orientation="Horizontal">
+            <TextBlock Text="{Binding Label}" />
+            <TextBlock Text="{Binding AvailabilityText}"
+                 Foreground="{StaticResource Muted}"
+                 Margin="8,0,0,0" />
+           </StackPanel>
+          </DataTemplate>
+         </ComboBox.ItemTemplate>
+        </ComboBox>
 
-                            <CheckBox x:Name="RefinementCheck"
-                                      Content="Rifinisci il testo dettato"
-                                      Margin="0,16,0,0"
-                                      Click="RefinementCheck_Click" />
-                            <TextBlock Text="Corregge punteggiatura, maiuscole e parole storte prima di incollare."
-                                       Style="{StaticResource Hint}" />
+        <CheckBox x:Name="RefinementCheck"
+             Content="Rifinisci il testo dettato"
+             Margin="0,12,0,0"
+             Click="RefinementCheck_Click" />
+        <TextBlock Text="Corregge punteggiatura, maiuscole e parole storte prima di incollare."
+             Style="{StaticResource Hint}" />
 
-                            <TextBlock Text="Modello di rifinitura" Style="{StaticResource FieldLabel}" Margin="0,12,0,4" />
-                            <ComboBox x:Name="CleanerCombo" SelectionChanged="CleanerCombo_SelectionChanged">
-                                <ComboBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="{Binding Label}" />
-                                            <TextBlock Text="{Binding AvailabilityText}"
-                                                       Foreground="{StaticResource Muted}"
-                                                       Margin="8,0,0,0" />
-                                        </StackPanel>
-                                    </DataTemplate>
-                                </ComboBox.ItemTemplate>
-                            </ComboBox>
-                            <TextBlock Text="Senza modello: solo regole, nessun download. Con un modello: più naturale, richiede il download."
-                                       Style="{StaticResource Hint}" />
+        <TextBlock Text="Modello di rifinitura" Style="{StaticResource FieldLabel}" Margin="0,10,0,4" />
+        <ComboBox x:Name="CleanerCombo" SelectionChanged="CleanerCombo_SelectionChanged">
+         <ComboBox.ItemTemplate>
+          <DataTemplate>
+           <StackPanel Orientation="Horizontal">
+            <TextBlock Text="{Binding Label}" />
+            <TextBlock Text="{Binding AvailabilityText}"
+                 Foreground="{StaticResource Muted}"
+                 Margin="8,0,0,0" />
+           </StackPanel>
+          </DataTemplate>
+         </ComboBox.ItemTemplate>
+        </ComboBox>
+        <TextBlock Text="Senza modello: solo regole, nessun download. Con un modello: più naturale, richiede il download."
+             Style="{StaticResource Hint}" />
 
-                            <ProgressBar x:Name="ModelProgress"
-                                         Height="4"
-                                         Margin="0,14,0,0"
-                                         Minimum="0"
-                                         Maximum="1"
-                                         Visibility="Collapsed"
-                                         IsIndeterminate="False"
-                                         Foreground="{StaticResource Accent}"
-                                         Background="#2A2A2A"
-                                         BorderThickness="0" />
+        <ProgressBar x:Name="ModelProgress"
+              Height="4"
+              Margin="0,12,0,0"
+              Minimum="0"
+              Maximum="1"
+              Visibility="Collapsed"
+              IsIndeterminate="False"
+              Foreground="{StaticResource Accent}"
+              Background="#2A2A2A"
+              BorderThickness="0" />
 
-                            <Button x:Name="RetryModelsButton"
-                                    Content="Riprova download"
-                                    HorizontalAlignment="Left"
-                                    Margin="0,14,0,0"
-                                    Click="RetryModelsButton_Click" />
-                        </StackPanel>
+        <Button x:Name="RetryModelsButton"
+            Content="Riprova download"
+            HorizontalAlignment="Left"
+            Margin="0,12,0,0"
+            Click="RetryModelsButton_Click" />
+       </StackPanel>
 
-                        <Separator Margin="0,18,0,16" Background="#2E2E2E" />
+       <Separator Margin="0,14,0,12" Background="#2E2E2E" />
 
-                        <TextBlock Text="Cartella dei modelli" Style="{StaticResource FieldLabel}" />
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBox x:Name="ModelsRootBox" Grid.Column="0" />
-                            <Button x:Name="BrowseModelsRootButton" Grid.Column="1" Content="Sfoglia…"
-                                    Margin="8,0,0,0" Click="BrowseModelsRootButton_Click" />
-                            <Button x:Name="ApplyModelsRootButton" Grid.Column="2" Content="Applica"
-                                    Style="{StaticResource PrimaryButton}" Margin="8,0,0,0"
-                                    Click="ApplyModelsRootButton_Click" />
-                        </Grid>
-                        <TextBlock x:Name="ModelsRootHint"
-                                   Text="Dove stanno i pesi. Può stare su un altro disco: così non serve nessun collegamento dentro la cartella del programma."
-                                   Style="{StaticResource Hint}" />
-                        <Button x:Name="RestartButton"
-                                Content="Riavvia GangioKeet per applicare"
-                                HorizontalAlignment="Left"
-                                Margin="0,10,0,0"
-                                Visibility="Collapsed"
-                                Click="RestartButton_Click" />
+       <TextBlock Text="Cartella dei modelli" Style="{StaticResource FieldLabel}" />
+       <Grid>
+        <Grid.ColumnDefinitions>
+         <ColumnDefinition Width="*" />
+         <ColumnDefinition Width="Auto" />
+         <ColumnDefinition Width="Auto" />
+        </Grid.ColumnDefinitions>
+        <TextBox x:Name="ModelsRootBox" Grid.Column="0" />
+        <Button x:Name="BrowseModelsRootButton" Grid.Column="1" Content="Sfoglia…"
+            Margin="8,0,0,0" Click="BrowseModelsRootButton_Click" />
+        <Button x:Name="ApplyModelsRootButton" Grid.Column="2" Content="Applica"
+            Style="{StaticResource PrimaryButton}" Margin="8,0,0,0"
+            Click="ApplyModelsRootButton_Click" />
+       </Grid>
+       <TextBlock x:Name="ModelsRootHint"
+            Text="Dove stanno i pesi. Può stare su un altro disco: così non serve nessun collegamento dentro la cartella del programma."
+            Style="{StaticResource Hint}" />
+       <Button x:Name="RestartButton"
+           Content="Riavvia GangioKeet per applicare"
+           HorizontalAlignment="Left"
+           Margin="0,10,0,0"
+           Visibility="Collapsed"
+           Click="RestartButton_Click" />
 
-                        <TextBlock x:Name="LocalErrorText"
-                                   Foreground="{StaticResource Danger}"
-                                   Margin="0,14,0,0"
-                                   TextWrapping="Wrap"
-                                   Visibility="Collapsed" />
-                    </StackPanel>
-                </Border>
+       <TextBlock x:Name="LocalErrorText"
+            Foreground="{StaticResource Danger}"
+            Margin="0,12,0,0"
+            TextWrapping="Wrap"
+            Visibility="Collapsed" />
+      </StackPanel>
+     </Border>
 
-                <!-- Dettatura -->
-                <Border Style="{StaticResource Card}">
-                    <StackPanel>
-                        <TextBlock Text="Dettatura" Style="{StaticResource SectionTitle}" />
-                        <TextBlock Text="I campioni restano su questo PC e servono solo a te."
-                                   Style="{StaticResource SectionHint}" />
+     <!-- Diagnostica -->
+     <Border Style="{StaticResource Card}">
+      <StackPanel>
+       <TextBlock Text="Diagnostica" Style="{StaticResource SectionTitle}" />
+       <TextBlock Text="Sola lettura: tempi e contatori dell'ultima sessione."
+            Style="{StaticResource SectionHint}" />
+       <TextBlock x:Name="TelemetryText"
+            Text="—"
+            TextWrapping="Wrap"
+            Foreground="#D8D8D8"
+            Margin="0,10,0,0" />
+      </StackPanel>
+     </Border>
+    </StackPanel>
+   </Grid>
+  </ScrollViewer>
 
-                        <CheckBox x:Name="RecordingCheck"
-                                  Content="Salva le dettature completate (audio e testo)"
-                                  Margin="0,16,0,0"
-                                  Click="RecordingCheck_Click" />
-                        <TextBlock x:Name="RecordingSummaryText"
-                                   Style="{StaticResource Hint}"
-                                   Margin="0,8,0,8" />
-                        <Grid>
-          <ListBox x:Name="RecordingList" Height="110" SelectionMode="Extended" />
-          <TextBlock x:Name="RecordingEmptyText"
-                     Text="Nessuna dettatura salvata finora."
-                     Foreground="{StaticResource Muted}"
-                     HorizontalAlignment="Center"
-                     VerticalAlignment="Center"
-                     IsHitTestVisible="False" />
-        </Grid>
-                        <Button Content="Elimina i campioni selezionati"
-                                HorizontalAlignment="Left"
-                                Margin="0,10,0,0"
-                                Click="DeleteRecordings_Click" />
-                    </StackPanel>
-                </Border>
-
-                <!-- Diagnostica -->
-                <Border Style="{StaticResource Card}">
-                    <StackPanel>
-                        <TextBlock Text="Diagnostica" Style="{StaticResource SectionTitle}" />
-                        <TextBlock Text="Sola lettura: tempi e contatori dell'ultima sessione."
-                                   Style="{StaticResource SectionHint}" />
-                        <TextBlock x:Name="TelemetryText"
-                                   Text="—"
-                                   TextWrapping="Wrap"
-                                   Foreground="#D8D8D8"
-                                   Margin="0,12,0,0" />
-                    </StackPanel>
-                </Border>
-            </StackPanel>
-        </ScrollViewer>
-
-        <!-- Barra di stato -->
-        <Border Grid.Row="2" Background="#1B1B1B" BorderBrush="#2A2A2A" BorderThickness="0,1,0,0"
-                Padding="24,10">
-            <StackPanel Orientation="Horizontal">
-                <Ellipse x:Name="StatusDot" Width="7" Height="7" Fill="{StaticResource Ok}"
-                         VerticalAlignment="Center" Margin="0,0,8,0" />
-                <TextBlock x:Name="StatusText" Text="Pronto." Foreground="#C8C8C8" TextWrapping="Wrap" />
-            </StackPanel>
-        </Border>
-    </Grid>
+  <!-- Barra di stato -->
+  <Border Grid.Row="2" Background="#1B1B1B" BorderBrush="#2A2A2A" BorderThickness="0,1,0,0"
+      Padding="24,10">
+   <StackPanel Orientation="Horizontal">
+    <Ellipse x:Name="StatusDot" Width="7" Height="7" Fill="{StaticResource Ok}"
+        VerticalAlignment="Center" Margin="0,0,8,0" />
+    <TextBlock x:Name="StatusText" Text="Pronto." Foreground="#C8C8C8" TextWrapping="Wrap" />
+   </StackPanel>
+  </Border>
+ </Grid>
 </Window>
