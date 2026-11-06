@@ -186,7 +186,7 @@ public partial class App : Application, IModelSelectionHost
             if (!ConfigWriter.SetModelSelectionPath(ConfigLoader.DefaultPath, selectionPath))
                 _logger?.Write("model_selection_config_write_failed", selectionPath);
             setup = LocalInferenceFactory.Create(config,
-                modelRoot: ModelSelectionPaths.InstallModelsRoot,
+                modelRoot: ResolveModelsRoot(config),
                 runtimeProvisioner: _runtimeProvisioner);
         }
         catch (Exception error)
@@ -334,9 +334,22 @@ public partial class App : Application, IModelSelectionHost
                 : Path.GetFullPath(rawSelection));
     }
 
+    // La cartella dei modelli puo' stare fuori dall'installazione (inference.models_root):
+    // cosi' i pesi non richiedono un collegamento dentro <install>/models.
+    private static string ResolveModelsRoot(ClientConfig config)
+    {
+    string? configured = config.Inference.ModelsRoot;
+    if (!string.IsNullOrWhiteSpace(configured))
+    {
+    string expanded = Environment.ExpandEnvironmentVariables(configured);
+    if (Directory.Exists(expanded)) return Path.GetFullPath(expanded);
+    }
+    return ModelSelectionPaths.InstallModelsRoot;
+    }
+    
     private LocalModelResolver CreateModelResolver(ClientConfig config, string selectionPath)
     {
-        string modelsRoot = ModelSelectionPaths.InstallModelsRoot;
+        string modelsRoot = ResolveModelsRoot(config);
         string install = AppContext.BaseDirectory;
         string native = Environment.GetEnvironmentVariable("GANGIOKEET_TRANSCRIBE_DIR")
             ?? Path.Combine(install, "native", "transcribe");
@@ -403,7 +416,7 @@ public partial class App : Application, IModelSelectionHost
             if (!ConfigWriter.SetModelSelectionPath(ConfigLoader.DefaultPath, selectionPath))
                 _logger?.Write("model_selection_config_write_failed", selectionPath);
             LocalInferenceSetup setup = LocalInferenceFactory.Create(_config,
-                modelRoot: ModelSelectionPaths.InstallModelsRoot,
+                modelRoot: ResolveModelsRoot(_config),
                 runtimeProvisioner: _runtimeProvisioner);
             AppRuntime runtime = new(setup.Pipeline, _recordingQueue);
             await StartLocalRuntimeAsync(runtime).ConfigureAwait(true);
