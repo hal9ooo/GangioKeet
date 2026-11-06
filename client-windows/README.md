@@ -172,7 +172,7 @@ dotnet test client-windows/GangioKeet.Client.sln
 Coverage includes the controller lifecycle, media pause/resume ordering,
 configuration compatibility, hotkeys, audio conversion, paste, recording, and
 hot model-combination switching. The inference tests additionally validate the prompt hash
-against `prompts/conservative-local-v3.txt`.
+against `prompts/conservative-local-v4.txt`.
 
 ## Packaging
 

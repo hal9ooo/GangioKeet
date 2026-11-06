@@ -10,9 +10,9 @@ public sealed class CleanerPromptTests
     {
         string shared = File.ReadAllText(
             Path.Combine(AppContext.BaseDirectory, "prompts",
-                "conservative-local-v3.txt"));
+                "conservative-local-v4.txt"));
         Assert.Equal(shared, CleanerPrompt.RenderedSystem);
-        Assert.Equal("e63fa4085c525b203bbd71897a25c03af0984b0a627ee229e6304081a349e907",
+        Assert.Equal("aa4d7bce41439521cdab0b36087e93d0c3529c8bfaddb16f13569b456af45842",
             CleanerPrompt.Sha256);
     }
 

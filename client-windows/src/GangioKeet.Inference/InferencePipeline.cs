@@ -119,6 +119,7 @@ public sealed class InferencePipeline : IInferencePipeline
                         warnings.Add("llm_failed");
                     }
                     finally { llmMs = _time.GetElapsedTime(start).TotalMilliseconds; }
+final = DictationCorrections.Apply(final, _policy, request.Profile);
                 }
                 else
                 {

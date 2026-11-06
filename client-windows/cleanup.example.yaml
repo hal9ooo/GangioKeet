@@ -35,3 +35,23 @@ phonetic_overrides:
   prossimo ve: Proxmox VE
   lama punto ci pi pi: llama.cpp
   superpowers: superpowers
+
+elision_corrections:
+  - from: con la gente
+    to: con l'agente
+  - from: nella gente
+    to: nell'agente
+  - from: della gente
+    to: dell'agente
+  - from: dalla gente
+    to: dall'agente
+  - from: sulla gente
+    to: sull'agente
+  - from: alla gente
+    to: all'agente
+  - from: per la gente
+    to: per l'agente
+  - from: la gente
+    to: l'agente
+    keep_when_preceded_by: [molta, moltissima, tanta, tantissima, poca, pochissima, altra, qualche, numerosa, "un sacco di", "un mucchio di"]
+    keep_when_followed_by: [comune, "del posto", "che passa", intera]

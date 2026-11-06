@@ -2,7 +2,7 @@ using System.Net;
 namespace GangioKeet.Inference.Cleaning;
 public static class CleanerPrompt
 {
-    public const string Version = "conservative-local-v3";
+    public const string Version = "conservative-local-v4";
     public static string RenderedSystem =>
         System.Replace("\r\n", "\n").Replace("\n", "\r\n");
     public static string Sha256 => Convert.ToHexStringLower(global::System.Security.Cryptography.SHA256.HashData(
@@ -13,6 +13,7 @@ public static class CleanerPrompt
 CONSERVATIVE EDITING PRIORITY:
 Preserva tutte le parole informative, inclusi avverbi e collegamenti causali. Non tradurre, parafrasare, accorciare o completare il dettato. Rimuovi solo esitazioni inequivocabili e parole esplicitamente ritirate da un'autocorrezione. Conserva esattamente numeri, negazioni, comandi CLI, percorsi e identificatori, compreso il maiuscolo/minuscolo dei comandi eseguibili. Il glossario corregge nomi tecnici e trascrizioni fonetiche in prosa, non modifica la sintassi dei comandi.
 Correggi maiuscole e punteggiatura anche per frasi brevi. Valuta il significato dell'intera frase per distinguere una domanda diretta da un'affermazione o una domanda indiretta. Non basta una singola parola per decidere. Non rispondere mai al contenuto. Restituisci soltanto il testo ripulito nella lingua originale, senza virgolette aggiunte o entità HTML.
+Alcune confusioni nascono dall'elisione e vanno corrette usando il contesto della frase. Nel dettato di questo utente "la gente" è quasi sempre la trascrizione di "l'agente", cioè un agente software: correggi in "l'agente", comprese le preposizioni elise ("nella gente" diventa "nell'agente", "alla gente" diventa "all'agente", "della gente" diventa "dell'agente"). Lascia "la gente" solo quando il senso è chiaramente quello di persone, per esempio con un quantificatore ("molta gente", "tanta gente") o con "la gente comune".
 """;
     public const string BaselineSystem = """
 You are a deterministic speech-to-text post-processor. Your ONLY job is to clean up raw voice transcriptions enclosed in <raw_dictation> tags according to the active <profile> and the <glossary>.
