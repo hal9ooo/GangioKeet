@@ -9,7 +9,27 @@ public static class ModelSelectionPaths
     public static string UserSelectionPath =>
         Path.Combine(Path.GetDirectoryName(ConfigLoader.DefaultPath)!, "selection.json");
 
-    public static string InstallModelsRoot => Path.Combine(AppContext.BaseDirectory, "models");
+    public static string InstallModelsRoot
+    {
+    get
+    {
+    string path = Path.Combine(AppContext.BaseDirectory, "models");
+    // Se models/ e' un collegamento, si usa il percorso reale: cosi' nessun processo
+    // deve attraversare il punto di montaggio, che Windows rifiuta a integrita' diverse.
+    try
+    {
+    FileSystemInfo? target = new DirectoryInfo(path).ResolveLinkTarget(returnFinalTarget: true);
+    if (target is not null) return target.FullName;
+    }
+    catch (IOException)
+    {
+    }
+    catch (UnauthorizedAccessException)
+    {
+    }
+    return path;
+    }
+    }
 
 // I metadati (catalogo, integrita, selezione) vivono fuori da models/: quella cartella
 // puo essere una junction verso un altro volume, e l'installer non puo scriverci dentro.

@@ -68,12 +68,21 @@ public static class LocalInferenceFactory
                 stt, cleaner, true);
         }
 
-        string catalogPath = File.Exists(Path.Combine(selectedRoot, "candidates.json"))
-            ? Path.Combine(selectedRoot, "candidates.json")
-            : Path.Combine(models, "candidates.json");
-        string integrityPath = File.Exists(Path.Combine(selectedRoot, "integrity.json"))
-            ? Path.Combine(selectedRoot, "integrity.json")
-            : Path.Combine(models, "integrity.json");
+        // I metadati stanno in catalog/, fuori da models/: quella cartella puo' essere un
+        // punto di montaggio e Windows ne blocca l'attraversamento a livelli di integrita' diversi.
+        string catalog = Path.Combine(install, "catalog");
+        string catalogCandidate = Path.Combine(catalog, "candidates.json");
+        string catalogIntegrity = Path.Combine(catalog, "integrity.json");
+        string catalogPath = File.Exists(catalogCandidate)
+        ? catalogCandidate
+        : File.Exists(Path.Combine(selectedRoot, "candidates.json"))
+        ? Path.Combine(selectedRoot, "candidates.json")
+        : Path.Combine(models, "candidates.json");
+        string integrityPath = File.Exists(catalogIntegrity)
+        ? catalogIntegrity
+        : File.Exists(Path.Combine(selectedRoot, "integrity.json"))
+        ? Path.Combine(selectedRoot, "integrity.json")
+        : Path.Combine(models, "integrity.json");
         LocalModelResolver resolver = new(models, catalogPath, integrityPath, lockPath,
             config.Inference.CleanupPolicyPath, transcribe, llama, backend, policy, runtimeProvisioner);
         ResolvedModelSelection resolved = resolver.Resolve(selection);
