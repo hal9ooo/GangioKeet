@@ -10,6 +10,7 @@ public sealed class ModelSelectionPathsTests : IDisposable
     private readonly string _root = Directory.CreateTempSubdirectory("GangioKeetSelectionPaths-").FullName;
     private string User => Path.Combine(_root, "user", "selection.json");
     private string Install => Path.Combine(_root, "install");
+    private string Catalog => Path.Combine(_root, "catalog");
     private string Legacy => Path.Combine(_root, "install", "selected.json");
 
     private ClientConfig Config(string path) => new()
@@ -26,7 +27,7 @@ public sealed class ModelSelectionPathsTests : IDisposable
             """);
         ClientConfig config = Config(Legacy);
 
-        string path = ModelSelectionPaths.Prepare(config, User, Install);
+        string path = ModelSelectionPaths.Prepare(config, User, Install, Catalog);
 
         Assert.Equal(User, path);
         Assert.Equal(User, config.Inference.ModelSelectionPath);
@@ -47,7 +48,7 @@ public sealed class ModelSelectionPathsTests : IDisposable
         ModelSelectionFile.Save(User, new(2, "qwen3_asr_1_7b", "gemma4_e2b", true));
         ClientConfig config = Config(Legacy);
 
-        ModelSelectionPaths.Prepare(config, User, Install);
+        ModelSelectionPaths.Prepare(config, User, Install, Catalog);
 
         ModelSelection current = ModelSelectionFile.Load(User);
         Assert.Equal("qwen3_asr_1_7b", current.SttId);
@@ -61,7 +62,7 @@ public sealed class ModelSelectionPathsTests : IDisposable
         ModelSelectionFile.Save(Path.Combine(Install, "selection.json"), new(2, "parakeet_v3", null, false));
         ClientConfig config = Config(Path.Combine(Install, "missing.json"));
 
-        ModelSelectionPaths.Prepare(config, User, Install);
+        ModelSelectionPaths.Prepare(config, User, Install, Catalog);
 
         ModelSelection seeded = ModelSelectionFile.Load(User);
         Assert.Equal("parakeet_v3", seeded.SttId);
@@ -69,10 +70,25 @@ public sealed class ModelSelectionPathsTests : IDisposable
     }
 
     [Fact]
+    public void SeedsFromCatalogBeforeModels()
+    {
+        Directory.CreateDirectory(Install);
+        Directory.CreateDirectory(Catalog);
+        ModelSelectionFile.Save(Path.Combine(Install, "selection.json"), new(2, "qwen3_asr_1_7b", null, false));
+        ModelSelectionFile.Save(Path.Combine(Catalog, "selection.json"), new(2, "parakeet_v3", null, false));
+        ClientConfig config = Config(Path.Combine(Install, "missing.json"));
+
+        ModelSelectionPaths.Prepare(config, User, Install, Catalog);
+
+        ModelSelection seeded = ModelSelectionFile.Load(User);
+        Assert.Equal("parakeet_v3", seeded.SttId);
+    }
+
+    [Fact]
     public void MissingSeedThrows()
     {
         ClientConfig config = Config(Path.Combine(Install, "missing.json"));
-        Assert.Throws<FileNotFoundException>(() => ModelSelectionPaths.Prepare(config, User, Install));
+        Assert.Throws<FileNotFoundException>(() => ModelSelectionPaths.Prepare(config, User, Install, Catalog));
     }
 
     public void Dispose() => Directory.Delete(_root, recursive: true);

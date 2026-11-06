@@ -128,8 +128,9 @@ paste; **Riprova** and **Scarta recupero** are enabled only when there is a
 failed dictation to recover. **Avvia con Windows** writes or removes a per-user
 value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\GangioKeet`; it
 is off by default and the checkbox reflects the current registry state. The
-settings window selects the ASR and the optional refinement and toggles
-benchmark recording; all changes apply immediately.
+settings window selects the ASR and the optional refinement, toggles benchmark
+recording, and sets the models folder. Model and refinement changes apply
+immediately; a new models folder takes effect after a restart.
 
 ## Configuration
 
@@ -137,7 +138,7 @@ The default path is `%APPDATA%\GangioKeet\client_config.yaml`.
 
 | Section | Key fields |
 |---|---|
-| `inference` | `model_selection_path`, `cleanup_policy_path`, `backend` (`vulkan` or `cpu`) |
+| `inference` | `model_selection_path`, `models_root`, `cleanup_policy_path`, `backend` (`vulkan` or `cpu`) |
 | `recording` | `enabled`, `directory` |
 | `hotkey` | `mode` (`push_to_talk`/`toggle`), `key`, `abort_key`, double-tap timings |
 | `audio` | `input_device`, sample rate 16000, mono, 100 ms chunks |
@@ -199,7 +200,7 @@ runs on the GPU instead of the dispatcher.
 ## Model combinations
 
 The active choice lives in `%APPDATA%\GangioKeet\selection.json`; the
-installer ships a seed in `models/selection.json` and the app copies it on
+installer ships a seed in `catalog\selection.json` and the app copies it on
 first run:
 
 ```json
@@ -247,9 +248,10 @@ percentage. While the model is warming up, pressing the dictation hotkey starts
 capturing immediately and buffers the audio until the model is ready, so Caps
 Lock never waits for the 21 GB model to load.
 
-`models/candidates.json` is the single source for artifact paths and hashes,
-pinned by `models/integrity.json`. Legacy
-`selected.json`/`selected-parakeet-qwen.json` are migrated on first run.
+`catalog\candidates.json` is the single source for artifact paths and hashes,
+pinned by `catalog\integrity.json`. The `catalog\` folder lives next to the
+executable, outside `models\`, which may be a junction to another volume.
+Legacy `selected.json`/`selected-parakeet-qwen.json` are migrated on first run.
 On the real-voice tests, **Parakeet + Nessuno** is the best fidelity/latency
 choice; **Parakeet + Gemma** preserves questions and normalizes technical terms.
 If a combination cannot load, the client stays in the tray in a NotReady state;

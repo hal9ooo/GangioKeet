@@ -36,10 +36,11 @@ public static class ModelSelectionPaths
 public static string InstallCatalogRoot => Path.Combine(AppContext.BaseDirectory, "catalog");
 
     public static string Prepare(ClientConfig config, string? userSelectionPath = null,
-        string? installModelsRoot = null)
+        string? installModelsRoot = null, string? installCatalogRoot = null)
     {
         string user = userSelectionPath ?? UserSelectionPath;
         string install = installModelsRoot ?? InstallModelsRoot;
+        string catalog = installCatalogRoot ?? InstallCatalogRoot;
         string selected = config.Inference.ModelSelectionPath;
 
         if (File.Exists(user))
@@ -57,7 +58,11 @@ public static string InstallCatalogRoot => Path.Combine(AppContext.BaseDirectory
         }
         else
         {
-            string seed = Path.Combine(install, "selection.json");
+            // Il seme vive in catalog\, fuori dalla junction models\. Le installazioni
+            // precedenti lo avevano in models\: si accetta ancora come ripiego.
+            string seed = Path.Combine(catalog, "selection.json");
+            if (!File.Exists(seed))
+                seed = Path.Combine(install, "selection.json");
             if (!File.Exists(seed))
                 throw new FileNotFoundException("Model selection seed not found.", seed);
             File.Copy(seed, user, overwrite: false);
