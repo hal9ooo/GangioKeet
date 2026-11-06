@@ -56,3 +56,4 @@ client-windows/models/*
 .tokensave/
 docs/superpowers/
 tests/fixtures/*.pcm
+scripts/bench_nemotron_cli.py
