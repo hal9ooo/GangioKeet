@@ -8,6 +8,9 @@
   <strong>Local push-to-talk dictation for Windows.</strong><br/>
   One process, selectable local models, no cloud and no subscription.
 </p>
+<p align="center">
+  <a href="https://github.com/hal9ooo/GangioKeet/releases/latest"><img alt="Download the Windows installer" src="https://img.shields.io/badge/download-Windows%2011-FFD60A?style=for-the-badge"></a>
+</p>
 
 <p align="center">
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-2ea44f.svg"></a>

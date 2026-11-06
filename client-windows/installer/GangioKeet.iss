@@ -1,5 +1,5 @@
 #define MyAppName "GangioKeet"
-#define MyAppVersion "0.1.0-local"
+#define MyAppVersion "0.1.5"
 #define MyAppPublisher "GangioKeet"
 #define MyAppExeName "GangioKeet.Client.exe"
 #define MyAppId "{{7C2F5D8E-3A1B-4C6D-9E0F-1A2B3C4D5E6F}"
