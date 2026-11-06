@@ -13,7 +13,14 @@ public static class ConfigWriter
     public static bool SetModelSelectionPath(string path, string selectionPath) =>
         SetSectionScalar(path, "inference", "model_selection_path", $"\"{selectionPath.Replace('\\', '/')}\"");
 
-    public static bool SetRecordingEnabled(string path, bool enabled) =>
+    public static bool SetModelsRoot(string path, string? modelsRoot)
+{
+if (modelsRoot is null) return SetSectionScalar(path, "inference", "models_root", "null");
+string rendered = "\"" + modelsRoot.Replace('\\', '/') + "\"";
+return SetSectionScalar(path, "inference", "models_root", rendered);
+}
+
+public static bool SetRecordingEnabled(string path, bool enabled) =>
         SetSectionScalar(path, "recording", "enabled", enabled ? "true" : "false");
 
     private static bool SetSectionScalar(string path, string section, string key, string value)

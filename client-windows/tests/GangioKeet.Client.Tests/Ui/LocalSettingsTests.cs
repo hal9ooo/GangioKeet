@@ -28,7 +28,7 @@ public sealed class LocalSettingsTests
 
             Assert.True(window.UsesLocalServices);
             Assert.True(window.IsLocalPanelVisible);
-            Assert.Equal("Ready", window.LocalState);
+            Assert.Equal("Pronto", window.LocalState);
             Assert.Contains("qwen3_asr_1_7b", window.LocalPair);
             window.Close();
         });

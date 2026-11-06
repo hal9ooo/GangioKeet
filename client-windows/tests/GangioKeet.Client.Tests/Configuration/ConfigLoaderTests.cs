@@ -205,4 +205,16 @@ public sealed class ConfigLoaderTests
         Assert.Equal("vulkan", config.Inference.Backend);
         Assert.EndsWith(Path.Combine("models", "selected.json"), config.Inference.ModelSelectionPath);
     }
+
+    [Fact]
+    public void ModelsRoot_IsReadFromConfig()
+    {
+        string path = Path.Combine(Path.GetTempPath(), $"gangio-{Guid.NewGuid():N}.yaml");
+        File.WriteAllText(path,
+            "inference:\n models_root: \"D:/AI/GangioKeet/installed\"\n");
+
+        ClientConfig config = ConfigLoader.Load(path);
+
+        Assert.Equal("D:/AI/GangioKeet/installed", config.Inference.ModelsRoot);
+    }
 }

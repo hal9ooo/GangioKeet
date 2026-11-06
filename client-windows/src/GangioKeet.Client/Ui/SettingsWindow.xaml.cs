@@ -1,5 +1,8 @@
+using System.Diagnostics;
 using System.IO;
+using Microsoft.Win32;
 using System.Windows;
+using System.Windows.Media;
 using System.Windows.Threading;
 using GangioKeet.Client.Configuration;
 using GangioKeet.Client.Platform;
@@ -93,7 +96,9 @@ public sealed partial class SettingsWindow : Window
                 : ConfigLoader.CreateDefaults();
             LoadFromConfig(config);
             RecordingCheck.IsChecked = config.Recording.Enabled;
-            StatusText.Text = "";
+ModelsRootBox.Text = config.Inference.ModelsRoot ?? "";
+            StatusText.Text = "Pronto.";
+        StatusDot.Fill = (Brush)FindResource("Ok");
             _ = RefreshRecordingsAsync();
         }
         catch (ConfigException ex)
@@ -121,10 +126,19 @@ public sealed partial class SettingsWindow : Window
     private void UpdateLocal()
     {
         LocalSettingsInfo info = _localInfo();
-        LocalBackendText.Text = info.Backend;
-        LocalStateText.Text = info.State;
-        LocalPairText.Text = info.Pair;
+        LocalBackendText.Text = FriendlyBackend(info.Backend);
+        LocalStateText.Text = FriendlyState(info.State);
+        LocalPairText.Text = FriendlyPair(info.Pair);
         LocalErrorText.Text = info.Error ?? "";
+LocalErrorText.Visibility = string.IsNullOrWhiteSpace(info.Error)
+? Visibility.Collapsed
+: Visibility.Visible;
+StateDot.Fill = info.State switch
+{
+"Ready" => (Brush)FindResource("Ok"),
+"Error" or "Failed" => (Brush)FindResource("Danger"),
+_ => (Brush)FindResource("Muted"),
+};
         if (_modelSelection is null)
         {
             ModelSelectionPanel.Visibility = Visibility.Collapsed;
@@ -352,8 +366,11 @@ public sealed partial class SettingsWindow : Window
         {
             (int count, long bytes) = await _recordingStorage.GetSummaryAsync();
             IReadOnlyList<string> ids = await _recordingStorage.ListIdsAsync();
-            RecordingSummaryText.Text = $"{count} campioni · {bytes / (1024.0 * 1024.0):0.0} MB";
+            RecordingSummaryText.Text = count == 0
+                ? "Non hai ancora salvato nessuna dettatura."
+                : $"{count} dettature salvate, {bytes / (1024.0 * 1024.0):0.0} MB";
             RecordingList.ItemsSource = ids;
+            RecordingEmptyText.Visibility = ids.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         }
         catch (Exception error) when (error is IOException or UnauthorizedAccessException or System.Text.Json.JsonException)
         {
@@ -455,4 +472,151 @@ public sealed partial class SettingsWindow : Window
     }
 
     private static string FormatMs(double? value) => $"{value.GetValueOrDefault():0} ms";
+
+private void BrowseModelsRootButton_Click(object sender, RoutedEventArgs e)
+{
+OpenFolderDialog dialog = new() { Title = "Cartella dei modelli", Multiselect = false };
+string current = ModelsRootBox.Text.Trim();
+if (Directory.Exists(current)) dialog.InitialDirectory = current;
+if (dialog.ShowDialog(this) == true) ModelsRootBox.Text = dialog.FolderName;
+}
+
+private void ApplyModelsRootButton_Click(object sender, RoutedEventArgs e)
+{
+string candidate = ModelsRootBox.Text.Trim();
+if (candidate.Length == 0)
+{
+ShowModelsRootError("Indica una cartella. Senza percorso i modelli restano nella cartella del programma.");
+return;
+}
+
+string full;
+try
+{
+full = Path.GetFullPath(Environment.ExpandEnvironmentVariables(candidate));
+}
+catch (Exception error) when (error is ArgumentException or NotSupportedException or PathTooLongException)
+{
+ShowModelsRootError("Percorso non valido: " + error.Message);
+return;
+}
+
+if (!Directory.Exists(full))
+{
+ShowModelsRootError($"La cartella non esiste: {full}");
+return;
+}
+
+bool hasModels;
+try
+{
+hasModels = Directory.EnumerateDirectories(full).Any();
+}
+catch (Exception error) when (error is IOException or UnauthorizedAccessException)
+{
+ShowModelsRootError("Non riesco a leggere la cartella: " + error.Message);
+return;
+}
+
+if (!hasModels)
+{
+ShowModelsRootError("La cartella è vuota: scegli quella che contiene i modelli (parakeet_v3, gemma4_e2b, …).");
+return;
+}
+
+if (!ConfigWriter.SetModelsRoot(_configPath, full))
+{
+ShowModelsRootError("Non sono riuscito a salvare la configurazione.");
+return;
+}
+
+ModelsRootBox.Text = full;
+LocalErrorText.Visibility = Visibility.Collapsed;
+RestartButton.Visibility = Visibility.Visible;
+StatusText.Text = "Cartella salvata. Riavvia GangioKeet per caricare i modelli da lì.";
+}
+
+private void RestartButton_Click(object sender, RoutedEventArgs e)
+{
+string? executable = Environment.ProcessPath;
+if (string.IsNullOrEmpty(executable))
+{
+StatusText.Text = "Riavvio non disponibile: chiudi e riapri GangioKeet.";
+return;
+}
+
+try
+{
+Process.Start(new ProcessStartInfo(executable) { UseShellExecute = true });
+}
+catch (Exception error) when (error is InvalidOperationException or System.ComponentModel.Win32Exception)
+{
+StatusText.Text = "Riavvio non riuscito: " + error.Message;
+return;
+}
+
+Application.Current.Shutdown();
+}
+
+private void ShowModelsRootError(string message)
+{
+LocalErrorText.Text = message;
+LocalErrorText.Visibility = Visibility.Visible;
+StatusText.Text = message;
+}
+
+    // Etichette leggibili: i valori interni (vulkan, Ready, parakeet_v3) restano
+    // nel config e nei log, ma nella pagina si mostrano in italiano.
+    private static string FriendlyBackend(string backend) => backend switch
+    {
+        "vulkan" => "Vulkan (GPU)",
+        "cuda" => "CUDA (NVIDIA)",
+        "cpu" => "Solo processore",
+        _ => backend,
+    };
+
+    private static string FriendlyState(string state) => state switch
+    {
+        "Ready" => "Pronto",
+        "Starting" or "WarmingUp" => "Avvio in corso…",
+        "Error" or "Failed" => "Non disponibile",
+        _ => state,
+    };
+
+    private string FriendlyPair(string pair)
+    {
+        if (string.IsNullOrWhiteSpace(pair) || pair == "—") return "—";
+
+        string[] parts = pair.Split(" + ", StringSplitOptions.TrimEntries);
+        for (int i = 0; i < parts.Length; i++)
+        {
+            parts[i] = parts[i] switch
+            {
+                "refinement off" => "rifinitura spenta",
+                "nessuno" => "nessuna rifinitura",
+                _ => DisplayNameOf(parts[i]),
+            };
+        }
+
+        return string.Join(" + ", parts);
+    }
+
+    private string DisplayNameOf(string id)
+    {
+        if (_modelSelection is null) return id;
+
+        foreach (ModelArtifact artifact in _modelSelection.AsrCandidates)
+        {
+            if (string.Equals(artifact.Id, id, StringComparison.Ordinal))
+                return artifact.DisplayName ?? artifact.Id;
+        }
+
+        foreach (ModelArtifact artifact in _modelSelection.CleanerCandidates)
+        {
+            if (string.Equals(artifact.Id, id, StringComparison.Ordinal))
+                return artifact.DisplayName ?? artifact.Id;
+        }
+
+        return id;
+    }
 }

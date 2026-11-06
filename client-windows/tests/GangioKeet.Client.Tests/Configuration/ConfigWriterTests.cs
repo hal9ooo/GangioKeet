@@ -87,6 +87,28 @@ server:
     }
 
     [Fact]
+    public void SetModelsRoot_WritesQuotedForwardSlashPath()
+    {
+        string path = TempFile("inference:\n mode: local\n");
+
+        Assert.True(ConfigWriter.SetModelsRoot(path, @"D:\AI\GangioKeet\installed"));
+
+        string text = File.ReadAllText(path);
+        Assert.Contains("models_root: \"D:/AI/GangioKeet/installed\"", text);
+    }
+
+    [Fact]
+    public void SetModelsRoot_NullClearsTheKey()
+    {
+        string path = TempFile("inference:\n models_root: \"D:/AI/models\"\n");
+
+        Assert.True(ConfigWriter.SetModelsRoot(path, null));
+
+        string text = File.ReadAllText(path);
+        Assert.Contains("models_root: null", text);
+    }
+
+    [Fact]
     public void AudioSectionWithInlineComment_IsStillRecognized()
     {
         string path = TempFile("audio:   # sezione audio\n  input_device: null\n");
