@@ -46,7 +46,7 @@ $ggufFiles = @(Get-ChildItem -LiteralPath $modelsRoot -Recurse -File -Filter '*.
 if ($ggufFiles.Count -gt 0) {
     Add-Error 'Heavy GGUF model files must not ship in the installer payload; models are provisioned on demand.'
 }
-Check-File "models/$activeSelectionName" (Get-FileHash -LiteralPath $SelectionPath -Algorithm SHA256).Hash
+Check-File "catalog/$activeSelectionName" (Get-FileHash -LiteralPath $SelectionPath -Algorithm SHA256).Hash
 Check-File 'cleanup.yaml' (Get-FileHash -LiteralPath $CleanupPath -Algorithm SHA256).Hash
 Check-File 'native/runtime-lock.json' (Get-FileHash -LiteralPath $LockPath -Algorithm SHA256).Hash
 
@@ -74,31 +74,31 @@ if ($selectionSchema -eq 1) {
     Add-Error "unsupported selection schema: $selectionSchema"
 }
 
-$catalogPath = Join-Path $Root 'models/candidates.json'
-$integrityPath = Join-Path $Root 'models/integrity.json'
-$v2SelectionPath = Join-Path $Root 'models/selection.json'
+$catalogPath = Join-Path $Root 'catalog/candidates.json'
+$integrityPath = Join-Path $Root 'catalog/integrity.json'
+$v2SelectionPath = Join-Path $Root 'catalog/selection.json'
 if (-not (Test-Path -LiteralPath $catalogPath -PathType Leaf)) {
-    Add-Error 'missing: models/candidates.json'
+    Add-Error 'missing: catalog/candidates.json'
 }
 if (-not (Test-Path -LiteralPath $integrityPath -PathType Leaf)) {
-    Add-Error 'missing: models/integrity.json'
+    Add-Error 'missing: catalog/integrity.json'
 } else {
     $integrity = Get-Content -LiteralPath $integrityPath -Raw | ConvertFrom-Json
-    Check-File 'models/candidates.json' $integrity.catalog_sha256
+    Check-File 'catalog/candidates.json' $integrity.catalog_sha256
     Check-File 'native/runtime-lock.json' $integrity.runtime_lock_sha256
     Check-File 'cleanup.yaml' $integrity.cleanup_policy_sha256
     if (Test-Path -LiteralPath $catalogPath -PathType Leaf) {
         $catalog = Get-Content -LiteralPath $catalogPath -Raw | ConvertFrom-Json
         $catalogIds = @($catalog.candidates | ForEach-Object { [string]$_.id })
         if (-not (Test-Path -LiteralPath $v2SelectionPath -PathType Leaf)) {
-            Add-Error 'missing: models/selection.json'
+            Add-Error 'missing: catalog/selection.json'
         } else {
             $v2 = Get-Content -LiteralPath $v2SelectionPath -Raw | ConvertFrom-Json
-            if ($v2.schema_version -ne 2) { Add-Error 'models/selection.json must use schema_version 2' }
-            if ($catalogIds -cnotcontains [string]$v2.stt_id) { Add-Error 'models/selection.json has an unknown stt_id' }
+            if ($v2.schema_version -ne 2) { Add-Error 'catalog/selection.json must use schema_version 2' }
+            if ($catalogIds -cnotcontains [string]$v2.stt_id) { Add-Error 'catalog/selection.json has an unknown stt_id' }
             if ($v2.refinement_enabled -and
                     ($null -eq $v2.cleaner_id -or $catalogIds -cnotcontains [string]$v2.cleaner_id)) {
-                Add-Error 'models/selection.json has an unknown cleaner_id'
+                Add-Error 'catalog/selection.json has an unknown cleaner_id'
             }
         }
     }
@@ -156,7 +156,7 @@ foreach ($file in Get-ChildItem -LiteralPath $modelsRoot -Recurse -File -ErrorAc
 }
 $parakeetSelectionPath = Join-Path (Split-Path -Parent $SelectionPath) 'selected-parakeet-qwen.json'
 if (Test-Path -LiteralPath $parakeetSelectionPath -PathType Leaf) {
-    Check-File 'models/selected-parakeet-qwen.json' (Get-FileHash -LiteralPath $parakeetSelectionPath -Algorithm SHA256).Hash
+    Check-File 'catalog/selected-parakeet-qwen.json' (Get-FileHash -LiteralPath $parakeetSelectionPath -Algorithm SHA256).Hash
 }
 $lock = Get-Content -LiteralPath $LockPath -Raw | ConvertFrom-Json
 foreach ($runtime in $lock.runtimes) {

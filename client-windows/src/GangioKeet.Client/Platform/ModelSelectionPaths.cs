@@ -11,6 +11,10 @@ public static class ModelSelectionPaths
 
     public static string InstallModelsRoot => Path.Combine(AppContext.BaseDirectory, "models");
 
+// I metadati (catalogo, integrita, selezione) vivono fuori da models/: quella cartella
+// puo essere una junction verso un altro volume, e l'installer non puo scriverci dentro.
+public static string InstallCatalogRoot => Path.Combine(AppContext.BaseDirectory, "catalog");
+
     public static string Prepare(ClientConfig config, string? userSelectionPath = null,
         string? installModelsRoot = null)
     {

@@ -59,11 +59,11 @@
   "cleanup_policy": {
     "path": "cleanup.yaml",
     "source_path": "cleanup.example.yaml",
-    "sha256": "69483c177408d58b62dea1f3a9ff660cb9bee973144ffd1ee5f6fad9e8825740"
+    "sha256": "205a0fb844bf5b1d816de749804b14c08df517092ae48bf8c5571d94e0b729de"
   },
   "prompt": {
-    "version": "conservative-local-v3",
-    "sha256": "e63fa4085c525b203bbd71897a25c03af0984b0a627ee229e6304081a349e907"
+    "version": "conservative-local-v4",
+    "sha256": "f123730075b6eb3ccd6e98394004536bc0166b155bde67c2b5fdb01578dee0e1"
   },
   "evidence": {
     "selection_report": "docs/benchmarks/local-monolith/selection.md",

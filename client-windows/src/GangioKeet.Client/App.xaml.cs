@@ -345,8 +345,15 @@ public partial class App : Application, IModelSelectionHost
         string lockPath = Environment.GetEnvironmentVariable("GANGIOKEET_RUNTIME_LOCK")
             ?? Path.Combine(install, "native", "runtime-lock.json");
         CleanupPolicy policy = CleanupPolicy.Load(config.Inference.CleanupPolicyPath);
-        return new LocalModelResolver(modelsRoot, Path.Combine(modelsRoot, "candidates.json"),
-            Path.Combine(modelsRoot, "integrity.json"), lockPath, config.Inference.CleanupPolicyPath,
+        string catalogRoot = ModelSelectionPaths.InstallCatalogRoot;
+        string catalogPath = File.Exists(Path.Combine(catalogRoot, "candidates.json"))
+        ? Path.Combine(catalogRoot, "candidates.json")
+        : Path.Combine(modelsRoot, "candidates.json");
+        string integrityPath = File.Exists(Path.Combine(catalogRoot, "integrity.json"))
+        ? Path.Combine(catalogRoot, "integrity.json")
+        : Path.Combine(modelsRoot, "integrity.json");
+        return new LocalModelResolver(modelsRoot, catalogPath,
+        integrityPath, lockPath, config.Inference.CleanupPolicyPath,
             native, llama, config.Inference.Backend, policy, _runtimeProvisioner);
     }
 

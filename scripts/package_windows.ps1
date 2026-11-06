@@ -41,21 +41,21 @@ if (Test-Path -LiteralPath $Runtimes) {
 }
 
 $selected = Get-Content -LiteralPath $SelectionPath -Raw | ConvertFrom-Json
-New-Item -ItemType Directory -Path (Join-Path $Payload 'models') -Force | Out-Null
+New-Item -ItemType Directory -Path (Join-Path $Payload 'catalog') -Force | Out-Null
 $selectionSchema = if ($selected.PSObject.Properties.Name -contains 'schema_version') { [int]$selected.schema_version } else { 0 }
 $activeName = if ($selectionSchema -eq 2) { 'selection.json' } else { 'selected.json' }
 $SelectionV2 = Join-Path $RepoRoot 'client-windows/models/selection.json'
 if (Test-Path -LiteralPath $SelectionV2 -PathType Leaf) {
-    Copy-Item -LiteralPath $SelectionV2 -Destination (Join-Path $Payload 'models/selection.json') -Force
+    Copy-Item -LiteralPath $SelectionV2 -Destination (Join-Path $Payload 'catalog/selection.json') -Force
 }
-Copy-Item -LiteralPath $SelectionPath -Destination (Join-Path $Payload "models/$activeName") -Force
+Copy-Item -LiteralPath $SelectionPath -Destination (Join-Path $Payload "catalog/$activeName") -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'client-windows/models/candidates.json') `
-    -Destination (Join-Path $Payload 'models/candidates.json') -Force
+    -Destination (Join-Path $Payload 'catalog/candidates.json') -Force
 Copy-Item -LiteralPath (Join-Path $RepoRoot 'client-windows/models/integrity.json') `
-    -Destination (Join-Path $Payload 'models/integrity.json') -Force
+    -Destination (Join-Path $Payload 'catalog/integrity.json') -Force
 $ParakeetSelection = Join-Path $RepoRoot 'client-windows/models/selected-parakeet-qwen.json'
 if (Test-Path -LiteralPath $ParakeetSelection -PathType Leaf) {
-    Copy-Item -LiteralPath $ParakeetSelection -Destination (Join-Path $Payload 'models/selected-parakeet-qwen.json') -Force
+    Copy-Item -LiteralPath $ParakeetSelection -Destination (Join-Path $Payload 'catalog/selected-parakeet-qwen.json') -Force
 }
 Copy-Item -LiteralPath $CleanupPath -Destination (Join-Path $Payload 'cleanup.yaml') -Force
 # Models are downloaded on demand on first app launch via ModelProvisioner;
