@@ -99,7 +99,7 @@ public sealed class TrayController : IDisposable
             UpdateRecoveryMenu();
             UpdateAutostartMenu();
         };
-        _tray.ToolTipText = "GangioKeet";
+        _tray.ToolTipText = Branding.ProductName;
 
         var retryItem = new System.Windows.Controls.MenuItem
         {
@@ -290,7 +290,7 @@ public sealed class TrayController : IDisposable
 
     private void UpdateTooltip()
     {
-        _tray.ToolTipText = "GangioKeet";
+        _tray.ToolTipText = Branding.ProductName;
     }
 
     private void OnRecoveryChanged(object? sender, EventArgs e)

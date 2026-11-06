@@ -74,14 +74,17 @@ public partial class App : Application, IModelSelectionHost
         base.OnStartup(e);
         RenderOptions.ProcessRenderMode = RenderMode.Default;
         SessionEnding += OnSessionEnding;
+ Branding.MigrateLegacyFolders();
+ if (Environment.ProcessPath is string executable)
+     AutostartService.MigrateLegacyValue(executable);
 
-        _guard = new SingleInstanceGuard("GangioKeet");
+        _guard = new SingleInstanceGuard(Branding.ProductName);
         _instanceHandle = _guard.TryAcquire();
         if (_instanceHandle is null)
         {
             MessageBox.Show(
-                "GangioKeet è già in esecuzione.",
-                "GangioKeet",
+                Branding.ProductName + " è già in esecuzione.",
+                Branding.ProductName,
                 MessageBoxButton.OK,
                 MessageBoxImage.Information);
             Shutdown(0);
@@ -129,7 +132,7 @@ public partial class App : Application, IModelSelectionHost
             _logger.Write("config_error", ex.Message);
             MessageBox.Show(
                 $"Configurazione non valida:\n{ex.Message}",
-                "GangioKeet",
+                Branding.ProductName,
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
             Shutdown(1);
@@ -145,8 +148,8 @@ public partial class App : Application, IModelSelectionHost
             _splash?.Dismiss();
             _logger.Write("startup_error", ex.Message);
             MessageBox.Show(
-                $"Impossibile avviare GangioKeet:\n{ex.Message}",
-                "GangioKeet",
+                $"Impossibile avviare {Branding.ProductName}:\n{ex.Message}",
+                Branding.ProductName,
                 MessageBoxButton.OK,
                 MessageBoxImage.Error);
             Shutdown(1);
@@ -525,7 +528,7 @@ public partial class App : Application, IModelSelectionHost
     private static System.Windows.Media.ImageSource CreateTrayIcon()
     {
         var image = new System.Windows.Media.Imaging.BitmapImage(
-            new Uri("pack://application:,,,/Assets/gangio.ico", UriKind.Absolute));
+            new Uri("pack://application:,,,/Assets/chattyneko.ico", UriKind.Absolute));
         image.Freeze();
         return image;
     }

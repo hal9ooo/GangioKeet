@@ -4,7 +4,7 @@ using System.Text;
 namespace GangioKeet.Client.Platform;
 
 /// <summary>
-/// Logger su file giornaliero in %LOCALAPPDATA%/GangioKeet/logs/.
+/// Logger su file giornaliero in %LOCALAPPDATA%/ChattyNeko/logs/.
 /// Non registra mai payload audio, testo dettato, titoli di finestra o chiavi API:
 /// solo codici e messaggi diagnostici.
 /// </summary>
@@ -18,7 +18,7 @@ public sealed class FileLogger
         string root = baseDirectory
             ?? Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                "GangioKeet",
+                Branding.DataFolderName,
                 "logs");
         _logDirectory = root;
     }

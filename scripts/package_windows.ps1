@@ -146,7 +146,7 @@ if ($PackageManifest.installer.iscc_sha256 -and
     throw "ISCC.exe hash $isccHash does not match the pinned compiler $($PackageManifest.installer.iscc_sha256)."
 }
 $installerDirectory = Join-Path $RepoRoot 'artifacts/installer'
-$installerBase = "GangioKeet-Setup-$($PackageManifest.version)"
+$installerBase = "ChattyNeko-Setup-$($PackageManifest.version)"
 $stagingDirectory = Join-Path $RepoRoot 'artifacts/installer.staging'
 if (Test-Path -LiteralPath $stagingDirectory) { Remove-Item -LiteralPath $stagingDirectory -Recurse -Force }
 New-Item -ItemType Directory -Path $stagingDirectory -Force | Out-Null

@@ -51,7 +51,7 @@ transcribe.cpp, llama.cpp/ggml and LLamaSharp before bumping.
   titles, or API keys.
 - Completed dictations are stored on disk only when `recording.enabled` is
   explicitly turned on. The default directory is
-  `%LOCALAPPDATA%\GangioKeet\recordings`; `recording.directory` can override it.
+  `%LOCALAPPDATA%\ChattyNeko\recordings`; `recording.directory` can override it.
 - The clipboard is read only to back up text and DIB, and restored only if
   nobody copied something else in the meantime. Clipboard contents are never
   logged or transmitted. If a paste is blocked by UIPI or `SendInput` fails, the

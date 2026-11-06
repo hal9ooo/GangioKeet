@@ -39,7 +39,7 @@ public sealed class NeMoSpeechRuntimeProvisioner : INativeRuntimeProvisioner, ID
         }
         _root = root ?? Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "GangioKeet", "runtimes", "nemo-speech");
+            Branding.DataFolderName, "runtimes", "nemo-speech");
         _archiveUrl = archiveUrl ?? ArchiveUrl;
         _archiveSha256 = archiveSha256 ?? ArchiveSha256;
     }

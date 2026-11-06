@@ -1,15 +1,15 @@
 <p align="center">
-  <img src="assets/icon.png" width="160" alt="GangioKeet icon">
+  <img src="assets/icon.png" width="160" alt="ChattyNeko icon">
 </p>
 
-<h1 align="center">GangioKeet</h1>
+<h1 align="center">ChattyNeko</h1>
 
 <p align="center">
   <strong>Local push-to-talk dictation for Windows.</strong><br/>
   One process, selectable local models, no cloud and no subscription.
 </p>
 <p align="center">
-  <a href="https://github.com/hal9ooo/GangioKeet/releases/latest"><img alt="Download the Windows installer" src="https://img.shields.io/badge/download-Windows%2011-FFD60A?style=for-the-badge"></a>
+  <a href="https://github.com/hal9ooo/GangioKeet/releases/latest"><img alt="Download the Windows installer" src="https://img.shields.io/badge/download-Windows%2011-22D3EE?style=for-the-badge"></a>
 </p>
 
 <p align="center">
@@ -20,9 +20,9 @@
 </p>
 
 <p align="center">
-  <img src="assets/concept-animation.gif" width="960" alt="Concept animation: a dictated sentence flows along a yellow ribbon while the pill's 23 bars react to the voice, next to a generated parakeet that moves on its own">
+  <img src="assets/chattyneko-hero.png" width="960" alt="A black cat with golden eyes sitting in front of a lightning flash on a midnight blue background">
 </p>
-<p align="center"><sub>Concept: the ribbon text and the waveform are driven by the same recording; the parakeet is a generated clip, cut out frame by frame.</sub></p>
+<p align="center"><sub>ChattyNeko: local dictation, a black cat, and a lightning flash. No cloud, no account.</sub></p>
 
 > **TL;DR** — Hold **Caps Lock**, talk, release. The text appears in the active
 > window. Media playback pauses while you dictate and resumes when you release.
@@ -32,7 +32,7 @@
 
 > **Splash payoff:** *A one-user project putting local GPUs to work.*
 
-GangioKeet is a personal Windows dictation client. Speech-to-text and the
+ChattyNeko is a personal Windows dictation client. Speech-to-text and the
 optional LLM cleanup run in the same process: WASAPI microphone → local ASR →
 local cleaner → clipboard-preserving paste. No audio or transcript leaves the
 machine; the only network access is model and runtime provisioning from Hugging
@@ -51,7 +51,7 @@ Face and GitHub.
   with no model to load and no added latency.
 - **Media pause**: when dictation starts, playing media sessions are paused via
   Windows GSMTC; when the key is released, only the sessions paused by
-  GangioKeet are resumed. Always on, no setting.
+  ChattyNeko are resumed. Always on, no setting.
 - **Context-aware**: `code`, `terminal`, `chat`, `email`, and `document`
   profiles chosen from the active app and window title, with browser rules.
 - **Quality of life**: animated floating pill, tray menu with a launch-at-startup
@@ -62,7 +62,7 @@ Face and GitHub.
   also be retried from its buffered audio. The last successful text stays
   copyable for the session.
 - **Privacy by default**: content-free logs, no on-disk history; benchmark
-  recording is opt-in and stored under `%LOCALAPPDATA%\GangioKeet\recordings`.
+  recording is opt-in and stored under `%LOCALAPPDATA%\ChattyNeko\recordings`.
 
 ## What it doesn't do
 
@@ -70,13 +70,13 @@ Face and GitHub.
 - No team plan, no pricing page, no "Contact sales".
 - No deployment outside Windows: the repository is Windows-only.
 - No automatic Enter: the text is pasted, not sent.
-- No promise of an SLA. There is one user and a bird.
+- No promise of an SLA. There is one user and a cat.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  HK["Caps Lock / F8"] --> CL["GangioKeet.Client<br/>WPF + NAudio"]
+  HK["Caps Lock / F8"] --> CL["ChattyNeko<br/>WPF + NAudio"]
   CL -->|PCM16 16 kHz| STT["Local ASR<br/>Qwen3-ASR, Parakeet, Nemotron"]
   STT --> ROUTE{"Cleanup"}
   ROUTE -->|fast path| TXT["Clean text"]
@@ -113,8 +113,8 @@ Python dependency.
 ```powershell
 git clone https://github.com/hal9ooo/GangioKeet.git
 cd GangioKeet
-New-Item -ItemType Directory -Force "$env:APPDATA\GangioKeet" | Out-Null
-Copy-Item client-windows\client_config.example.yaml "$env:APPDATA\GangioKeet\client_config.yaml"
+New-Item -ItemType Directory -Force "$env:APPDATA\ChattyNeko" | Out-Null
+Copy-Item client-windows\client_config.example.yaml "$env:APPDATA\ChattyNeko\client_config.yaml"
 dotnet build client-windows\GangioKeet.Client.sln
 dotnet run --project client-windows\src\GangioKeet.Client
 ```
@@ -129,7 +129,7 @@ settings window, **Avvia con Windows**, and the exit command. **Copia ultimo
 testo** is available after any dictation with text, including a successful
 paste; **Riprova** and **Scarta recupero** are enabled only when there is a
 failed dictation to recover. **Avvia con Windows** writes or removes a per-user
-value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\GangioKeet`; it
+value under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\ChattyNeko`; it
 is off by default and the checkbox reflects the current registry state. The
 settings window selects the ASR and the optional refinement, toggles benchmark
 recording, and sets the models folder. Model and refinement changes apply
@@ -137,7 +137,7 @@ immediately; a new models folder takes effect after a restart.
 
 ## Configuration
 
-The default path is `%APPDATA%\GangioKeet\client_config.yaml`.
+The default path is `%APPDATA%\ChattyNeko\client_config.yaml`.
 
 | Section | Key fields |
 |---|---|
@@ -158,7 +158,7 @@ does not rewrite those keys; they simply have no effect.
 
 ## Media pause
 
-While dictating, GangioKeet asks Windows GSMTC to pause every media session that
+While dictating, ChattyNeko asks Windows GSMTC to pause every media session that
 is currently `Playing`. On key release it resumes only the sessions it paused,
 and only if they are still `Paused`. If you resume a player manually during
 dictation, it is left alone. If a player refuses the pause, it is not registered
@@ -176,7 +176,7 @@ through `CompositionTarget.Rendering` gated to roughly 60 Hz, so the animation
 runs on the GPU instead of the dispatcher.
 
 <p align="center">
-  <img src="assets/pill-demo.gif" width="660" alt="GangioKeet floating pill: the green status dot and 23 waveform bars react to live dictation">
+  <img src="assets/pill-static.png" width="440" alt="ChattyNeko floating pill: a cyan status dot and the word Pronto on a midnight blue background">
 </p>
 
 - **Status dot** — green while recording, yellow while arming or processing,
@@ -194,7 +194,7 @@ runs on the GPU instead of the dispatcher.
 - **Autogain** — the live peak is normalized against the **90th percentile** of
   the last recording's non-silent chunks, so a quiet microphone still fills the
   pill while a cough cannot skew the reference. The value is persisted in
-  `%LOCALAPPDATA%\GangioKeet\mic-calibration.json` (a single number, no audio);
+  `%LOCALAPPDATA%\ChattyNeko\mic-calibration.json` (a single number, no audio);
   delete the file to reset. Only the visualization is scaled: the PCM sent to
   the ASR is never altered.
 - **Sounds** — a short synthesized click marks the end of a dictation instead of
@@ -202,7 +202,7 @@ runs on the GPU instead of the dispatcher.
 
 ## Model combinations
 
-The active choice lives in `%APPDATA%\GangioKeet\selection.json`; the
+The active choice lives in `%APPDATA%\ChattyNeko\selection.json`; the
 installer ships a seed in `catalog\selection.json` and the app copies it on
 first run:
 
@@ -271,14 +271,14 @@ the settings window offers **Riprova modelli** to rebuild it.
   repository/asset; they never receive audio or text.
 - **No history by default**: audio and transcripts live in RAM. If
   `recording.enabled` is on, completed local dictations are written under
-  `%LOCALAPPDATA%\GangioKeet\recordings` (or the configured `recording.directory`)
+  `%LOCALAPPDATA%\ChattyNeko\recordings` (or the configured `recording.directory`)
   with empty human references.
-- **Logs are content-free**: daily files in `%LOCALAPPDATA%\GangioKeet\logs\`
+- **Logs are content-free**: daily files in `%LOCALAPPDATA%\ChattyNeko\logs\`
   contain codes and technical details, never audio, transcripts, window titles,
   or API keys.
 - **Microphone calibration is a single number**: the pill's autogain stores only
   the normalized peak reference in
-  `%LOCALAPPDATA%\GangioKeet\mic-calibration.json`. It contains no audio, no
+  `%LOCALAPPDATA%\ChattyNeko\mic-calibration.json`. It contains no audio, no
   device name, and no timestamp.
 - **Clipboard**: the client reads text and DIB from the clipboard only to back
   them up, and restores them only if nobody copied something else in the
@@ -347,8 +347,10 @@ of the installer payload.
 
 ## Credits
 
-The name is **Gangio** + **Parakeet**. The bird on the icon is a wave-bird,
-because a parakeet made of sound waves was the only logical choice at 1 a.m.
+The name is **ChattyNeko**: *chatty* for the dictation, *neko* for the black cat
+that is the brand. The cat on the icon has golden eyes and sits in front of a
+lightning flash, because a black cat lit by a storm was the only logical choice
+at 1 a.m.
 
 ## License
 

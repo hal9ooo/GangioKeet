@@ -1,4 +1,5 @@
 using System.IO;
+using GangioKeet.Client.Platform;
 using YamlDotNet.Core;
 using YamlDotNet.Serialization;
 using YamlDotNet.RepresentationModel;
@@ -20,7 +21,7 @@ public static class ConfigLoader
     /// <summary>Percorso predefinito della configurazione utente.</summary>
     public static string DefaultPath => Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-        "GangioKeet",
+        Branding.DataFolderName,
         "client_config.yaml");
 
     public static ClientConfig Load(string? explicitPath = null, string? appDataBase = null, string? installationDirectory = null)
@@ -29,7 +30,7 @@ public static class ConfigLoader
             ? Path.GetFullPath(explicitPath)
             : appDataBase is null
                 ? DefaultPath
-                : Path.Combine(appDataBase, "GangioKeet", "client_config.yaml");
+                : Path.Combine(appDataBase, Branding.DataFolderName, "client_config.yaml");
 
         ClientConfig config;
         if (!File.Exists(path))
@@ -121,7 +122,7 @@ public static class ConfigLoader
             string install = Path.GetFullPath(installationDirectory);
             config.Inference.ModelSelectionPath = Path.GetFullPath(config.Inference.ModelSelectionPath, install);
             config.Inference.CleanupPolicyPath = Path.GetFullPath(config.Inference.CleanupPolicyPath, install);
-            string data = Path.Combine(appDataBase ?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "GangioKeet");
+            string data = Path.Combine(appDataBase ?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), Branding.DataFolderName);
             config.Recording.Directory = Path.GetFullPath(config.Recording.Directory, Path.GetFullPath(data));
         }
         catch (Exception error) when (error is ArgumentException or NotSupportedException)

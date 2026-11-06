@@ -38,6 +38,6 @@ public sealed class MicrophoneMenuPolicyTests
     [Fact]
     public void DefaultPath_EndsWithTheClientConfigFile()
     {
-        Assert.EndsWith(Path.Combine("GangioKeet", "client_config.yaml"), ConfigLoader.DefaultPath);
+        Assert.EndsWith(Path.Combine("ChattyNeko", "client_config.yaml"), ConfigLoader.DefaultPath);
     }
 }

@@ -37,8 +37,8 @@ if (-not (Test-Path -LiteralPath $Root -PathType Container)) {
 $selected = Get-Content -LiteralPath $SelectionPath -Raw | ConvertFrom-Json
 $selectionSchema = if ($selected.PSObject.Properties.Name -contains 'schema_version') { [int]$selected.schema_version } else { 0 }
 $activeSelectionName = if ($selectionSchema -eq 2) { 'selection.json' } else { 'selected.json' }
-if (-not (Test-Path -LiteralPath (Join-Path $Root 'GangioKeet.Client.exe') -PathType Leaf)) {
-    Add-Error 'missing: GangioKeet.Client.exe'
+if (-not (Test-Path -LiteralPath (Join-Path $Root 'ChattyNeko.exe') -PathType Leaf)) {
+    Add-Error 'missing: ChattyNeko.exe'
 }
 # GGUF models are provisioned on demand; verify they do not ship in the installer package.
 $modelsRoot = Join-Path $Root 'models'

@@ -201,7 +201,7 @@ public sealed class WaveformView : FrameworkElement
 
     private static Brush CreateWaveBrush()
     {
-        SolidColorBrush brush = new(Color.FromRgb(0xE2, 0xDD, 0xD0));
+        SolidColorBrush brush = new(Color.FromRgb(0xED, 0xE7, 0xDA));
         brush.Freeze();
         return brush;
     }

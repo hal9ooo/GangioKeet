@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "product": "GangioKeet",
-  "version": "0.1.5",
+  "version": "0.2.0",
   "build": {
     "toolchain": ".NET SDK 10.0.403",
     "runtime": "Microsoft.WindowsDesktop.App 10.0.14",

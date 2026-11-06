@@ -11,7 +11,7 @@ public sealed class AutostartTests
     {
         Skip.IfNot(Environment.GetEnvironmentVariable("RUN_DESKTOP_TESTS") == "1", "RUN_DESKTOP_TESTS != 1");
 
-        AutostartService service = new(Path.Combine(Path.GetTempPath(), "GangioKeet Test", "GangioKeet.Client.exe"));
+        AutostartService service = new(Path.Combine(Path.GetTempPath(), "ChattyNeko Test", "ChattyNeko.exe"));
         bool previous = service.IsEnabled();
 
         try

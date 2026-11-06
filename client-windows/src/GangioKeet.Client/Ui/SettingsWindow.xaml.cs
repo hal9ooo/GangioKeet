@@ -256,7 +256,7 @@ _ => (Brush)FindResource("Muted"),
                 MessageBoxResult answer = MessageBox.Show(this,
                     "I modelli selezionati non sono ancora sul disco. Scaricarli ora da Hugging Face?\n\n"
                     + "Nemotron 3.5 richiede circa 21 GB e molto tempo; gli altri modelli molto meno.",
-                    "GangioKeet — download modelli", MessageBoxButton.YesNo, MessageBoxImage.Question);
+                    $"{Branding.ProductName} — download modelli", MessageBoxButton.YesNo, MessageBoxImage.Question);
                 if (answer != MessageBoxResult.Yes)
                 {
                     StatusText.Text = "Download annullato: resta attiva la combinazione precedente.";
@@ -520,7 +520,7 @@ return;
 
 if (!hasModels)
 {
-ShowModelsRootError("La cartella è vuota: scegli quella che contiene i modelli (parakeet_v3, gemma4_e2b, …).");
+ShowModelsRootError("La cartella è vuota: scegli quella che contiene i modelli (gemma4_e2b, qwen3_asr_1_7b, …).");
 return;
 }
 
@@ -565,7 +565,7 @@ LocalErrorText.Visibility = Visibility.Visible;
 StatusText.Text = message;
 }
 
-    // Etichette leggibili: i valori interni (vulkan, Ready, parakeet_v3) restano
+    // Etichette leggibili: i valori interni (vulkan, Ready, gemma4_e2b) restano
     // nel config e nei log, ma nella pagina si mostrano in italiano.
     private static string FriendlyBackend(string backend) => backend switch
     {

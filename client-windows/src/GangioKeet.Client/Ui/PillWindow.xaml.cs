@@ -22,11 +22,11 @@ public sealed partial class PillWindow : Window, IPillView
 
     private const int GwlExstyle = -20;
 
-    private static readonly SolidColorBrush GreenBrush = new(Color.FromRgb(0x4C, 0xAF, 0x50));
-    private static readonly SolidColorBrush YellowBrush = new(Color.FromRgb(0xFF, 0xEB, 0x3B));
-    private static readonly SolidColorBrush RedBrush = new(Color.FromRgb(0xF4, 0x43, 0x36));
-    private static readonly SolidColorBrush GrayBrush = new(Color.FromRgb(0x9E, 0x9E, 0x9E));
-    private static readonly SolidColorBrush OrangeBrush = new(Color.FromRgb(0xFF, 0x98, 0x00));
+    private static readonly SolidColorBrush GreenBrush = new(Color.FromRgb(0x22, 0xD3, 0xEE));
+    private static readonly SolidColorBrush YellowBrush = new(Color.FromRgb(0xFF, 0xC3, 0x00));
+    private static readonly SolidColorBrush RedBrush = new(Color.FromRgb(0xFF, 0x6B, 0x6B));
+    private static readonly SolidColorBrush GrayBrush = new(Color.FromRgb(0x7C, 0x8A, 0xA5));
+    private static readonly SolidColorBrush OrangeBrush = new(Color.FromRgb(0xFF, 0x9F, 0x45));
 
     private readonly FrameGate _frameGate = new(TimeSpan.FromMilliseconds(16));
     private double _currentLevel;

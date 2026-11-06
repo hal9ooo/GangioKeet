@@ -10,7 +10,7 @@ namespace GangioKeet.Client.Platform;
 public sealed class AutostartService
 {
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string ValueName = "GangioKeet";
+    private const string ValueName = Branding.DataFolderName;
 
     private readonly string _executablePath;
 
@@ -18,7 +18,27 @@ public sealed class AutostartService
     {
         _executablePath = executablePath
             ?? Environment.ProcessPath
-            ?? Path.Combine(AppContext.BaseDirectory, "GangioKeet.Client.exe");
+            ?? Path.Combine(AppContext.BaseDirectory, "ChattyNeko.exe");
+    }
+
+    /// <summary>
+    /// Se esiste ancora la voce col vecchio nome, la sposta su quello nuovo
+    /// puntando all'eseguibile corrente. Chiamata una volta all'avvio.
+    /// </summary>
+    public static void MigrateLegacyValue(string executablePath)
+    {
+        try
+        {
+            using RegistryKey? key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: true);
+            if (key?.GetValue(Branding.LegacyAutostartValueName) is not string) return;
+
+            key.DeleteValue(Branding.LegacyAutostartValueName, throwOnMissingValue: false);
+            key.SetValue(Branding.AutostartValueName, $"\"{executablePath}\"");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+            or System.Security.SecurityException)
+        {
+        }
     }
 
     /// <summary>True se l'avvio automatico è attualmente registrato.</summary>
@@ -38,6 +58,7 @@ public sealed class AutostartService
 
         if (enabled)
         {
+            key.DeleteValue(Branding.LegacyAutostartValueName, throwOnMissingValue: false);
             key.SetValue(ValueName, $"\"{_executablePath}\"");
         }
         else

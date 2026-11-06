@@ -19,19 +19,19 @@
         </Grid.RenderTransform>
         <Border CornerRadius="10">
             <Border.Background>
-                <ImageBrush ImageSource="../Assets/gangio-cover.png" Stretch="UniformToFill" />
+                <ImageBrush ImageSource="../Assets/chattyneko-cover.png" Stretch="UniformToFill" />
             </Border.Background>
         </Border>
 
         <Border VerticalAlignment="Bottom"
                 Height="3"
-                Background="#33FFFFFF"
+                Background="#33F5F1E6"
                 CornerRadius="0,0,10,10" />
 
         <Canvas VerticalAlignment="Bottom" Height="3" ClipToBounds="True">
             <Rectangle Height="3"
                        Width="140"
-                       Fill="#4FE0A8">
+                       Fill="#22D3EE">
                 <Rectangle.RenderTransform>
                     <TranslateTransform x:Name="BarShift" X="-140" />
                 </Rectangle.RenderTransform>

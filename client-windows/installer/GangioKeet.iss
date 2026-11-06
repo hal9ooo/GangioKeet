@@ -1,7 +1,7 @@
-#define MyAppName "GangioKeet"
-#define MyAppVersion "0.1.5"
-#define MyAppPublisher "GangioKeet"
-#define MyAppExeName "GangioKeet.Client.exe"
+#define MyAppName "ChattyNeko"
+#define MyAppVersion "0.2.0"
+#define MyAppPublisher "ChattyNeko"
+#define MyAppExeName "ChattyNeko.exe"
 #define MyAppId "{{7C2F5D8E-3A1B-4C6D-9E0F-1A2B3C4D5E6F}"
 
 [Setup]
@@ -9,15 +9,16 @@ AppId={#MyAppId}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={localappdata}\Programs\GangioKeet
+DefaultDirName={localappdata}\Programs\ChattyNeko
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
+UsePreviousAppDir=no
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=..\..\artifacts\installer
-OutputBaseFilename=GangioKeet-Setup-{#MyAppVersion}
-SetupIconFile=..\src\GangioKeet.Client\Assets\gangio.ico
+OutputBaseFilename=ChattyNeko-Setup-{#MyAppVersion}
+SetupIconFile=..\src\GangioKeet.Client\Assets\chattyneko.ico
 Compression=lzma2/max
 SolidCompression=yes
 DiskSpanning=no

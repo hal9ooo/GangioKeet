@@ -1,11 +1,12 @@
 using System.IO;
+using GangioKeet.Client.Platform;
 using System.Text.Json;
 
 namespace GangioKeet.Client.Audio;
 
 /// <summary>
 /// Persiste il picco di riferimento dell'ultima registrazione in
-/// <c>%LOCALAPPDATA%\GangioKeet\mic-calibration.json</c>. Il file contiene
+/// <c>%LOCALAPPDATA%\ChattyNeko\mic-calibration.json</c>. Il file contiene
 /// solo un numero: nessun audio, nessun dato personale.
 /// </summary>
 public sealed class MicrophoneCalibrationStore
@@ -22,7 +23,7 @@ public sealed class MicrophoneCalibrationStore
     {
         string root = appDataBase
             ?? Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        _directory = Path.Combine(root, "GangioKeet");
+        _directory = Path.Combine(root, Branding.DataFolderName);
         _path = Path.Combine(_directory, "mic-calibration.json");
     }
 

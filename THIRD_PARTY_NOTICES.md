@@ -1,6 +1,6 @@
 # Third-party notices
 
-GangioKeet itself is distributed under the MIT license; see `LICENSE`.
+ChattyNeko itself is distributed under the MIT license; see `LICENSE`.
 
 The Windows package does **not** bundle model weights. The client downloads
 missing model files on demand from Hugging Face; `models/candidates.json` pins
@@ -110,7 +110,7 @@ the per-user model combination. Native runtimes are pinned by
   AFFILIATES. The downloaded archive carries the complete texts under
   `share/licenses/nemo-speech/`, including its ggml and llama.cpp components.
 - The runtime is downloaded only when Nemotron is selected, under
-  `%LOCALAPPDATA%\GangioKeet\runtimes\nemo-speech\`. Its ggml and llama DLLs are
+  `%LOCALAPPDATA%\ChattyNeko\runtimes\nemo-speech\`. Its ggml and llama DLLs are
   renamed to a private `ngml`/`nlama` namespace at extraction so they can
   coexist in-process with the transcribe.cpp and LLamaSharp runtimes.
 
