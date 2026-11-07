@@ -28,6 +28,7 @@ public partial class App : Application, IModelSelectionHost
 {
     private SingleInstanceGuard? _guard;
     private IDisposable? _instanceHandle;
+    private ShutdownRequestListener? _shutdownListener;
     private FileLogger? _logger;
 
     private ClientConfig? _config;
@@ -90,6 +91,11 @@ public partial class App : Application, IModelSelectionHost
             Shutdown(0);
             return;
         }
+
+        // L'installer non può chiudere una app tray-only con Restart Manager:
+        // ascolta un evento con nome e spegne l'app in modo pulito.
+        _shutdownListener = new ShutdownRequestListener(
+            () => Dispatcher.BeginInvoke(new Action(() => _ = RequestShutdownAsync())));
 
         _logger = new FileLogger();
         _logger.Write("render_tier", (RenderCapability.Tier >> 16).ToString());
@@ -686,6 +692,7 @@ public partial class App : Application, IModelSelectionHost
         }
         finally
         {
+            _shutdownListener?.Dispose();
             _instanceHandle?.Dispose();
             base.OnExit(e);
         }
