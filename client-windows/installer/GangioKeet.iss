@@ -53,19 +53,6 @@ function SetEvent(hEvent: THandle): Boolean;
 function CloseHandle(hObject: THandle): Boolean;
   external 'CloseHandle@kernel32.dll stdcall';
 
-{ Chiede all'app di chiudersi in modo pulito. }
-procedure RequestGracefulExit;
-var
-  Handle: THandle;
-begin
-  Handle := OpenEventW(EVENT_MODIFY_STATE, False, ExitEvent);
-  if Handle <> 0 then
-  begin
-    SetEvent(Handle);
-    CloseHandle(Handle);
-  end;
-end;
-
 { Chiude l'app prima di toccare i file. Se l'app ascolta l'evento, chiede lo
   spegnimento pulito e aspetta che l'evento sparisca (l'app lo chiude quando
   esce). Altrimenti, o se non risponde, termina il processo: senza questo
@@ -75,42 +62,32 @@ var
   Attempt: Integer;
   ResultCode: Integer;
   Handle: THandle;
-  Signalled: Boolean;
 begin
-  Signalled := False;
   Handle := OpenEventW(EVENT_MODIFY_STATE, False, ExitEvent);
   if Handle <> 0 then
   begin
-    Log('StopRunningApp: evento trovato, chiedo la chiusura pulita');
     SetEvent(Handle);
     CloseHandle(Handle);
-    Signalled := True;
-  end
-  else
-    Log('StopRunningApp: evento assente (app vecchia o non in esecuzione)');
 
-  if Signalled then
-  begin
     for Attempt := 1 to 24 do
     begin
       Sleep(250);
       Handle := OpenEventW(EVENT_MODIFY_STATE, False, ExitEvent);
       if Handle = 0 then
       begin
-        Log('StopRunningApp: app chiusa in modo pulito');
+        Log('ChattyNeko chiusa in modo pulito.');
         Exit;
       end;
       CloseHandle(Handle);
     end;
-    Log('StopRunningApp: nessuna risposta, termino il processo');
+
+    Log('ChattyNeko non risponde: termino il processo.');
   end;
 
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM ChattyNeko.exe', '',
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Log('StopRunningApp: taskkill ChattyNeko exit=' + IntToStr(ResultCode));
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM GangioKeet.Client.exe', '',
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  Log('StopRunningApp: taskkill GangioKeet exit=' + IntToStr(ResultCode));
   Sleep(1000);
 end;
 
