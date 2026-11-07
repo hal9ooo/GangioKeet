@@ -23,10 +23,22 @@
             </Border.Background>
         </Border>
 
- <StackPanel VerticalAlignment="Center" HorizontalAlignment="Left" Margin="40,0,0,0">
- <TextBlock Text="ChattyNeko" FontSize="36" FontWeight="SemiBold" Foreground="#F5F1E6" />
- <TextBlock Text="Dettatura locale. Nessun cloud." FontSize="13" Foreground="#C9C4B6" Margin="0,8,0,0" />
- </StackPanel>
+        <!-- Il coro di gatti occupa il centro: il titolo sta in alto a sinistra,
+             dove l'immagine è vuota, con una sfumatura che lo tiene leggibile. -->
+        <Border VerticalAlignment="Top" Height="118" HorizontalAlignment="Left" Width="620">
+            <Border.Background>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                    <GradientStop Color="#8C000814" Offset="0" />
+                    <GradientStop Color="#40000814" Offset="0.55" />
+                    <GradientStop Color="#00000814" Offset="1" />
+                </LinearGradientBrush>
+            </Border.Background>
+        </Border>
+
+        <StackPanel VerticalAlignment="Top" HorizontalAlignment="Left" Margin="40,26,0,0">
+            <TextBlock Text="ChattyNeko" FontSize="34" FontWeight="SemiBold" Foreground="#F5F1E6" />
+            <TextBlock Text="Dettatura locale. Nessun cloud." FontSize="13" Foreground="#C9C4B6" Margin="2,6,0,0" />
+        </StackPanel>
 
         <Border VerticalAlignment="Bottom"
                 Height="3"

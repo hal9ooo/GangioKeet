@@ -1,5 +1,5 @@
 #define MyAppName "ChattyNeko"
-#define MyAppVersion "0.2.2"
+#define MyAppVersion "0.2.3"
 #define MyAppPublisher "ChattyNeko"
 #define MyAppExeName "ChattyNeko.exe"
 #define MyAppId "{{7C2F5D8E-3A1B-4C6D-9E0F-1A2B3C4D5E6F}"
