@@ -20,9 +20,9 @@
 </p>
 
 <p align="center">
-  <img src="assets/chattyneko-hero.png" width="960" alt="A black cat with golden eyes sitting in front of a lightning flash on a midnight blue background">
+  <img src="assets/chattyneko-hero.png" width="960" alt="A cute black cat with big golden eyes and a small cyan lightning bolt on a midnight blue background">
 </p>
-<p align="center"><sub>ChattyNeko: local dictation, a black cat, and a lightning flash. No cloud, no account.</sub></p>
+<p align="center"><sub>ChattyNeko: local dictation, a black cat, and a small lightning bolt. No cloud, no account.</sub></p>
 
 > **TL;DR** — Hold **Caps Lock**, talk, release. The text appears in the active
 > window. Media playback pauses while you dictate and resumes when you release.
@@ -349,7 +349,7 @@ of the installer payload.
 
 The name is **ChattyNeko**: *chatty* for the dictation, *neko* for the black cat
 that is the brand. The cat on the icon has golden eyes and sits in front of a
-lightning flash, because a black cat lit by a storm was the only logical choice
+small lightning bolt, because a black cat with a spark was the only logical choice
 at 1 a.m.
 
 ## License

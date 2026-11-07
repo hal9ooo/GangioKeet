@@ -23,6 +23,11 @@
             </Border.Background>
         </Border>
 
+ <StackPanel VerticalAlignment="Center" HorizontalAlignment="Left" Margin="40,0,0,0">
+ <TextBlock Text="ChattyNeko" FontSize="36" FontWeight="SemiBold" Foreground="#F5F1E6" />
+ <TextBlock Text="Dettatura locale. Nessun cloud." FontSize="13" Foreground="#C9C4B6" Margin="0,8,0,0" />
+ </StackPanel>
+
         <Border VerticalAlignment="Bottom"
                 Height="3"
                 Background="#33F5F1E6"
