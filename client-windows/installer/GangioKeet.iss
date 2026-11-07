@@ -43,8 +43,6 @@ Filename: "{app}\{#MyAppExeName}"; Description: "Avvia {#MyAppName}"; Flags: now
 [Code]
 const
   EVENT_MODIFY_STATE = $0002;
-  AppMutex = 'Local\ChattyNeko_SingleInstance';
-  LegacyMutex = 'Local\GangioKeet_SingleInstance';
   ExitEvent = 'Local\ChattyNeko.ExitRequested';
 
 function OpenEventW(dwDesiredAccess: Cardinal; bInheritHandle: Boolean;
@@ -68,34 +66,51 @@ begin
   end;
 end;
 
-function AppIsRunning: Boolean;
-begin
-  Result := CheckForMutexes(AppMutex) or CheckForMutexes(LegacyMutex);
-end;
-
-{ Chiude l'app prima di toccare i file. Prima chiede, poi attende, infine
-  termina: senza questo passaggio l'installazione fallirebbe sui file in uso. }
+{ Chiude l'app prima di toccare i file. Se l'app ascolta l'evento, chiede lo
+  spegnimento pulito e aspetta che l'evento sparisca (l'app lo chiude quando
+  esce). Altrimenti, o se non risponde, termina il processo: senza questo
+  passaggio l'installazione fallirebbe sui file in uso. }
 procedure StopRunningApp;
 var
   Attempt: Integer;
   ResultCode: Integer;
+  Handle: THandle;
+  Signalled: Boolean;
 begin
-  if not AppIsRunning then
-    Exit;
-
-  RequestGracefulExit;
-
-  for Attempt := 1 to 16 do
+  Signalled := False;
+  Handle := OpenEventW(EVENT_MODIFY_STATE, False, ExitEvent);
+  if Handle <> 0 then
   begin
-    if not AppIsRunning then
-      Exit;
-    Sleep(500);
+    Log('StopRunningApp: evento trovato, chiedo la chiusura pulita');
+    SetEvent(Handle);
+    CloseHandle(Handle);
+    Signalled := True;
+  end
+  else
+    Log('StopRunningApp: evento assente (app vecchia o non in esecuzione)');
+
+  if Signalled then
+  begin
+    for Attempt := 1 to 24 do
+    begin
+      Sleep(250);
+      Handle := OpenEventW(EVENT_MODIFY_STATE, False, ExitEvent);
+      if Handle = 0 then
+      begin
+        Log('StopRunningApp: app chiusa in modo pulito');
+        Exit;
+      end;
+      CloseHandle(Handle);
+    end;
+    Log('StopRunningApp: nessuna risposta, termino il processo');
   end;
 
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM ChattyNeko.exe', '',
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Log('StopRunningApp: taskkill ChattyNeko exit=' + IntToStr(ResultCode));
   Exec(ExpandConstant('{sys}\taskkill.exe'), '/F /IM GangioKeet.Client.exe', '',
     SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Log('StopRunningApp: taskkill GangioKeet exit=' + IntToStr(ResultCode));
   Sleep(1000);
 end;
 
