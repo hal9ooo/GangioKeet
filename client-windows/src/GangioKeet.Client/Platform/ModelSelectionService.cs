@@ -57,7 +57,22 @@ public sealed class ModelSelectionService
                 newCleaner = _resolver.CreateCleaner(resolved.Cleaner!);
 
             if (sttChanged || newCleaner is not null || desired.RefinementEnabled != _current.RefinementEnabled)
-                await _pipeline.SwapEnginesAsync(newStt, newCleaner, desired.RefinementEnabled, ct).ConfigureAwait(false);
+            {
+                Action<string>? onStage = progress is null ? null : stage =>
+                {
+                    ModelProvisionStatus status = stage switch
+                    {
+                        "stt_loading" => ModelProvisionStatus.Loading,
+                        "stt_warming" => ModelProvisionStatus.WarmingUp,
+                        "cleaner_loading" => ModelProvisionStatus.Loading,
+                        "cleaner_warming" => ModelProvisionStatus.WarmingUp,
+                        _ => ModelProvisionStatus.Loading
+                    };
+                    string id = stage.StartsWith("stt") ? resolved.Stt.Id : (resolved.Cleaner?.Id ?? "");
+                    progress.Report(new ModelProvisionProgress(id, "", status, 0, null));
+                };
+                await _pipeline.SwapEnginesAsync(newStt, newCleaner, desired.RefinementEnabled, ct, onStage).ConfigureAwait(false);
+            }
 
             if (newStt is not null) _loadedSttId = desired.SttId;
             if (newCleaner is not null) _loadedCleanerId = desired.CleanerId;

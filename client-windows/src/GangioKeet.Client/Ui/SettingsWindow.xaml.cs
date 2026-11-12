@@ -78,6 +78,7 @@ public sealed partial class SettingsWindow : Window
     public bool IsLocalPanelVisible => LocalPanel.Visibility == Visibility.Visible;
     public string LocalState => LocalStateText.Text;
     public string LocalPair => LocalPairText.Text;
+    public string Status => StatusText.Text;
     public bool HasModelSelection => ModelSelectionPanel.Visibility == Visibility.Visible;
     public bool HasRetryAction => RetryModelsButton.Visibility == Visibility.Visible;
     public IReadOnlyList<string> AsrChoiceLabels =>
@@ -264,13 +265,21 @@ _ => (Brush)FindResource("Muted"),
                 }
             }
 
+            ModelBusyText.Visibility = Visibility.Visible;
             ModelProgress.IsIndeterminate = true;
             ModelProgress.Value = 0;
             ModelProgress.Visibility = Visibility.Visible;
             ModelSelection desired = new(2, asr.Id, cleanerId, refinement);
-            await _modelSelection.ApplyAsync(desired,
-                new Progress<ModelProvisionProgress>(ShowProvisionProgress),
-                CancellationToken.None);
+            // Evidenza immediata: senza questo la finestra sembra ferma finche' non
+            // arriva il primo evento di avanzamento.
+            StatusText.Text = "Applicazione del modello: preparazione in corso...";
+            // L'istanza di Progress<T> DEVE essere creata sul thread UI per catturare
+            // il DispatcherSynchronizationContext corretto.
+            Progress<ModelProvisionProgress> progress = new(ShowProvisionProgress);
+            // Tutto il lavoro (verifica, download, caricamento del motore) va fuori dal
+            // thread UI: solo cosi' la finestra resta disegnata e la barra si muove.
+            // Progress<T> rimanda gli aggiornamenti catturati al thread UI.
+            await Task.Run(() => _modelSelection.ApplyAsync(desired, progress, CancellationToken.None));
             StatusText.Text = "Combinazione applicata a caldo.";
         }
         catch (Exception error) when (error is not OperationCanceledException)
@@ -282,6 +291,7 @@ _ => (Brush)FindResource("Muted"),
         {
             _selectionApplying = false;
             ModelProgress.Visibility = Visibility.Collapsed;
+            ModelBusyText.Visibility = Visibility.Collapsed;
             AsrCombo.IsEnabled = true;
             RefinementCheck.IsEnabled = true;
             CleanerCombo.IsEnabled = RefinementCheck.IsChecked == true;
@@ -299,9 +309,8 @@ _ => (Brush)FindResource("Muted"),
         ModelProgress.Visibility = Visibility.Visible;
         try
         {
-            await _modelSelection.RetryAsync(
-                new Progress<ModelProvisionProgress>(ShowProvisionProgress),
-                CancellationToken.None);
+            Progress<ModelProvisionProgress> progress = new(ShowProvisionProgress);
+            await Task.Run(() => _modelSelection.RetryAsync(progress, CancellationToken.None));
             StatusText.Text = "Riprova completata.";
         }
         catch (Exception error) when (error is not OperationCanceledException)
@@ -384,6 +393,12 @@ _ => (Brush)FindResource("Muted"),
 
     private void ShowProvisionProgress(ModelProvisionProgress progress)
     {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.InvokeAsync(() => ShowProvisionProgress(progress));
+            return;
+        }
+
         string label = ModelLabel(progress.ModelId);
         string percent = "";
         string size = "";
@@ -400,6 +415,8 @@ _ => (Brush)FindResource("Muted"),
             ModelProvisionStatus.Checking => $"Verifica {label}…",
             ModelProvisionStatus.Downloading => $"Scaricamento {label}:{percent}{size}",
             ModelProvisionStatus.Completed => $"{label}: completato{size}",
+            ModelProvisionStatus.Loading => $"Caricamento {label} in memoria…",
+            ModelProvisionStatus.WarmingUp => $"Inizializzazione {label} (warm-up)…",
             _ => $"{label}: {progress.Status}"
         };
 

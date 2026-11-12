@@ -139,8 +139,12 @@ final = DictationCorrections.Apply(final, _policy, request.Profile);
     public Task SwapCleanerAsync(ITextCleaner? cleaner, CancellationToken ct) =>
         SwapEnginesAsync(null, cleaner, RefinementEnabled, ct);
 
+    public Task SwapEnginesAsync(ISttEngine? stt, ITextCleaner? cleaner,
+        bool refinementEnabled, CancellationToken ct) =>
+        SwapEnginesAsync(stt, cleaner, refinementEnabled, ct, null);
+
     public async Task SwapEnginesAsync(ISttEngine? stt, ITextCleaner? cleaner,
-        bool refinementEnabled, CancellationToken ct)
+        bool refinementEnabled, CancellationToken ct, Action<string>? stageReporter)
     {
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         if (refinementEnabled && cleaner is null && Volatile.Read(ref _cleaner) is null)
@@ -150,14 +154,18 @@ final = DictationCorrections.Apply(final, _policy, request.Profile);
         {
             if (stt is not null)
             {
+                stageReporter?.Invoke("stt_loading");
                 await stt.LoadAsync(ct).ConfigureAwait(false);
                 ct.ThrowIfCancellationRequested();
+                stageReporter?.Invoke("stt_warming");
                 await stt.TranscribeAsync(new byte[32000], ct).ConfigureAwait(false);
             }
             if (cleaner is not null)
             {
+                stageReporter?.Invoke("cleaner_loading");
                 await cleaner.LoadAsync(ct).ConfigureAwait(false);
                 ct.ThrowIfCancellationRequested();
+                stageReporter?.Invoke("cleaner_warming");
                 await cleaner.CleanAsync("prova di riscaldamento", "default", ct).ConfigureAwait(false);
             }
         }

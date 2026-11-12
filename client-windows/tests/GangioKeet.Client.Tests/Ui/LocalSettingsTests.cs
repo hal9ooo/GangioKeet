@@ -83,8 +83,27 @@ public sealed class LocalSettingsTests
 
             Button? retry = window.FindName("RetryModelsButton") as Button;
             Assert.NotNull(retry);
+            for (int attempt = 0; attempt < 100 && window.Status != "Combinazione applicata a caldo."; attempt++)
+            {
+                System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(() => { },
+                    System.Windows.Threading.DispatcherPriority.Background);
+                Thread.Sleep(10);
+            }
             retry!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            for (int attempt = 0; attempt < 100 && host.RetryCalls == 0; attempt++)
+            {
+                System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(() => { },
+                    System.Windows.Threading.DispatcherPriority.Background);
+                Thread.Sleep(10);
+            }
             Assert.Equal(1, host.RetryCalls);
+            for (int attempt = 0; attempt < 100 && window.Status != "Riprova completata."; attempt++)
+            {
+                System.Windows.Threading.Dispatcher.CurrentDispatcher.Invoke(() => { },
+                    System.Windows.Threading.DispatcherPriority.Background);
+                Thread.Sleep(10);
+            }
+            Assert.Equal("Riprova completata.", window.Status);
             window.Close();
         });
 
@@ -105,6 +124,8 @@ public sealed class LocalSettingsTests
         public Task RetryAsync(IProgress<ModelProvisionProgress>? progress, CancellationToken ct)
         {
             RetryCalls++;
+            progress?.Report(new ModelProvisionProgress("parakeet_v3", "parakeet.gguf",
+                ModelProvisionStatus.Downloading, 50, 100));
             return Task.CompletedTask;
         }
 
@@ -119,6 +140,11 @@ public sealed class LocalSettingsTests
         Exception? captured = null;
         Thread thread = new(() =>
         {
+            // Come una finestra WPF: le continuazioni dopo un await devono
+            // tornare sul thread che possiede gli oggetti dell'interfaccia.
+            SynchronizationContext.SetSynchronizationContext(
+                new System.Windows.Threading.DispatcherSynchronizationContext(
+                    System.Windows.Threading.Dispatcher.CurrentDispatcher));
             try { action(); }
             catch (Exception ex) { captured = ex; }
         });

@@ -10,7 +10,9 @@ public enum ModelProvisionStatus
 {
     Checking,
     Downloading,
-    Completed
+    Completed,
+    Loading,
+    WarmingUp
 }
 
 public sealed record ModelProvisionProgress(

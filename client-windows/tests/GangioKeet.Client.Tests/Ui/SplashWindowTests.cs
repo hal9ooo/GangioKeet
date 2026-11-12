@@ -36,23 +36,19 @@ public sealed class SplashWindowTests
     private static Exception? RunOnStaThread(Action action)
     {
         Exception? captured = null;
-
         Thread thread = new(() =>
         {
-            try
-            {
-                action();
-            }
-            catch (Exception ex)
-            {
-                captured = ex;
-            }
+            // Come una finestra WPF: le continuazioni dopo un await devono
+            // tornare sul thread che possiede gli oggetti dell'interfaccia.
+            SynchronizationContext.SetSynchronizationContext(
+                new System.Windows.Threading.DispatcherSynchronizationContext(
+                    System.Windows.Threading.Dispatcher.CurrentDispatcher));
+            try { action(); }
+            catch (Exception ex) { captured = ex; }
         });
-
         thread.SetApartmentState(ApartmentState.STA);
         thread.Start();
         thread.Join();
-
         return captured;
     }
 }

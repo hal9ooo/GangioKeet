@@ -411,6 +411,13 @@
         <TextBlock Text="Senza modello: solo regole, nessun download. Con un modello: più naturale, richiede il download."
              Style="{StaticResource Hint}" />
 
+        <TextBlock x:Name="ModelBusyText"
+                   Text="Applicazione del modello in corso: la finestra resta utilizzabile."
+                   Foreground="#22D3EE"
+                   FontWeight="SemiBold"
+                   TextWrapping="Wrap"
+                   Margin="0,12,0,0"
+                   Visibility="Collapsed" />
         <ProgressBar x:Name="ModelProgress"
               Height="4"
               Margin="0,12,0,0"

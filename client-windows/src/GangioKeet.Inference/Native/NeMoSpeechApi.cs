@@ -53,14 +53,6 @@ internal static class NeMoSpeechApi
         public IntPtr requestId;
         public IntPtr languageCode;
         [MarshalAs(UnmanagedType.I1)] public bool interimResults;
-        [MarshalAs(UnmanagedType.I1)] public bool enableWordTimeOffsets;
-        [MarshalAs(UnmanagedType.I1)] public bool enableAutomaticPunctuation;
-        [MarshalAs(UnmanagedType.I1)] public bool verbatimTranscripts;
-        [MarshalAs(UnmanagedType.I1)] public bool profanityFilter;
-        public int stopHistoryEouMs;
-        public IntPtr speechContexts;
-        public UIntPtr speechContextCount;
-        public int maxAlternatives;
         [MarshalAs(UnmanagedType.I1)] public bool enableSpeakerDiarization;
         public int maxSpeakerCount;
     }
