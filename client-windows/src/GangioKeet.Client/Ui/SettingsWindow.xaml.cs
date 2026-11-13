@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.IO;
 using Microsoft.Win32;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
 using GangioKeet.Client.Configuration;
@@ -40,7 +41,8 @@ public sealed partial class SettingsWindow : Window
         Func<LocalSettingsInfo> localInfo,
         RecordingStore? recordingStore,
         Action<string>? onModelPairSaved,
-        IModelSelectionHost? modelSelection = null)
+        IModelSelectionHost? modelSelection = null,
+        string? initialTab = null)
     {
         _telemetry = telemetry;
         _configPath = configPath;
@@ -53,6 +55,11 @@ public sealed partial class SettingsWindow : Window
 
         InitializeComponent();
         UpdateLocal();
+
+        if (initialTab is not null)
+        {
+            Loaded += (_, _) => SelectTab(initialTab);
+        }
 
         _timer = new DispatcherTimer(
             TimeSpan.FromMilliseconds(500),
@@ -86,6 +93,19 @@ public sealed partial class SettingsWindow : Window
     public IReadOnlyList<string> CleanerChoiceLabels =>
         CleanerCombo.Items.Cast<ModelSelectionChoices.ModelChoice>().Select(choice => choice.Label).ToArray();
 
+    public void SelectTab(string tabName)
+    {
+        if (string.Equals(tabName, "log", StringComparison.OrdinalIgnoreCase))
+        {
+            MainTabs.SelectedIndex = 1;
+            _ = RefreshLogAsync();
+        }
+        else
+        {
+            MainTabs.SelectedIndex = 0;
+        }
+    }
+
     private void LoadFromConfig(ClientConfig config) => UpdateLocal();
 
     private void ReloadFromDisk()
@@ -101,6 +121,7 @@ ModelsRootBox.Text = config.Inference.ModelsRoot ?? "";
             StatusText.Text = "Pronto.";
         StatusDot.Fill = (Brush)FindResource("Ok");
             _ = RefreshRecordingsAsync();
+            _ = RefreshLogAsync();
         }
         catch (ConfigException ex)
         {
@@ -388,6 +409,125 @@ _ => (Brush)FindResource("Muted"),
         finally
         {
             _recordingRefresh = false;
+        }
+        await RefreshLogAsync();
+    }
+
+    private IReadOnlyList<RecordingLogItem> _recentLogItems = [];
+
+    public async Task RefreshLogAsync()
+    {
+        if (_recordingStorage is null) return;
+        try
+        {
+            IReadOnlyList<RecordingEntry> all = await _recordingStorage.ListAllAsync();
+            ApplyStats(RecordingStats.From(all, DateTimeOffset.Now));
+            _recentLogItems = all.Take(50).Select(e => new RecordingLogItem(e)).ToList();
+            LogHistoryList.ItemsSource = _recentLogItems;
+            LogEmptyText.Visibility = _recentLogItems.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+            if (_recentLogItems.Count > 0 && LogHistoryList.SelectedItem is null)
+            {
+                LogHistoryList.SelectedIndex = 0;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger?.Write("log_refresh_failed", ex.Message);
+        }
+    }
+
+    private void ApplyStats(RecordingStats stats)
+    {
+        StatsCountText.Text = stats.Count.ToString("N0");
+        StatsCountSubText.Text = $"oggi {stats.CountToday:N0} · 7 giorni {stats.CountLast7Days:N0}";
+        StatsTimeText.Text = FormatDuration(stats.DictatedSeconds);
+        StatsTimeSubText.Text = $"media {stats.DictatedSeconds / Math.Max(1, stats.Count):0.0} s";
+        StatsWordsText.Text = stats.Words.ToString("N0");
+        StatsWordsSubText.Text = $"{stats.Characters:N0} caratteri";
+        StatsPaceText.Text = $"{stats.WordsPerMinute:0} wpm";
+        StatsPaceSubText.Text = "parole al minuto";
+        StatsSttText.Text = $"{stats.SttMedianMs:0} ms";
+        StatsSttSubText.Text = $"p95 {stats.SttP95Ms:0} ms";
+        StatsTotalText.Text = $"{stats.TotalMedianMs:0} ms";
+        StatsTotalSubText.Text = $"p95 {stats.TotalP95Ms:0} ms";
+        StatsQualityText.Text = $"{stats.WithWarnings:N0} con warning";
+        StatsQualitySubText.Text = $"{stats.Silent:N0} silenzi · {stats.ChangedByCleanup:N0} corrette";
+        StatsEnginesText.Text = stats.TopSttModel;
+        StatsEnginesSubText.Text = $"cleaner: {stats.TopCleaner} ({stats.TopCleanerCount:N0})";
+        ActivityBars.ItemsSource = stats.Activity
+            .Select(day => new { day.Label, BarHeight = day.BarHeight * 40 })
+            .ToList();
+    }
+
+    private static string FormatDuration(double seconds)
+    {
+        TimeSpan span = TimeSpan.FromSeconds(Math.Max(0, seconds));
+        if (span.TotalHours >= 1) return $"{(int)span.TotalHours}h {span.Minutes}m";
+        if (span.TotalMinutes >= 1) return $"{span.Minutes}m {span.Seconds}s";
+        return $"{span.Seconds}s";
+    }
+    private void MainTabs_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (e.Source == MainTabs && MainTabs.SelectedIndex == 1)
+        {
+            _ = RefreshLogAsync();
+        }
+    }
+
+    private void RefreshLogButton_Click(object sender, RoutedEventArgs e)
+    {
+        _ = RefreshLogAsync();
+    }
+
+    private void LogHistoryList_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (LogHistoryList.SelectedItem is not RecordingLogItem item)
+        {
+            DetailTimestampText.Text = "Seleziona una dettatura a sinistra";
+            DetailMetaText.Text = "Verranno mostrati gli stadi prima e dopo il passaggio dai modelli.";
+            DetailDurationText.Text = "";
+            DetailRawTextBox.Text = "";
+            DetailCleanerTextBox.Text = "";
+            DetailFinalTextBox.Text = "";
+            return;
+        }
+
+        RecordingEntry entry = item.Entry;
+        DetailTimestampText.Text = item.CreatedAtFormatted;
+        string sttModel = string.IsNullOrWhiteSpace(entry.SttModel) ? "ASR" : entry.SttModel;
+        string cleanerModel = string.IsNullOrWhiteSpace(entry.LlmModel) ? "nessuno" : entry.LlmModel;
+        DetailMetaText.Text = $"ASR: {sttModel} ({entry.SttMs:0} ms)   •   Cleaner: {cleanerModel} ({entry.LlmMs:0} ms)";
+        DetailDurationText.Text = $"{entry.DurationSeconds:0.1} s  (Tot: {entry.TotalMs:0} ms)";
+
+        DetailRawTextBox.Text = entry.RawText ?? "";
+        DetailCleanerTextBox.Text = entry.CleanerText ?? (string.IsNullOrWhiteSpace(entry.LlmModel) ? "(nessun cleaner attivo)" : "(non disponibile)");
+        DetailFinalTextBox.Text = entry.FinalText ?? "";
+    }
+
+    private void CopyRaw_Click(object sender, RoutedEventArgs e)
+    {
+        if (!string.IsNullOrEmpty(DetailRawTextBox.Text))
+        {
+            try { Clipboard.SetText(DetailRawTextBox.Text); }
+            catch (Exception ex) { _logger?.Write("clipboard_copy_failed", ex.Message); }
+        }
+    }
+
+    private void CopyCleaner_Click(object sender, RoutedEventArgs e)
+    {
+        if (!string.IsNullOrEmpty(DetailCleanerTextBox.Text))
+        {
+            try { Clipboard.SetText(DetailCleanerTextBox.Text); }
+            catch (Exception ex) { _logger?.Write("clipboard_copy_failed", ex.Message); }
+        }
+    }
+
+    private void CopyFinal_Click(object sender, RoutedEventArgs e)
+    {
+        if (!string.IsNullOrEmpty(DetailFinalTextBox.Text))
+        {
+            try { Clipboard.SetText(DetailFinalTextBox.Text); }
+            catch (Exception ex) { _logger?.Write("clipboard_copy_failed", ex.Message); }
         }
     }
 

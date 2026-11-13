@@ -37,7 +37,6 @@ prova da fare a mano.
 ### Dettatura per gli strumenti degli agenti
 
 - Punteggiatura con un modello ONNX (`OnnxPunctuationCleaner`, test `OnnxPunctuationCleanerTests` e `OnnxPunctuationIntegrationTests`): completare, misurare la latenza e committare. (M) (lavoro non committato nel checkout, 13/11)
-- Registro delle dettature nelle impostazioni (`RecordingLogItem`, `RecordingStore`, `SettingsWindow`): completare e committare. (M) (lavoro non committato nel checkout, 13/11)
 
 ## Minore
 
