@@ -2,5 +2,5 @@
   "schema_version": 1,
   "catalog_sha256": "7e77a60654a8e88762b013929b0b0b82a6399a490ee42c9885cd2af29d89b6cc",
   "runtime_lock_sha256": "e7ff49f052c9a37b917d2e844f8185215cda8a60d01e1eaa5bf6e925b1436846",
-  "cleanup_policy_sha256": "fd32a44b3764d28fcccd6ab62ef4e2c2bce1c73a7bc55015bd9d97289f3df68b"
+  "cleanup_policy_sha256": "eef8bcdd9fb00263a9a57956c5816322fc6a61fb3c65f4a4cc68665aad1a228a"
 }

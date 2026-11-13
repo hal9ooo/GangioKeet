@@ -35,7 +35,7 @@ phonetic_overrides:
   prossimo ve: Proxmox VE
   lama punto ci pi pi: llama.cpp
   superpowers: superpowers
-  # Nomi tecnici dettati: varianti fonetiche misurate su 773 dettature reali.
+  # Nomi tecnici dettati: forme che non esistono in italiano, sicure da riscrivere sempre.
   ci per inference: Cheaper Inference
   cip per inference: Cheaper Inference
   cyper inference: Cheaper Inference
@@ -43,14 +43,11 @@ phonetic_overrides:
   cyber inference: Cheaper Inference
   cheaperinference: Cheaper Inference
   cheaper inference: Cheaper Inference
-  cloud code: Claude Code
-  codecs: Codex
   codecx: Codex
   dipsig: DeepSeek
   dipsik: DeepSeek
   deepsick: DeepSeek
   deepsik: DeepSeek
-  psic: DeepSeek
   omni router: OmniRoute
   omni root: OmniRoute
   omnirouter: OmniRoute
@@ -58,7 +55,29 @@ phonetic_overrides:
   open router: OpenRouter
   open code: OpenCode
   antigraviti: Antigravity
-  open cloud: OpenClaw
+
+contextual_corrections:
+  # Solo con la guardia giusta: un falso positivo costa più di una correzione mancata.
+  # "lancio agenti di psic", "esce psic 1217" ma MAI "lo psicologo".
+  - from: psic
+    to: DeepSeek
+    context: '\b(?:di|da|su|con|per)\s+(?:word)\b|\b(?:word)\s+\d{2,4}\b'
+  # "in Cloud Code o Codex o Antigraviti" (elenco di agenti), non "cloud code" generico.
+  - from: cloud code
+    to: Claude Code
+    context: '(?:word)\s+(?:o|e)\s+(?:Codex|Antigravity|OpenCode)\b'
+  # "i piani con Codecs, poi cloud".
+  - from: codecs
+    to: Codex
+    context: '\b(?:con|da|a)\s+(?:word)\b(?=\s*(?:,|poi)\b)'
+  # Il CT123 si chiama così.
+  - from: open cloud
+    to: OpenClaw
+    context: '\bsi\s+chiama\s+(?:word)\b|(?:word)\s*,\s*su\s+ct'
+  # "con Cloud, con Codex": agente. "tutto cloud", "cloud storage": resta cloud.
+  - from: cloud
+    to: Claude
+    context: '\b(?:con|su|e|da)\s+(?:word)\b(?![^.]{0,14}\b(?:code|storage|native|computing|provider|gpu|cpu|hosting|backup)\b)'
 
 elision_corrections:
   - from: con la gente
