@@ -273,6 +273,39 @@
             <Setter Property="Foreground" Value="#D8D3C6" />
             <Setter Property="BorderBrush" Value="#1E2A40" />
         </Style>
+
+        <Style TargetType="TabControl">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+
+        <Style TargetType="TabItem">
+            <Setter Property="FontSize" Value="13.5" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{StaticResource Muted}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="16,8" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TabItem">
+                        <Border x:Name="TabChrome" Background="Transparent" BorderThickness="0,0,0,2" BorderBrush="Transparent" Margin="0,0,12,0" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter x:Name="ContentSite" ContentSource="Header" VerticalAlignment="Center" HorizontalAlignment="Center" RecognizesAccessKey="True" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsSelected" Value="True">
+                                <Setter TargetName="TabChrome" Property="BorderBrush" Value="{StaticResource Accent}" />
+                                <Setter Property="Foreground" Value="#FFFFFF" />
+                            </Trigger>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter Property="Foreground" Value="#FFFFFF" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
     </Window.Resources>
 
  <Grid>
@@ -284,13 +317,15 @@
 
   <!-- Intestazione -->
   <StackPanel Grid.Row="0" Margin="24,20,24,8">
-   <TextBlock Text="Impostazioni" FontSize="24" FontWeight="SemiBold" />
+   <TextBlock Text="ChattyNeko" FontSize="24" FontWeight="SemiBold" />
    <TextBlock Text="Tutto gira su questo PC: nessun server, nessuna rete."
         Style="{StaticResource SectionHint}" Margin="0,4,0,0" />
   </StackPanel>
 
-  <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
-         HorizontalScrollBarVisibility="Disabled" Padding="24,0,24,0">
+  <TabControl Grid.Row="1" x:Name="MainTabs" SelectionChanged="MainTabs_SelectionChanged" Margin="24,0,24,0">
+      <TabItem Header="Impostazioni">
+          <ScrollViewer VerticalScrollBarVisibility="Auto"
+                 HorizontalScrollBarVisibility="Disabled" Padding="0,12,0,0">
    <Grid>
     <Grid.ColumnDefinitions>
      <ColumnDefinition Width="*" />
@@ -486,6 +521,218 @@
     </StackPanel>
    </Grid>
   </ScrollViewer>
+  </TabItem>
+
+  <TabItem Header="Log dettature">
+    <Grid Margin="0,12,0,8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Intestazione del cruscotto -->
+        <Grid Grid.Row="0" Margin="0,0,0,10">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                <TextBlock Text="Come sta andando la dettatura" Style="{StaticResource SectionTitle}" />
+                <TextBlock Text="Numeri su tutte le registrazioni salvate." Style="{StaticResource SectionHint}" />
+            </StackPanel>
+            <Button Grid.Column="1" x:Name="RefreshLogButton" Content="Aggiorna"
+                    Click="RefreshLogButton_Click" VerticalAlignment="Center" />
+        </Grid>
+
+        <!-- Cifre di sintesi -->
+        <UniformGrid Grid.Row="1" Columns="4" Margin="0,0,0,4">
+            <Border Style="{StaticResource Card}" Margin="0,0,6,6" Padding="12,10">
+                <StackPanel>
+                    <TextBlock Text="Dettature" Style="{StaticResource SectionHint}" />
+                    <TextBlock x:Name="StatsCountText" Text="—" FontSize="22" FontWeight="SemiBold"
+                               Foreground="{StaticResource Accent}" />
+                    <TextBlock x:Name="StatsCountSubText" Text="—" FontSize="11"
+                               Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Margin="0,0,6,6" Padding="12,10">
+                <StackPanel>
+                    <TextBlock Text="Tempo dettato" Style="{StaticResource SectionHint}" />
+                    <TextBlock x:Name="StatsTimeText" Text="—" FontSize="22" FontWeight="SemiBold"
+                               Foreground="{StaticResource Accent}" />
+                    <TextBlock x:Name="StatsTimeSubText" Text="—" FontSize="11"
+                               Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Margin="0,0,6,6" Padding="12,10">
+                <StackPanel>
+                    <TextBlock Text="Parole" Style="{StaticResource SectionHint}" />
+                    <TextBlock x:Name="StatsWordsText" Text="—" FontSize="22" FontWeight="SemiBold"
+                               Foreground="{StaticResource Accent}" />
+                    <TextBlock x:Name="StatsWordsSubText" Text="—" FontSize="11"
+                               Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Margin="0,0,6,6" Padding="12,10">
+                <StackPanel>
+                    <TextBlock Text="Ritmo" Style="{StaticResource SectionHint}" />
+                    <TextBlock x:Name="StatsPaceText" Text="—" FontSize="22" FontWeight="SemiBold"
+                               Foreground="{StaticResource Accent}" />
+                    <TextBlock x:Name="StatsPaceSubText" Text="—" FontSize="11"
+                               Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Margin="0,0,6,6" Padding="12,10">
+                <StackPanel>
+                    <TextBlock Text="Latenza STT" Style="{StaticResource SectionHint}" />
+                    <TextBlock x:Name="StatsSttText" Text="—" FontSize="22" FontWeight="SemiBold"
+                               Foreground="{StaticResource Accent}" />
+                    <TextBlock x:Name="StatsSttSubText" Text="—" FontSize="11"
+                               Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Margin="0,0,6,6" Padding="12,10">
+                <StackPanel>
+                    <TextBlock Text="Latenza totale" Style="{StaticResource SectionHint}" />
+                    <TextBlock x:Name="StatsTotalText" Text="—" FontSize="22" FontWeight="SemiBold"
+                               Foreground="{StaticResource Accent}" />
+                    <TextBlock x:Name="StatsTotalSubText" Text="—" FontSize="11"
+                               Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Margin="0,0,6,6" Padding="12,10">
+                <StackPanel>
+                    <TextBlock Text="Qualità" Style="{StaticResource SectionHint}" />
+                    <TextBlock x:Name="StatsQualityText" Text="—" FontSize="22" FontWeight="SemiBold"
+                               Foreground="{StaticResource Accent}" />
+                    <TextBlock x:Name="StatsQualitySubText" Text="—" FontSize="11"
+                               Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </Border>
+            <Border Style="{StaticResource Card}" Margin="0,0,6,6" Padding="12,10">
+                <StackPanel>
+                    <TextBlock Text="Motori" Style="{StaticResource SectionHint}" />
+                    <TextBlock x:Name="StatsEnginesText" Text="—" FontSize="22" FontWeight="SemiBold"
+                               Foreground="{StaticResource Accent}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock x:Name="StatsEnginesSubText" Text="—" FontSize="11"
+                               Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis" />
+                </StackPanel>
+            </Border>
+        </UniformGrid>
+
+        <!-- Attività per giorno -->
+        <Border Grid.Row="2" Style="{StaticResource Card}" Margin="0,0,0,6" Padding="12,10">
+            <StackPanel>
+                <TextBlock Text="Ultime 4 settimane" Style="{StaticResource SectionHint}" />
+                <ItemsControl x:Name="ActivityBars" Margin="0,6,0,0">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Margin="0,0,3,0" VerticalAlignment="Bottom">
+                                <Grid Height="40" VerticalAlignment="Bottom">
+                                    <Border Width="8" VerticalAlignment="Bottom" CornerRadius="1"
+                                            Background="{StaticResource Accent}" Height="{Binding BarHeight}" />
+                                </Grid>
+                                <TextBlock Text="{Binding Label}" FontSize="9" HorizontalAlignment="Center"
+                                           Foreground="{StaticResource Muted}" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </StackPanel>
+        </Border>
+
+        <!-- Ispettore della singola dettatura, chiuso di default -->
+        <Expander Grid.Row="3" x:Name="DetailsExpander" Header="Mostra dettagli"
+                  IsExpanded="False" Foreground="#C9C4B6" Margin="0,0,0,6">
+            <Grid Height="360" Margin="0,10,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="320" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <Border Grid.Column="0" Style="{StaticResource Card}" Margin="0,0,6,0" Padding="4">
+                    <Grid>
+                        <ListBox x:Name="LogHistoryList" SelectionChanged="LogHistoryList_SelectionChanged"
+                                 Background="Transparent" BorderThickness="0"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Padding="10,8" BorderThickness="0,0,0,1" BorderBrush="#1E2A40" Background="Transparent">
+                                        <StackPanel>
+                                            <Grid>
+                                                <TextBlock Text="{Binding CreatedAtFormatted}" Foreground="{StaticResource Muted}" FontSize="11" />
+                                                <TextBlock Text="{Binding LatencySummary}" HorizontalAlignment="Right" Foreground="{StaticResource Accent}" FontSize="11" />
+                                            </Grid>
+                                            <TextBlock Text="{Binding RawPreview}" Foreground="#F5F1E6" FontSize="12" FontWeight="SemiBold"
+                                                       TextTrimming="CharacterEllipsis" Margin="0,3,0,2" />
+                                            <TextBlock Text="{Binding EngineSummary}" Foreground="#7C8AA5" FontSize="10.5" TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <TextBlock x:Name="LogEmptyText" Text="Nessuna dettatura registrata finora."
+                                   Foreground="{StaticResource Muted}" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                   Visibility="Collapsed" />
+                    </Grid>
+                </Border>
+
+                <Border Grid.Column="1" Style="{StaticResource Card}" Margin="6,0,0,0">
+                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                        <StackPanel x:Name="LogDetailPanel">
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock x:Name="DetailTimestampText" Text="Seleziona una dettatura a sinistra" FontSize="14" FontWeight="SemiBold" Foreground="#FFFFFF" />
+                                    <TextBlock x:Name="DetailMetaText" Text="Verranno mostrati gli stadi prima e dopo il passaggio dai modelli." Foreground="{StaticResource Muted}" FontSize="11.5" Margin="0,2,0,0" />
+                                </StackPanel>
+                                <TextBlock x:Name="DetailDurationText" Grid.Column="1" Text="" Foreground="{StaticResource Accent}" FontSize="13" FontWeight="SemiBold" VerticalAlignment="Center" />
+                            </Grid>
+
+                            <Grid Margin="0,4,0,4">
+                                <TextBlock Text="1. Testo RAW (trascrizione diretta ASR)" Style="{StaticResource FieldLabel}" FontWeight="SemiBold" Foreground="{StaticResource Accent}" />
+                                <Button Content="Copia RAW" Click="CopyRaw_Click" HorizontalAlignment="Right" Padding="8,2" FontSize="11" />
+                            </Grid>
+                            <TextBox x:Name="DetailRawTextBox" IsReadOnly="True" TextWrapping="Wrap"
+                                     MinHeight="55" MaxHeight="130" VerticalScrollBarVisibility="Auto"
+                                     Background="#0E1626" BorderBrush="#1E2A40" Foreground="#22D3EE"
+                                     FontFamily="Consolas, Segoe UI" FontSize="12.5" Padding="8" />
+
+                            <Grid Margin="0,10,0,4">
+                                <TextBlock x:Name="DetailCleanerLabel" Text="2. Testo dopo Cleaner (ONNX o LLM)" Style="{StaticResource FieldLabel}" FontWeight="SemiBold" Foreground="#C9C4B6" />
+                                <Button Content="Copia Cleaner" Click="CopyCleaner_Click" HorizontalAlignment="Right" Padding="8,2" FontSize="11" />
+                            </Grid>
+                            <TextBox x:Name="DetailCleanerTextBox" IsReadOnly="True" TextWrapping="Wrap"
+                                     MinHeight="55" MaxHeight="130" VerticalScrollBarVisibility="Auto"
+                                     Background="#0E1626" BorderBrush="#1E2A40" Foreground="#E8E4D8"
+                                     FontFamily="Consolas, Segoe UI" FontSize="12.5" Padding="8" />
+
+                            <Grid Margin="0,10,0,4">
+                                <TextBlock Text="3. Testo Finale (incollato nella finestra target)" Style="{StaticResource FieldLabel}" FontWeight="SemiBold" Foreground="#4ADE80" />
+                                <Button Content="Copia Finale" Click="CopyFinal_Click" HorizontalAlignment="Right" Padding="8,2" FontSize="11" />
+                            </Grid>
+                            <TextBox x:Name="DetailFinalTextBox" IsReadOnly="True" TextWrapping="Wrap"
+                                     MinHeight="55" MaxHeight="130" VerticalScrollBarVisibility="Auto"
+                                     Background="#0E1626" BorderBrush="#1E2A40" Foreground="#FFFFFF"
+                                     FontFamily="Consolas, Segoe UI" FontSize="12.5" Padding="8" />
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+            </Grid>
+        </Expander>
+    </Grid>
+</TabItem>
+ </TabControl>
 
   <!-- Barra di stato -->
   <Border Grid.Row="2" Background="#0E1626" BorderBrush="#16223A" BorderThickness="0,1,0,0"
