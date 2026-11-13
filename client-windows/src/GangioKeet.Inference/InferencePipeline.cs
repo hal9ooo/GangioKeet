@@ -89,6 +89,7 @@ public sealed class InferencePipeline : IInferencePipeline
             double sttMs = _time.GetElapsedTime(start).TotalMilliseconds;
             linked.Token.ThrowIfCancellationRequested();
             string raw = transcript.Text.Trim();
+            string? cleanerText = null;
             string final = "";
             double llmMs = 0;
             EngineIdentity? cleanerIdentity = null;
@@ -100,26 +101,31 @@ public sealed class InferencePipeline : IInferencePipeline
                     using CancellationTokenSource deadline = new(_policy.LlmTimeout, _time);
                     using CancellationTokenSource cleaning = CancellationTokenSource.CreateLinkedTokenSource(linked.Token, deadline.Token);
                     start = _time.GetTimestamp();
+                    string intermediate = raw;
                     try
                     {
                         CleanedText result = await cleaner.CleanAsync(raw, request.Profile, cleaning.Token).ConfigureAwait(false);
                         linked.Token.ThrowIfCancellationRequested();
                         deadline.Token.ThrowIfCancellationRequested();
-                        final = result.Text;
+                        cleanerText = result.Text;
                         cleanerIdentity = result.Engine;
+                        intermediate = result.Text;
                     }
                     catch (OperationCanceledException) when (!linked.IsCancellationRequested && deadline.IsCancellationRequested)
                     {
-                        final = GlossaryNormalizer.Normalize(raw, _policy, request.Profile);
+                        intermediate = GlossaryNormalizer.Normalize(raw, _policy, request.Profile);
                         warnings.Add("llm_timeout");
                     }
                     catch (Exception) when (!linked.IsCancellationRequested)
                     {
-                        final = GlossaryNormalizer.Normalize(raw, _policy, request.Profile);
+                        intermediate = GlossaryNormalizer.Normalize(raw, _policy, request.Profile);
                         warnings.Add("llm_failed");
                     }
                     finally { llmMs = _time.GetElapsedTime(start).TotalMilliseconds; }
-final = DictationCorrections.Apply(final, _policy, request.Profile);
+                    // Il glossario gira anche quando il cleaner riesce: senza questo passo
+                    // canonical_terms e phonetic_overrides valevano solo nel ramo di errore.
+                    final = DictationCorrections.Apply(
+                        GlossaryNormalizer.Normalize(intermediate, _policy, request.Profile), _policy, request.Profile);
                 }
                 else
                 {
@@ -128,7 +134,7 @@ final = DictationCorrections.Apply(final, _policy, request.Profile);
             }
             linked.Token.ThrowIfCancellationRequested();
             return new(raw, final, sttMs, llmMs, _time.GetElapsedTime(totalStart).TotalMilliseconds,
-                warnings, transcript.Engine, cleanerIdentity);
+                warnings, transcript.Engine, cleanerIdentity, cleanerText);
         }
         finally { _gate.Release(); }
     }

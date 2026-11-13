@@ -35,6 +35,30 @@ phonetic_overrides:
   prossimo ve: Proxmox VE
   lama punto ci pi pi: llama.cpp
   superpowers: superpowers
+  # Nomi tecnici dettati: varianti fonetiche misurate su 773 dettature reali.
+  ci per inference: Cheaper Inference
+  cip per inference: Cheaper Inference
+  cyper inference: Cheaper Inference
+  ciper inference: Cheaper Inference
+  cyber inference: Cheaper Inference
+  cheaperinference: Cheaper Inference
+  cheaper inference: Cheaper Inference
+  cloud code: Claude Code
+  codecs: Codex
+  codecx: Codex
+  dipsig: DeepSeek
+  dipsik: DeepSeek
+  deepsick: DeepSeek
+  deepsik: DeepSeek
+  psic: DeepSeek
+  omni router: OmniRoute
+  omni root: OmniRoute
+  omnirouter: OmniRoute
+  omniroot: OmniRoute
+  open router: OpenRouter
+  open code: OpenCode
+  antigraviti: Antigravity
+  open cloud: OpenClaw
 
 elision_corrections:
   - from: con la gente

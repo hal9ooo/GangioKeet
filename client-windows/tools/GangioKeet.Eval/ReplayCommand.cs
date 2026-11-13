@@ -140,7 +140,10 @@ public sealed class ReplayCommand(string modelRoot, string nativeDirectory, stri
                             deadline.CancelAfter(policy.LlmTimeout);
                             CleanedText result = await cleaner!.CleanAsync(clip["raw_text"].GetString()!, profile, deadline.Token);
                             deadline.Token.ThrowIfCancellationRequested();
-                            row["final_text"] = result.Text; row["cleaner_engine"] = result.Engine;
+                            row["cleaner_text"] = result.Text;
+                            row["final_text"] = DictationCorrections.Apply(
+                                GlossaryNormalizer.Normalize(result.Text, policy, profile), policy, profile);
+                            row["cleaner_engine"] = result.Engine;
                             row["llm_ms"] = timer.Elapsed.TotalMilliseconds; row["stt_ms"] = 0;
                             row["warnings"] = Array.Empty<string>();
                         }

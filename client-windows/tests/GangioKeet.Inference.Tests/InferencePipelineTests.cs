@@ -6,6 +6,19 @@ namespace GangioKeet.Inference.Tests;
 public sealed class InferencePipelineTests
 {
     [Fact]
+    public async Task AppliesGlossaryEvenWhenTheCleanerSucceeds()
+    {
+        Engines engines = new() { Raw = "uso ciper inference" };
+        engines.Clean = (raw, _) => Task.FromResult(raw);
+        await using InferencePipeline pipeline = new(engines, engines,
+            new CleanupPolicy { PhoneticOverrides = new() { ["ciper inference"] = "Cheaper Inference" } },
+            TimeProvider.System);
+        await pipeline.WarmUpAsync(default);
+        PipelineResult result = await pipeline.ProcessAsync(new(new byte[4], "chat"), default);
+        Assert.Equal("uso Cheaper Inference", result.FinalText);
+        Assert.Equal("uso ciper inference", result.CleanerText);
+    }
+    [Fact]
     public async Task WarmupIsIdempotentAndConcurrentTurnsNeverOverlap()
     {
         Engines engines = new();
@@ -26,10 +39,12 @@ public sealed class InferencePipelineTests
         engines.CleanerCalls = 0;
         PipelineResult result = await pipeline.ProcessAsync(new(new byte[4], "chat"), default);
         Assert.Equal("Come funziona?", result.FinalText);
+        Assert.Equal("Come funziona?", result.CleanerText);
         Assert.Equal(1, engines.CleanerCalls);
         engines.Raw = " ";
         result = await pipeline.ProcessAsync(new(new byte[4], "chat"), default);
         Assert.Equal("", result.FinalText);
+        Assert.Null(result.CleanerText);
         Assert.Equal(1, engines.CleanerCalls);
     }
 

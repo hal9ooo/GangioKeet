@@ -1,3 +1,4 @@
+# Backlog
 
 <!-- sprint-flow:regole (le aggiorna il timer notturno di sprint-flow: non modificarle qui) -->
 Le voci stanno in quattro classi. L'**importanza** decide l'ordine: alta =
@@ -42,5 +43,4 @@ prova da fare a mano.
 
 ## Da valutare
 
-- Riconoscere dal contesto i nomi ambigui che il glossario non puo risolvere (`Cloud` vs `Claude`, `Brain`): serve un resolver contestuale addestrato su `reference_final`, oggi tutte le 779 righe sono `unreviewed`. (L) (analisi delle dettature, 13/11)
 - Riconoscere dal contesto i nomi ambigui che il glossario non puo risolvere (`Cloud` vs `Claude`, `Brain`): serve un resolver contestuale addestrato su `reference_final`, oggi tutte le 779 righe sono `unreviewed`. (L) (analisi delle dettature, 13/11)

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "catalog_sha256": "f8c45aa870eddcea23e215486d033740339149d0247684854f48707cbaa5505d",
+  "catalog_sha256": "7e77a60654a8e88762b013929b0b0b82a6399a490ee42c9885cd2af29d89b6cc",
   "runtime_lock_sha256": "e7ff49f052c9a37b917d2e844f8185215cda8a60d01e1eaa5bf6e925b1436846",
-  "cleanup_policy_sha256": "c7e6700032cd1e93303d8e09b9d9f281dbf03516b1f9e8c3f10f1c60a788f7fa"
+  "cleanup_policy_sha256": "fd32a44b3764d28fcccd6ab62ef4e2c2bce1c73a7bc55015bd9d97289f3df68b"
 }
