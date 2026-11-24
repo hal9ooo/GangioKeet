@@ -10,7 +10,39 @@ precedente valgono `git log` e le note delle release.
 
 <!-- sprint-flow:inizio 3c0aca9faeb563151d97870a3582723a4f6fb10e -->
 <!-- sprint-flow:giorni -->
-<!-- sprint-flow:ultimo 3c0aca9faeb563151d97870a3582723a4f6fb10e -->
+<!-- sprint-flow:ultimo bf546139b5ae2ad3a1927663beb23696c052a553 -->
+
+## 2026-11-13
+<!-- sprint-flow:giorno commit=10 testo=prod-default -->
+
+**Nuovo flusso sprint e backlog a quattro classi** — claude
+- BACKLOG.md ora tiene lo sprint corrente in cima e classifica le voci in quattro classi: Prioritario, Importante, Minore, Da valutare.
+- CHANGELOG.md passa al formato Keep a Changelog, ricostruito dalle note di rilascio v0.1.0–v0.2.7 e aggiornato ogni notte con i temi del giorno.
+- Aggiunte docs/sprints/ per i record giornalieri di sprint e docs/LEZIONI.md per le lezioni apprese.
+- Le regole del flusso stanno in AGENTS.md e vengono importate da CLAUDE.md, così gli strumenti di sviluppo seguono le stesse regole.
+
+**Statistiche dettatura aggregate dal manifest** — opencode
+- Nuova classe RecordingStats che calcola le statistiche delle dettature partendo dal manifest.
+- La lettura del manifest è stata estesa per fornire tutti i dati necessari all'aggregazione.
+- Aggiunti test per l'aggregazione e per la lettura completa del manifest.
+
+**Dashboard dettatura nelle impostazioni** — opencode
+- La finestra delle impostazioni mostra una dashboard delle dettature con dettaglio comprimibile.
+- I valori della dashboard vengono riempiti leggendo il manifest.
+
+**Glossario tecnico applicato a ogni dettatura** — opencode
+- Il glossario unito ora viene applicato anche dopo una pulizia riuscita, non solo quando il cleaner fallisce: prima le phonetic_overrides erano di fatto inutilizzate.
+- L'eval runner misura la stessa post-elaborazione usata dall'app, così i risultati riflettono il comportamento reale.
+- Le correzioni che riscrivevano parole comuni (per esempio 'psicologo') ora scattano solo in contesti riconoscibili, mentre le chiavi fonetiche impossibili in italiano restano sempre attive.
+
+**Hash della selezione modelli aggiornati** — opencode
+- La selezione dei modelli punta al nuovo hash della cleanup policy.
+- Aggiornato il manifest del pacchetto con l'hash corretto, così l'installazione usa i modelli giusti.
+
+**Dal backlog**
+- Riconoscere dal contesto i nomi ambigui che il glossario non puo risolvere (`Cloud` vs `Claude`, `Brain`): serve un resolver contestuale addestrato su `reference_final`, oggi tutte le 779 righe sono `unreviewed`. (L)… — opencode
+- Registro delle dettature nelle impostazioni (`RecordingLogItem`, `RecordingStore`, `SettingsWindow`): completare e committare. (M) (lavoro non committato nel checkout, 13/11) — opencode
+
 <!-- sprint-flow:giorni-fine -->
 
 ## Prima di sprint-flow
