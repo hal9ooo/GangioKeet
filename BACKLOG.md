@@ -37,9 +37,19 @@ prova da fare a mano.
 ### Dettatura per gli strumenti degli agenti
 
 - Punteggiatura con un modello ONNX (`OnnxPunctuationCleaner`, test `OnnxPunctuationCleanerTests` e `OnnxPunctuationIntegrationTests`): completare, misurare la latenza e committare. (M) (lavoro non committato nel checkout, 13/11)
+- `POST /v1/dictation` valida solo il ramo multipart: con l'audio nel corpo binario, `?model=whisper-1` e `?language=it` nella query string vengono ignorati e la risposta è 200, quindi il chiamante crede di aver scelto un modello. Stessa regola del resto del server: rifiutare, mai ignorare. Riusare `DictationContract` sul ramo non-multipart, con test. (S) (review finale server API, 27/11)
 
 ## Minore
 
+### Dettatura per gli strumenti degli agenti
+
+- `DictationControllerTests.ResultWithUipiBlockedAtPaste_OffersRecoveryWithoutPasting` è instabile: con la suite intera fallisce circa una volta su quattro, da solo passa sempre (3/3). Trovare la condivisione di stato tra test, non allentare l'asserzione. (S) (pipeline hardening, 26/11)
+- `DictationControllerTests.Success_RecordsTelemetryForActiveBackend` è instabile con la suite intera (visto una volta su tre giri del 27/11, verde da solo e al giro dopo): il test legge `TelemetryStore.Snapshot()` appena lo stato torna `Idle`, e la telemetria può essere scritta subito dopo. Aspettare la condizione di telemetria invece dello stato, come fanno i test vicini. (S) (final fix server API, 27/11)
+- `SettingsWindow._onModelPairSaved` è assegnato e mai invocato: il percorso impostazioni applica la scelta con `ApplyModelSelectionAsync`, quindi `App.SwitchLocalModelPairAsync` è codice morto. O si collega, o si toglie col campo. (S) (review finale server API, 27/11)
+
 ## Da valutare
+
+- Il `cleanup.yaml` installato in `%LOCALAPPDATA%\Programs\GangioKeet\` ha 57 righe contro le 103 di `client-windows/cleanup.example.yaml`: mancano glossario tecnico e correzioni contestuali, quindi l'app installata non applica quelle correzioni. Serve una procedura di aggiornamento della policy a installazione avvenuta. (M) (pipeline hardening, 26/11)
+- `ApiConfig.Port` documentato come "0 = porta scelta dal sistema" nel server, ma `ConfigLoader.ValidateApi` rifiuta ogni porta sotto 1024: quel valore funziona solo nei test, che costruiscono `ApiConfig` a mano. Decidere se ammettere 0 anche da file, o togliere la promessa dalla doc. (S) (review finale server API, 27/11)
 
 - Riconoscere dal contesto i nomi ambigui che il glossario non puo risolvere (`Cloud` vs `Claude`, `Brain`): serve un resolver contestuale addestrato su `reference_final`, oggi tutte le 779 righe sono `unreviewed`. (L) (analisi delle dettature, 13/11)
