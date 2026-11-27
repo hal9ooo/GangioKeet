@@ -1,3 +1,18 @@
+# Archived — no longer maintained
+
+> **This project is retired.** ChattyNeko was built, measured and then archived
+> on 2026-11-27 in favour of **Hex**, which covers the same need and is actively
+> maintained. The local engine was not worse: on 35 reference clips ChattyNeko
+> scored 3.30% WER and Hex with the same model 3.68% — a difference of about five
+> words in 788, i.e. noise. Keeping two local dictation programs made no sense.
+>
+> The evidence, the method and the numbers are in
+> [`docs/benchmarks/hex-vs-chattyneko-2026-11-27/`](docs/benchmarks/hex-vs-chattyneko-2026-11-27/README.md)
+> and the full account is in [`docs/RITIRATO.md`](docs/RITIRATO.md).
+>
+> The code and its 652 tests still work. This repository is public and contains
+> no API tokens, no audio and no dictated text.
+
 <p align="center">
   <img src="assets/icon.png" width="160" alt="ChattyNeko icon">
 </p>

@@ -1,0 +1,87 @@
+{
+  "date": "2026-11-27",
+  "corpus": {
+    "clips": 35,
+    "words": 788,
+    "ground_truth": "testo di riferimento scritto dall operatore, non generato"
+  },
+  "metric": "WER a livello di parola, punteggiatura e maiuscole ignorate, accenti normalizzati",
+  "results": [
+    {
+      "config": "ChattyNeko — Parakeet F16, grezzo",
+      "wer_percent": 3.3,
+      "errors": 26,
+      "words": 788
+    },
+    {
+      "config": "ChattyNeko — Parakeet F16 + pulizia/glossario",
+      "wer_percent": 3.55,
+      "errors": 28,
+      "words": 788
+    },
+    {
+      "config": "Hex — Parakeet F16 importato",
+      "wer_percent": 3.68,
+      "errors": 29,
+      "words": 788,
+      "seconds_35_clips": 12.8
+    },
+    {
+      "config": "Hex — parakeet_v3 Q8 (attivo)",
+      "wer_percent": 3.93,
+      "errors": 31,
+      "words": 788,
+      "seconds_35_clips": 8.2
+    },
+    {
+      "config": "ChattyNeko — Whisper large v3 + light",
+      "wer_percent": 5.08,
+      "errors": 40,
+      "words": 788
+    },
+    {
+      "config": "ChattyNeko — Whisper + 21 termini come prompt",
+      "wer_percent": 5.46,
+      "errors": 43,
+      "words": 788
+    },
+    {
+      "config": "Hex — cohere_transcribe",
+      "wer_percent": 6.09,
+      "errors": 48,
+      "words": 788,
+      "seconds_35_clips": 12.6
+    },
+    {
+      "config": "Hex — orukeet",
+      "wer_percent": 8.76,
+      "errors": 69,
+      "words": 788,
+      "seconds_35_clips": 8.7
+    },
+    {
+      "config": "Hex — Nemotron 3.5 ASR",
+      "wer_percent": 9.14,
+      "errors": 72,
+      "words": 788,
+      "seconds_35_clips": 48.0
+    }
+  ],
+  "f16_vs_q8": {
+    "identical_clips": 34,
+    "total": 35,
+    "only_difference": "differenza di una sola parola, ortografia di un nome di prodotto",
+    "verdict": "equivalenti"
+  },
+  "glossary_on_hex_long": {
+    "clips": 35,
+    "words": 1685,
+    "interventions": 5,
+    "kinds": {
+      "capitalisation_only": 5,
+      "phonetic": 0,
+      "elision": 0
+    }
+  },
+  "method_note": "Le prime misure su Hex erano gonfiate da un bug di decodifica (cp1252 invece di UTF-8). Tutti i numeri sono stati ricalcolati leggendo UTF-8."
+}
