@@ -19,7 +19,7 @@
   },
   "selection": {
     "path": "models/selected.json",
-    "sha256": "2b4f9b7ea91963389c6ae34b93c700a9ea568ccab66073a627ddfeb7c8aea07c"
+    "sha256": "cee5699abc23f250acc5ab8a9251446a7186c8542cab84db4be8317395f437bf"
   },
   "selection_v2": {
     "path": "models/selection.json"

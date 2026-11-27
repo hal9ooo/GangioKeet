@@ -1,26 +1,31 @@
 llm_timeout_seconds: 5
-canonical_terms:
-- Proxmox VE
-- FastAPI
-- CodeIgniter 4
-- PostgreSQL
-- MariaDB
-- Home Assistant
-- ESPHome
-- Tasmota
-- Tailscale
-- MikroTik
-- RouterOS
-- Authelia
-- Nginx Proxy Manager
-- MLX
-- Parakeet
-- llama.cpp
-- OpenCode
-- Cursor
-- WebSocket
-- GitHub
-- Docker
+# Candidati per il vocabolario del motore, NON attivi.
+# Misurato il 27/11 sui 35 clip con ground truth: passati come prompt a
+# Whisper il WER passa da 5,08% a 5,46%, con un errore introdotto
+# ("Develop" -> "DevOps"). Parakeet non usa prompt. Restano qui come
+# elenco dei nomi giusti, non come configurazione attiva: il normalizer li
+# mappava su se stessi, quindi non hanno mai avuto effetto.
+# - Proxmox VE
+# - FastAPI
+# - CodeIgniter 4
+# - PostgreSQL
+# - MariaDB
+# - Home Assistant
+# - ESPHome
+# - Tasmota
+# - Tailscale
+# - MikroTik
+# - RouterOS
+# - Authelia
+# - Nginx Proxy Manager
+# - MLX
+# - Parakeet
+# - llama.cpp
+# - OpenCode
+# - Cursor
+# - WebSocket
+# - GitHub
+# - Docker
 phonetic_overrides:
   elle ics ci: LXC
   emme elle ics: MLX
@@ -34,7 +39,6 @@ phonetic_overrides:
   fast a pi: FastAPI
   prossimo ve: Proxmox VE
   lama punto ci pi pi: llama.cpp
-  superpowers: superpowers
   # Nomi tecnici dettati: forme che non esistono in italiano, sicure da riscrivere sempre.
   ci per inference: Cheaper Inference
   cip per inference: Cheaper Inference
@@ -100,5 +104,5 @@ elision_corrections:
     to: per l'agente
   - from: la gente
     to: l'agente
-    keep_when_preceded_by: [molta, moltissima, tanta, tantissima, poca, pochissima, altra, qualche, numerosa, "un sacco di", "un mucchio di"]
+    keep_when_preceded_by: [molta, moltissima, tanta, tantissima, poca, pochissima, altra, qualche, numerosa, "un sacco di", "un mucchio di", "quando dico", "dico molto spesso"]
     keep_when_followed_by: [comune, "del posto", "che passa", intera]
