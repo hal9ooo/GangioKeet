@@ -1,5 +1,5 @@
 # GangioKeet client configuration example.
-# Copy this file to %APPDATA%/GangioKeet/client_config.yaml, then edit.
+# Copy this file to %APPDATA%/ChattyNeko/client_config.yaml, then edit.
 # Strict schema: unknown keys are rejected. Times are seconds (doubles), ms are integers.
 # Legacy keys from the old remote setup (server, endpoints, inference.mode) are
 # ignored in memory and never rewritten by the app.
@@ -10,7 +10,7 @@ inference:
 
 recording:
   enabled: false                     # only completed dictations, not ambient recording
-  directory: "recordings"            # relative to the per-user GangioKeet data directory
+  directory: "recordings"            # relative to the per-user ChattyNeko data directory
 
 hotkey:
   mode: "push_to_talk"                # push_to_talk | toggle
@@ -73,3 +73,13 @@ browser_profiles:                     # guardrail 3.5
 
 recovery:
   retention_seconds: 600              # quanto resta recuperabile l'ultimo fallimento
+
+api:                                  # server HTTP compatibile OpenAI dentro l'app (docs/api-server.md)
+  enabled: false                      # spento: nessuna porta aperta. true avvia Kestrel all'avvio dell'app
+  listen: ["127.0.0.1"]               # solo loopback. Per Tailscale metti "0.0.0.0" e imposta il token
+  port: 5099                          # sopra 1024: sotto servono privilegi di amministratore
+  model_alias: "gangio-keet"          # l'unico nome ammesso in /v1/models e in model=… (il client non sceglie)
+  token_env: "GANGIOKEET_API_TOKEN"   # nome della variabile: il token resta SOLO nell'ambiente, mai in questo file
+  max_request_bytes: 26214400         # 25 MB: tetto del corpo HTTP (Kestrel risponde 413 oltre)
+  max_audio_seconds: 300              # 5 minuti: durata massima dell'audio di una richiesta
+  wait_seconds: 120                   # attesa massima che i modelli diventino pronti prima di 503 model_loading

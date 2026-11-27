@@ -30,4 +30,14 @@ public sealed class TrayPolicyTests
     {
         Assert.Equal(expected, RecoveryMenuPolicy.CanDiscard(hasRecovery));
     }
+
+    [Theory]
+    [InlineData(null, "Server: spento")]
+    [InlineData("", "Server: spento")]
+    [InlineData("   ", "Server: spento")]
+    [InlineData("http://127.0.0.1:5099", "Server: http://127.0.0.1:5099")]
+    public void Server_ShowsTheUrlOrSpento(string? url, string expected)
+    {
+        Assert.Equal(expected, ServerMenuPolicy.Label(url));
+    }
 }

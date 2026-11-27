@@ -28,10 +28,12 @@ public sealed class TrayController : IDisposable
     private readonly FileLogger? _logger;
     private readonly Action<Action> _post;
     private readonly Func<Task>? _exit;
+    private readonly Func<string?>? _serverUrl;
 
     private string? _selectedDeviceId;
     private System.Windows.Controls.MenuItem? _microphoneMenu;
     private System.Windows.Controls.MenuItem? _autostartItem;
+    private System.Windows.Controls.MenuItem? _serverItem;
     private bool _disposed;
 
     public TrayController(
@@ -45,7 +47,8 @@ public sealed class TrayController : IDisposable
         FileLogger? logger = null,
         Action<Action>? post = null,
         Func<Task>? exit = null,
-        AutostartService? autostart = null)
+        AutostartService? autostart = null,
+        Func<string?>? serverUrl = null)
     {
         _tray = tray;
         _controller = controller;
@@ -57,6 +60,7 @@ public sealed class TrayController : IDisposable
         _configPath = configPath;
         _openSettings = openSettings;
         _logger = logger;
+        _serverUrl = serverUrl;
         _selectedDeviceId = config.Audio.InputDevice;
 
         // Gli eventi del monitor e del recovery arrivano da thread di background:
@@ -78,6 +82,7 @@ public sealed class TrayController : IDisposable
         BuildContextMenu();
         UpdateRecoveryMenu();
         UpdateAutostartMenu();
+        UpdateServerMenu();
         UpdateTooltip();
     }
 
@@ -98,6 +103,7 @@ public sealed class TrayController : IDisposable
         {
             UpdateRecoveryMenu();
             UpdateAutostartMenu();
+            UpdateServerMenu();
         };
         _tray.ToolTipText = Branding.ProductName;
 
@@ -151,6 +157,16 @@ public sealed class TrayController : IDisposable
         };
         _autostartItem.Click += (_, _) => ApplyAutostart();
         _tray.ContextMenu.Items.Add(_autostartItem);
+
+        // Voce informativa, non cliccabile: dice se il server API è in ascolto e su quale
+        // indirizzo. Non interroga l'HTTP: quando il server non c'è (spento, oppure rifiutato
+        // per token mancante) dice «spento», che è quello che l'operatore deve vedere.
+        _serverItem = new System.Windows.Controls.MenuItem
+        {
+            Header = ServerMenuPolicy.Label(null),
+            IsEnabled = false,
+        };
+        _tray.ContextMenu.Items.Add(_serverItem);
 
         _tray.ContextMenu.Items.Add(new System.Windows.Controls.MenuItem
         {
@@ -293,6 +309,30 @@ public sealed class TrayController : IDisposable
         _tray.ToolTipText = Branding.ProductName;
     }
 
+    /// <summary>
+    /// Aggiorna la voce «Server: …» all'apertura del menu. Nessun timer e nessuna richiesta
+    /// HTTP: il server è nello stesso processo e <see cref="_serverUrl"/> ne legge l'indirizzo
+    /// già calcolato all'avvio, quindi un server lento non può bloccare il menu.
+    /// </summary>
+    private void UpdateServerMenu()
+    {
+        if (_serverItem is null) return;
+
+        string? url;
+        try
+        {
+            url = _serverUrl?.Invoke();
+        }
+        catch (Exception ex)
+        {
+            // Un provider che lancia non deve rompere il menu: la voce dice «spento».
+            _logger?.Write("server_url_read_failed", ex.Message);
+            url = null;
+        }
+
+        _serverItem.Header = ServerMenuPolicy.Label(url);
+    }
+
     private void OnRecoveryChanged(object? sender, EventArgs e)
     {
         _post(UpdateRecoveryMenu);
@@ -337,6 +377,18 @@ public static class RecoveryMenuPolicy
     public static bool CanCopy(bool hasText) => hasText;
 
     public static bool CanDiscard(bool hasRecovery) => hasRecovery;
+}
+
+/// <summary>
+/// Testo della voce tray del server API. Pura e testabile senza WPF: l'URL quando il
+/// server è in ascolto, «spento» quando non c'è (server disattivato, avvio rifiutato per
+/// token mancante, porta occupata). Un provider che restituisce <c>null</c> è il caso
+/// normale di un'app senza server, non un errore da nascondere.
+/// </summary>
+public static class ServerMenuPolicy
+{
+    public static string Label(string? url) =>
+        string.IsNullOrWhiteSpace(url) ? "Server: spento" : $"Server: {url}";
 }
 
 /// <summary>Semplice implementazione di ICommand per binding ai menu item.</summary>

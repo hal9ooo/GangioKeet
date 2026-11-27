@@ -21,6 +21,13 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- Kestrel per il server HTTP compatibile OpenAI (Api/). Framework condiviso
+         del runtime .NET: non è un pacchetto NuGet, quindi non cambia il lock file
+         e nella pubblicazione self-contained finisce accanto all'eseguibile. -->
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Resource Include="Assets\chattyneko.ico" />
     <Resource Include="Assets\chattyneko-cover.png" />
   </ItemGroup>

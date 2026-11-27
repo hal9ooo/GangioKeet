@@ -197,6 +197,30 @@ public sealed class ConfigLoaderTests
         }));
     }
 
+    [Theory]
+    [InlineData("max_audio_seconds", ".nan")]
+    [InlineData("max_audio_seconds", ".inf")]
+    [InlineData("max_audio_seconds", "-.inf")]
+    [InlineData("wait_seconds", ".nan")]
+    [InlineData("wait_seconds", ".inf")]
+    [InlineData("wait_seconds", "-.inf")]
+    public void NonFiniteApiSecondsAreRejected(string field, string literal)
+    {
+        // `.nan` non è < 1 né > 3600, quindi passava i due confronti; e ogni
+        // `durata > NaN` è falso, quindi il tetto dei secondi spariva in silenzio.
+        string path = WriteTempYaml($"api:\n  {field}: {literal}\n");
+        try
+        {
+            var ex = Record.Exception(() => ConfigLoader.Load(path));
+            Assert.IsType<ConfigException>(ex);
+            Assert.Contains(field, ex!.Message);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
     [Fact]
     public void CreateDefaults_IsLocal()
     {

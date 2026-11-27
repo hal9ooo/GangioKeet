@@ -102,6 +102,7 @@ public static class ConfigLoader
     {
         if (config.Inference is null) Fail(sourcePath, "inference must be a mapping");
         if (config.Recording is null) Fail(sourcePath, "recording must be a mapping");
+        if (config.Api is null) Fail(sourcePath, "api must be a mapping");
         if (config.Inference!.Backend is not ("vulkan" or "cpu")) Fail(sourcePath, "inference.backend must be vulkan or cpu");
         RequireNonEmptyString(config.Inference.ModelSelectionPath, "inference.model_selection_path", sourcePath);
         RequireNonEmptyString(config.Inference.CleanupPolicyPath, "inference.cleanup_policy_path", sourcePath);
@@ -113,6 +114,7 @@ public static class ConfigLoader
         ValidateRecovery(config.Recovery, sourcePath);
         ValidateContextProfiles(config.ContextProfiles, sourcePath);
         ValidateBrowserProfiles(config.BrowserProfiles, sourcePath);
+        ValidateApi(config.Api!, sourcePath);
     }
 
     private static void ResolvePaths(ClientConfig config, string installationDirectory, string? appDataBase)
@@ -234,6 +236,37 @@ public static class ConfigLoader
     private static void ValidateRecovery(RecoveryConfig recovery, string? sourcePath)
     {
         RequirePositive(recovery.RetentionSeconds, "recovery.retention_seconds", sourcePath);
+    }
+
+    /// <summary>
+    /// Controlla la sezione <c>api</c>. Il token non si verifica qui: la configurazione deve
+    /// caricarsi anche senza token, e il rifiuto ad aprire la rete arriva all'avvio del server
+    /// da <see cref="ApiTokenPolicy.RequiredFor"/>.
+    /// </summary>
+    private static void ValidateApi(ApiConfig api, string? sourcePath)
+    {
+        AssertList(api.Listen, "api.listen", sourcePath);
+        if (api.Port < 1024 || api.Port > 65535)
+        {
+            Fail(sourcePath, "api.port must be between 1024 and 65535");
+        }
+        RequireNonEmptyString(api.ModelAlias, "api.model_alias", sourcePath);
+        if (api.MaxRequestBytes < 1024 || api.MaxRequestBytes > 100 * 1024 * 1024)
+        {
+            Fail(sourcePath, "api.max_request_bytes must be between 1 KB and 100 MB");
+        }
+        // double.IsFinite: `.nan` non è minore di 1 né maggiore di 3600, quindi passerebbe
+        // i due confronti e ogni `durata > NaN` sarebbe falso: il tetto sparirebbe in
+        // silenzio, come per infinito. Non è un valore che un operatore possa volere.
+        if (!double.IsFinite(api.MaxAudioSeconds)
+            || api.MaxAudioSeconds < 1 || api.MaxAudioSeconds > 3600)
+        {
+            Fail(sourcePath, "api.max_audio_seconds must be between 1 and 3600");
+        }
+        if (!double.IsFinite(api.WaitSeconds) || api.WaitSeconds < 1 || api.WaitSeconds > 600)
+        {
+            Fail(sourcePath, "api.wait_seconds must be between 1 and 600");
+        }
     }
 
     private static void ValidateContextProfiles(ContextProfilesConfig profiles, string? sourcePath)

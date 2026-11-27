@@ -3,6 +3,7 @@ using System.Net.Http;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
+using GangioKeet.Client.Api;
 using GangioKeet.Client.Audio;
 using GangioKeet.Client.Configuration;
 using GangioKeet.Client.Context;
@@ -49,6 +50,7 @@ public partial class App : Application, IModelSelectionHost
     private string? _localError;
     private RecordingStore? _recordingStore;
     private RecordingQueue? _recordingQueue;
+    private DictationServer? _apiServer;
     private readonly IModelProvisioner _modelProvisioner;
     private readonly INativeRuntimeProvisioner _runtimeProvisioner;
 
@@ -69,6 +71,13 @@ public partial class App : Application, IModelSelectionHost
     private readonly object _shutdownGate = new();
     private Task? _shutdownTask;
     private int _shutdownRequested;
+
+    /// <summary>
+    /// Vero da quando lo spegnimento è stato chiesto, anche se non è ancora finito. Chi
+    /// creerebbe una risorsa viva (runtime dei modelli, listener HTTP) deve chiederselo
+    /// prima: dopo questo punto nessuno passerebbe più a fermarla.
+    /// </summary>
+    private bool ShutdownRequested => Volatile.Read(ref _shutdownRequested) != 0;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -213,6 +222,7 @@ public partial class App : Application, IModelSelectionHost
             _logger?.Write("recording", warning),
             enabled: () => _recordingStore?.Enabled == true);
         _runtime = new AppRuntime(setup.Pipeline, _recordingQueue);
+        StartApiServer(config);
         backend = new LocalDictationBackend(setup.Pipeline, () => _runtime.IsReady, _recordingQueue,
             () => _runtime.IsWarmingUp, () => _runtime.Failure);
         _ = StartLocalRuntimeAsync(_runtime);
@@ -262,7 +272,11 @@ public partial class App : Application, IModelSelectionHost
             ConfigLoader.DefaultPath,
             ShowSettings,
             _logger,
-            exit: RequestShutdownAsync);
+            exit: RequestShutdownAsync,
+            // La voce tray legge l'indirizzo del server già avviato (nessuna richiesta HTTP).
+            // Quando il server non c'è — spento o rifiutato per token mancante — è null e la
+            // voce dice «spento», così l'operatore capisce perché non risponde.
+            serverUrl: () => _apiServer?.BaseUrl);
 
         var capsReset = new CapsLockResetService();
         if (capsReset.ResetIfActive())
@@ -435,15 +449,39 @@ public partial class App : Application, IModelSelectionHost
                 return;
             }
 
+            // Il caricamento può durare minuti (un download): lo spegnimento può essere
+            // passato mentre lo si aspettava. Creare qui il runtime nuovo, o riaprire una
+            // porta, lascerebbe risorse vive che il teardown ha già oltrepassato. È lo
+            // stesso controllo che fa SwitchLocalModelPairAsync dopo il proprio await.
+            if (ShutdownRequested)
+            {
+                await runtime.DisposeAsync().ConfigureAwait(false);
+                _logger?.Write("retry_local_runtime_abandoned",
+                    "Spegnimento già richiesto: nuovo tentativo di caricamento annullato.");
+                return;
+            }
+
+            // Il server API legge la pipeline da `_runtime` a ogni richiesta. Va fermato
+            // PRIMA del dispose del vecchio runtime e riavviato dopo che `_runtime` punta
+            // al nuovo: senza questo giro resterebbe «pronto» su una pipeline liberata, e
+            // ogni turno diventerebbe un 500.
+            await StopApiServerAsync().ConfigureAwait(false);
+
             _controller.SetBackend(new LocalDictationBackend(setup.Pipeline,
                 () => runtime.IsReady, _recordingQueue, () => runtime.IsWarmingUp, () => runtime.Failure));
             _runtime = runtime;
             if (old is not null) await old.DisposeAsync().ConfigureAwait(false);
+            StartApiServer(_config);
         }
         catch (Exception error)
         {
             _localError = error.Message;
             _logger?.Write("local_runtime_retry_failed", error.Message);
+            // Anche sul guasto l'API non deve restare spenta se il vecchio runtime è vivo:
+            // StartApiServer non fa niente se un server è già in ascolto o se l'app si
+            // sta spegnendo.
+            if (ShutdownRequested || _apiServer is not null) return;
+            if (old is not null) StartApiServer(_config);
         }
     }
 
@@ -494,12 +532,27 @@ public partial class App : Application, IModelSelectionHost
         if (_config is null || _controller is null) return;
         _config.Inference.ModelSelectionPath = selectionPath;
 
+        // Il server tiene un riferimento alla pipeline: va fermato prima che il runtime
+        // la smonti, e riavviato dopo con quella nuova.
+        await StopApiServerAsync().ConfigureAwait(false);
+
         var oldRuntime = _runtime;
         _runtime = null;
         if (oldRuntime is not null)
         {
             try { await oldRuntime.StopAsync(CancellationToken.None).ConfigureAwait(false); }
             catch (Exception ex) { _logger?.Write("local_runtime_stop_error", ex.Message); }
+        }
+
+        // Questo metodo si sblocca proprio quando finisce lo stop del runtime precedente,
+        // cioè quando lo spegnimento ha già potuto oltrepassare `_runtime`: creare qui un
+        // runtime nuovo, o peggio aprire una porta, lascerebbe risorse vive che nessuno
+        // fermerebbe più. Il vecchio runtime è già stato fermato e liberato qui sopra.
+        if (ShutdownRequested)
+        {
+            _logger?.Write("switch_local_pair_abandoned",
+                $"Spegnimento già richiesto: cambio di coppia annullato ({selectionPath}).");
+            return;
         }
 
         try
@@ -516,12 +569,18 @@ public partial class App : Application, IModelSelectionHost
             _recordingQueue = new RecordingQueue(_recordingStore, warning: warning =>
                 _logger?.Write("recording", warning),
                 enabled: () => _recordingStore?.Enabled == true);
-            _runtime = new AppRuntime(setup.Pipeline, _recordingQueue);
 
-            var localBackend = new LocalDictationBackend(_runtime.Pipeline, () => _runtime.IsReady, _recordingQueue,
-                () => _runtime.IsWarmingUp, () => _runtime.Failure);
+            // `_runtime` va assegnato prima di StartApiServer: il server legge la pipeline e
+            // la prontezza da `_runtime` a ogni richiesta (non le cattura), e un null
+            // resterebbe «non pronto» per sempre.
+            AppRuntime runtime = new(setup.Pipeline, _recordingQueue);
+            _runtime = runtime;
+            StartApiServer(_config);
+
+            var localBackend = new LocalDictationBackend(runtime.Pipeline, () => runtime.IsReady,
+                _recordingQueue, () => runtime.IsWarmingUp, () => runtime.Failure);
             _controller.SetBackend(localBackend);
-            _ = StartLocalRuntimeAsync(_runtime);
+            _ = StartLocalRuntimeAsync(runtime);
             _logger?.Write("switched_local_pair", $"{setup.SttId} + {setup.CleanerId}");
         }
         catch (Exception ex)
@@ -607,8 +666,117 @@ public partial class App : Application, IModelSelectionHost
         Shutdown();
     }
 
+    /// <summary>
+    /// Avvia il server HTTP compatibile OpenAI, se la configurazione lo accende. Un guasto
+    /// qualsiasi (porta occupata, indirizzo non disponibile, token non risolto) finisce nel
+    /// log e l'app prosegue senza server: la dettatura locale non deve mai dipendere
+    /// dall'API, che è un di più.
+    /// </summary>
+    private void StartApiServer(ClientConfig config)
+    {
+        if (!config.Api.Enabled)
+        {
+            return;
+        }
+
+        // Lo spegnimento può essere già iniziato mentre questo metodo aspettava altrove (il
+        // cambio di coppia di modelli si sblocca proprio quando lo stop del runtime finisce).
+        // Un listener aperto dopo l'inizio della chiusura resterebbe vivo durante lo
+        // smontaggio e non verrebbe mai fermato né liberato: qui non si apre niente.
+        if (ShutdownRequested)
+        {
+            _logger?.Write("api_start_refused", "Spegnimento già richiesto: nessun server API.");
+            return;
+        }
+
+        string? token;
+        try
+        {
+            // Il nome della variabile viene dalla configurazione: passare qui il nome
+            // predefinito aggirerebbe api.token_env e rifiuterebbe un token custodito
+            // altrove, o peggio aprirebbe la rete senza token.
+            token = ApiTokenPolicy.RequiredFor(config.Api.Listen, config.Api.TokenEnv,
+                Environment.GetEnvironmentVariable);
+        }
+        catch (InvalidOperationException error)
+        {
+            // La regola del token ha rifiutato l'avvio: nessuna porta viene aperta. Il codice
+            // è suo, così l'operatore guarda il token e non un indirizzo già occupato.
+            _logger?.Write("api_refused", error.Message);
+            return;
+        }
+
+        CleanupPolicy policy;
+        try
+        {
+            // La policy di pulizia si legge una volta, prima di aprire la porta: la rotta di
+            // correzione testo→testo applica queste regole, e devono esistere prima che
+            // qualcuno possa chiamarle. Non si tiene in un campo fra un avvio e l'altro: dopo
+            // un riavvio del server un file modificato deve valere subito.
+            policy = CleanupPolicy.Load(config.Inference.CleanupPolicyPath);
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        {
+            // Una rotta di correzione con una policy vuota riscriverebbe il testo secondo
+            // regole che non esistono: meglio nessun server, con la dettatura locale che
+            // continua a funzionare. Codice diverso da api_start_failed: qui il guasto è
+            // nel file delle regole, non nell'indirizzo o nella porta.
+            _logger?.Write("api_policy_failed", error.Message);
+            return;
+        }
+
+        try
+        {
+            // La pipeline è una funzione, non un valore: dopo un cambio di coppia o un
+            // «Riprova download» il runtime vecchio viene liberato, e un riferimento
+            // fissato qui punterebbe a una pipeline smontata (ogni turno: 500).
+            _apiServer = DictationServer.Start(config.Api, () => _runtime?.Pipeline,
+                () => _runtime?.IsReady == true,
+                () => _runtime?.IsWarmingUp == true,
+                token,
+                _recordingQueue,
+                policy,
+                (code, message) => _logger?.Write(code, message));
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        {
+            // Porta occupata, indirizzo non disponibile, Kestrel che non parte (o che non
+            // riporta alcun indirizzo): si resta senza server e si continua a dettare. Il
+            // codice è diverso da api_refused di proposito: qui il token non c'entra.
+            _logger?.Write("api_start_failed", error.Message);
+        }
+    }
+
+    /// <summary>
+    /// Ferma il server HTTP e dimentica il riferimento. Idempotente: dopo il primo giro il
+    /// campo è <c>null</c>, così la via di emergenza di <see cref="OnExit"/> può ripassare
+    /// senza fare nulla.
+    /// </summary>
+    private async Task StopApiServerAsync()
+    {
+        DictationServer? server = _apiServer;
+        _apiServer = null;
+        if (server is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await server.StopAsync().ConfigureAwait(false);
+        }
+        catch (Exception error) when (error is not OutOfMemoryException)
+        {
+            _logger?.Write("api_stop_error", error.Message);
+        }
+    }
+
     private async Task StopOwnedAsync()
     {
+        // Il server HTTP si ferma per primo: una richiesta in arrivo non deve mai
+        // raggiungere una pipeline che sta per essere smontata.
+        await StopApiServerAsync().ConfigureAwait(false);
+
         // Prima si ferma chi produce eventi (hook, gesture pump),
         // poi chi li consuma, infine le risorse native. Nessun timeout: il
         // runtime attende il ritorno delle chiamate native prima del dispose.
@@ -678,6 +846,9 @@ public partial class App : Application, IModelSelectionHost
                 // Solo il percorso di emergenza (chiusura non passata da
                 // RequestShutdownAsync) blocca qui. Il percorso normale ha già
                 // atteso il ritorno nativo prima di Shutdown().
+                // Il server HTTP si chiude per primo, e in modo idempotente: se il
+                // percorso normale ha già fatto il suo giro, qui non resta nulla.
+                StopApiServerAsync().GetAwaiter().GetResult();
                 StopOwnedAsync().GetAwaiter().GetResult();
                 DisposeDesktop();
             }

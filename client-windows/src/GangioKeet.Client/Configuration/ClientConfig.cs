@@ -30,6 +30,9 @@ public sealed class ClientConfig
 
     [YamlMember(Alias = "recovery")]
     public RecoveryConfig Recovery { get; set; } = new();
+
+    [YamlMember(Alias = "api")]
+    public ApiConfig Api { get; set; } = new();
 }
 
 public sealed class HotkeyConfig
