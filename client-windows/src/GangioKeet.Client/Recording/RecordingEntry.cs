@@ -37,6 +37,7 @@ public sealed record RecordingEntry(
     string? LlmModel,
     string RawText,
     string FinalText,
+    string? CleanerText,
     IReadOnlyList<string> Warnings,
     double SttMs,
     double LlmMs,

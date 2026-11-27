@@ -1,6 +1,6 @@
 namespace GangioKeet.Inference;
 
-public sealed record ModelFile(string Path, string Sha256);
+public sealed record ModelFile(string Path, string Sha256, string? RemotePath = null);
 
 public sealed record ModelArtifact(string Id, string Family, string SourceCheckpoint,
     string Revision, IReadOnlyList<ModelFile> Files, string Precision, string License,

@@ -7,7 +7,7 @@ public sealed record CleanedText(string Text, EngineIdentity Engine);
 public sealed record PipelineRequest(ReadOnlyMemory<byte> Pcm16, string Profile);
 public sealed record PipelineResult(string RawText, string FinalText, double SttMs,
     double LlmMs, double TotalMs, IReadOnlyList<string> Warnings,
-    EngineIdentity Stt, EngineIdentity? Cleaner);
+    EngineIdentity Stt, EngineIdentity? Cleaner, string? CleanerText = null);
 
 public interface ISttEngine : IAsyncDisposable
 {

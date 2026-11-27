@@ -14,17 +14,23 @@ public sealed class LightCleanupTests
         Assert.Equal(expected, LightCleanup.Apply(raw));
 
     [Theory]
-    [InlineData("No, no, lo stack", "No, lo stack")]
     [InlineData("non, non includerli", "non includerli")]
     [InlineData("Metti, metti solo", "Metti solo")]
     public void CollapsesCommaSeparatedRepetitions(string raw, string expected) =>
         Assert.Equal(expected, LightCleanup.Apply(raw));
 
     [Theory]
+    [InlineData("No, no, lo stack")]
+    [InlineData("no no no")]
+    [InlineData("Sì, sì, va bene")]
+    [InlineData("Subito, subito")]
+    public void PreservesEmphaticRepetitions(string raw) =>
+        Assert.Equal(raw, LightCleanup.Apply(raw));
+
+    [Theory]
     [InlineData("Mi mi mandi una lista", "Mi mandi una lista")]
     [InlineData("al al al nido", "al nido")]
     [InlineData("log log plc", "log plc")]
-    [InlineData("no no no", "no")]
     [InlineData("Le le l m", "Le l m")]
     public void CollapsesShortRepetitionsButKeepsSingleLetters(string raw, string expected) =>
         Assert.Equal(expected, LightCleanup.Apply(raw));

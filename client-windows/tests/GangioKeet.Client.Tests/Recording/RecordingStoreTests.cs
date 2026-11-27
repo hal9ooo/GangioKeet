@@ -77,6 +77,24 @@ public sealed class RecordingStoreTests : IDisposable
     }
 
     [Fact]
+    public async Task CleanerStageIsPersistedWhenPresentAndOmittedWhenAbsent()
+    {
+        RecordingStore store = new(new RecordingConfig { Enabled = true, Directory = _root });
+        PipelineResult withCleaner = Result() with { CleanerText = "testo pulito" };
+        PipelineResult withoutCleaner = Result() with { CleanerText = null };
+
+        await store.RecordAsync(Pcm(4), withCleaner, Start, default);
+        await store.RecordAsync(Pcm(6), withoutCleaner, Start, default);
+
+        string[] lines = File.ReadAllLines(Path.Combine(_root, "manifest.jsonl"));
+        Assert.Equal(2, lines.Length);
+        using JsonDocument first = JsonDocument.Parse(lines[0]);
+        using JsonDocument second = JsonDocument.Parse(lines[1]);
+        Assert.Equal("testo pulito", first.RootElement.GetProperty("cleaner_text").GetString());
+        Assert.False(second.RootElement.TryGetProperty("cleaner_text", out _));
+    }
+
+    [Fact]
     public async Task StorageSummaryAndExplicitDeleteUseOnlyResolvedIds()
     {
         RecordingStore store = new(new RecordingConfig { Enabled = true, Directory = _root });

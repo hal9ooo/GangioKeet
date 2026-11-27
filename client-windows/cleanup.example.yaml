@@ -55,6 +55,10 @@ phonetic_overrides:
   open router: OpenRouter
   open code: OpenCode
   antigraviti: Antigravity
+  # "il feeling del Comando" è Command Code: l'ASR sente l'inglese "Command" come "Comando".
+  feeling del comando: feeling del Command Code
+  il comando code: il Command Code
+  command code: Command Code
 
 contextual_corrections:
   # Solo con la guardia giusta: un falso positivo costa più di una correzione mancata.

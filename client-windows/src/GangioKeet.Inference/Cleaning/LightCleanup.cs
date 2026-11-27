@@ -27,7 +27,7 @@ public static class LightCleanup
     private static readonly HashSet<string> ProtectedReduplications = new(StringComparer.Ordinal)
     {
         "piano piano", "poco poco", "molto molto", "così così", "bene bene",
-        "eccetera eccetera", "ciao ciao"
+        "eccetera eccetera", "ciao ciao", "no no", "sì sì", "si si", "subito subito"
     };
 
     private static readonly HashSet<string> Articles = new(StringComparer.Ordinal)

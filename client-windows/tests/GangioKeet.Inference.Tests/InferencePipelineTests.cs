@@ -113,6 +113,70 @@ public sealed class InferencePipelineTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => turn);
     }
 
+    [Fact]
+    public async Task TranslationFromCleanerFallsBackToRawWithWarning()
+    {
+        Engines engines = new() { Raw = "呃，这些湖南。" };
+        engines.Clean = (_, _) => Task.FromResult("Questi sono.");
+        await using InferencePipeline pipeline = engines.Pipeline();
+        await pipeline.WarmUpAsync(default);
+
+        PipelineResult result = await pipeline.ProcessAsync(new(new byte[4], "default"), default);
+
+        Assert.Equal("呃，这些湖南。", result.FinalText);
+        Assert.Equal("Questi sono.", result.CleanerText);
+        Assert.Contains("cleaner_language_switch", result.Warnings);
+    }
+
+    [Fact]
+    public async Task EmptyCleanerOutputKeepsSubstantiveRawWithWarning()
+    {
+        Engines engines = new() { Raw = "scrivimi una funzione" };
+        engines.Clean = (_, _) => Task.FromResult("");
+        await using InferencePipeline pipeline = engines.Pipeline();
+        await pipeline.WarmUpAsync(default);
+
+        PipelineResult result = await pipeline.ProcessAsync(new(new byte[4], "default"), default);
+
+        Assert.Equal("scrivimi una funzione", result.FinalText);
+        Assert.Contains("cleaner_empty_output", result.Warnings);
+    }
+
+    [Fact]
+    public async Task HallucinationOnMutedAudioIsDroppedBeforeTheCleaner()
+    {
+        // "Yeah." su un file 100% a zero: misurato su una dettatura reale.
+        Engines engines = new() { Raw = "Yeah." };
+        await using InferencePipeline pipeline = engines.Pipeline();
+        await pipeline.WarmUpAsync(default);
+        engines.CleanerCalls = 0;
+
+        PipelineResult result = await pipeline.ProcessAsync(new(new byte[4], "default"), default);
+
+        Assert.Equal("", result.RawText);
+        Assert.Equal("", result.FinalText);
+        Assert.Null(result.CleanerText);
+        Assert.Equal(0, engines.CleanerCalls);
+    }
+
+    [Fact]
+    public async Task SameWordOnAudibleSpeechReachesTheCleaner()
+    {
+        Engines engines = new() { Raw = "Yeah." };
+        engines.Clean = (raw, _) => Task.FromResult(raw);
+        await using InferencePipeline pipeline = engines.Pipeline();
+        await pipeline.WarmUpAsync(default);
+        engines.CleanerCalls = 0;
+        // 0x1F40 = 8000, cioè 24% del fondo scala: voce piena.
+        byte[] audible = [0x40, 0x1F, 0x00, 0x00];
+
+        PipelineResult result = await pipeline.ProcessAsync(new(audible, "default"), default);
+
+        Assert.Equal("Yeah.", result.RawText);
+        Assert.Equal("Yeah.", result.FinalText);
+        Assert.Equal(1, engines.CleanerCalls);
+    }
+
     private sealed class Engines : ISttEngine, ITextCleaner
     {
         public int SttLoads, CleanerLoads, CleanerCalls, MaximumActive;

@@ -19,7 +19,7 @@ public sealed class RecordingStore : IRecordingWriter
 {
     public const string Schema = "gangio-keet-recording-v1";
     private static readonly UTF8Encoding Utf8NoBom = new(false);
-    private static readonly JsonSerializerOptions JsonOptions = new()
+    internal static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -90,6 +90,7 @@ public sealed class RecordingStore : IRecordingWriter
         result.Cleaner?.ModelId,
         result.RawText,
         result.FinalText,
+        result.CleanerText,
         result.Warnings,
         result.SttMs,
         result.LlmMs,

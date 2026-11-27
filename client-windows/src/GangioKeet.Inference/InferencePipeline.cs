@@ -89,6 +89,9 @@ public sealed class InferencePipeline : IInferencePipeline
             double sttMs = _time.GetElapsedTime(start).TotalMilliseconds;
             linked.Token.ThrowIfCancellationRequested();
             string raw = transcript.Text.Trim();
+            // Un'eco dell'ASR su audio senza voce non deve arrivare né al
+            // cleaner (che la riscriverebbe) né all'utente.
+            if (SilenceGuard.IsHallucination(raw, SilenceGuard.PeakOf(request.Pcm16.Span))) raw = "";
             string? cleanerText = null;
             string final = "";
             double llmMs = 0;
@@ -109,7 +112,13 @@ public sealed class InferencePipeline : IInferencePipeline
                         deadline.Token.ThrowIfCancellationRequested();
                         cleanerText = result.Text;
                         cleanerIdentity = result.Engine;
-                        intermediate = result.Text;
+                        // Un cleaner che traduce o che svuota una frase vera ha fallito il
+                        // suo compito: si tiene il grezzo e lo si dice, invece di
+                        // consegnare in silenzio un testo che l'utente non ha dettato.
+                        intermediate = TranscriptGuard.Evaluate(raw, result.Text, out string guardWarning)
+                            ? result.Text
+                            : raw;
+                        if (guardWarning.Length > 0) warnings.Add(guardWarning);
                     }
                     catch (OperationCanceledException) when (!linked.IsCancellationRequested && deadline.IsCancellationRequested)
                     {

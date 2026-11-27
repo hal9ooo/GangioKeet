@@ -13,7 +13,7 @@ public sealed class RecordingStatsTests
         string raw, string final, string sttModel = "parakeet_v3", string? llmModel = "light_cleanup",
         IReadOnlyList<string>? warnings = null, bool silence = false) =>
         new("schema", Guid.NewGuid().ToString(), "audio.wav", "sha", 0, seconds, 16000, 1, 2,
-            createdAt, "local", "default", sttModel, llmModel, raw, final,
+            createdAt, "local", "default", sttModel, llmModel, raw, final, null,
             warnings ?? [], sttMs, 0, totalMs, "", "", "unreviewed", "it_general", [], silence,
             Stt, null, "p", "ps", "pol", "personal");
 

@@ -59,7 +59,7 @@
   "cleanup_policy": {
     "path": "cleanup.yaml",
     "source_path": "cleanup.example.yaml",
-    "sha256": "eef8bcdd9fb00263a9a57956c5816322fc6a61fb3c65f4a4cc68665aad1a228a"
+    "sha256": "0fe6e9bc70787dbc18fef07c47c2de7655f25d07ef63e786bcbdb589d3a2c37c"
   },
   "prompt": {
     "version": "conservative-local-v4",
